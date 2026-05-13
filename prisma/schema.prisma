@@ -1,0 +1,160 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Company {
+  id          String   @id @default(cuid())
+  name        String
+  inn         String?  // ИНН
+  kpp         String?  // КПП
+  ogrn        String?  // ОГРН
+  address     String?  // Юридический адрес
+  factAddress String?  // Фактический адрес
+  phone       String?
+  email       String?
+  director    String?  // ФИО директора
+  type        String   @default("owner") // owner | renter | both
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  ownedEquipment  Equipment[] @relation("OwnerCompany")
+  rentedEquipment Equipment[] @relation("RenterCompany")
+}
+
+model Equipment {
+  id              String   @id @default(cuid())
+  name            String   // Наименование техники
+  type            String   // Тип: автомобиль, спецтехника, прицеп и т.д.
+  brand           String?  // Марка
+  model           String?  // Модель
+  year            Int?     // Год выпуска
+  vin             String?  // VIN номер
+  serialNumber    String?  // Серийный номер
+  registrationNum String?  // Государственный номер
+  stsNumber       String?  // Номер СТС
+  ptsNumber       String?  // Номер ПТС
+  category        String?  // Категория (B, C, D и т.д.)
+  color           String?  // Цвет
+  engineType      String?  // Тип двигателя
+  engineVolume    String?  // Объём двигателя
+  enginePower     String?  // Мощность (л.с.)
+  mileage         Int?     // Пробег (км)
+  fuelType        String?  // Тип топлива
+  loadCapacity    String?  // Грузоподъёмность
+  passengerSeats  Int?     // Количество пассажирских мест
+  purchaseDate    DateTime? // Дата приобретения
+  purchasePrice   Float?   // Цена приобретения
+  currentPrice    Float?   // Текущая стоимость
+  insuranceNumber String?  // Номер полиса ОСАГО/КАСКО
+  insuranceExpiry DateTime? // Срок действия страховки
+  inspectionDate  DateTime? // Дата техосмотра
+  inspectionExpiry DateTime? // Срок действия ТО
+  status          String   @default("active") // active | repair | decommissioned | rented
+  notes           String?  // Дополнительные заметки
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  ownerId         String?  // Компания-владелец
+  owner           Company? @relation("OwnerCompany", fields: [ownerId], references: [id])
+  renterId        String?  // Компания-арендатор
+  renter          Company? @relation("RenterCompany", fields: [renterId], references: [id])
+
+  photos          EquipmentPhoto[]
+  repairs         Repair[]
+  history         EquipmentHistory[]
+  documents       EquipmentDocument[]
+}
+
+model EquipmentPhoto {
+  id          String   @id @default(cuid())
+  equipmentId String
+  url         String   // Путь к файлу
+  description String?  // Описание фото
+  category    String   @default("general") // general | document | damage | repair
+  createdAt   DateTime @default(now())
+
+  equipment   Equipment @relation(fields: [equipmentId], references: [id], onDelete: Cascade)
+}
+
+model Repair {
+  id            String   @id @default(cuid())
+  equipmentId   String
+  description   String   // Описание ремонта
+  reason        String?  // Причина ремонта
+  startDate     DateTime // Дата начала
+  endDate       DateTime? // Дата окончания
+  status        String   @default("in_progress") // in_progress | completed | cancelled
+  cost          Float?   // Стоимость ремонта
+  contractor    String?  // Подрядчик/СТО
+  contractorPhone String? // Телефон подрядчика
+  workPerformed String?  // Выполненные работы
+  spareParts    String?  // Запчасти
+  nextInspection DateTime? // Дата следующего ТО после ремонта
+  notes         String?  // Заметки
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  equipment     Equipment @relation(fields: [equipmentId], references: [id], onDelete: Cascade)
+  photos        RepairPhoto[]
+  stages        RepairStage[]
+}
+
+model RepairStage {
+  id          String   @id @default(cuid())
+  repairId    String
+  name        String   // Название этапа
+  description String?  // Описание этапа
+  status      String   @default("pending") // pending | in_progress | completed
+  startDate   DateTime? // Дата начала этапа
+  endDate     DateTime? // Дата окончания этапа
+  performer   String?  // Исполнитель
+  cost        Float?   // Стоимость этапа
+  sortOrder   Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  repair      Repair   @relation(fields: [repairId], references: [id], onDelete: Cascade)
+}
+
+model RepairPhoto {
+  id          String   @id @default(cuid())
+  repairId    String
+  url         String   // Путь к файлу
+  description String?  // Описание фото
+  stageId     String?  // Привязка к этапу ремонта
+  createdAt   DateTime @default(now())
+
+  repair      Repair   @relation(fields: [repairId], references: [id], onDelete: Cascade)
+}
+
+model EquipmentHistory {
+  id          String   @id @default(cuid())
+  equipmentId String
+  event       String   // Тип события: registration, transfer, repair, inspection, rental, decommission
+  description String?  // Описание события
+  date        DateTime // Дата события
+  oldValue     String? // Старое значение
+  newValue     String? // Новое значение
+  performedBy String?  // Кто выполнил
+  createdAt   DateTime @default(now())
+
+  equipment   Equipment @relation(fields: [equipmentId], references: [id], onDelete: Cascade)
+}
+
+model EquipmentDocument {
+  id          String   @id @default(cuid())
+  equipmentId String
+  name        String   // Название документа
+  type        String   // Тип: sts, pts, insurance, contract, act, other
+  url         String   // Путь к файлу
+  expiryDate  DateTime? // Срок действия
+  notes       String?
+  createdAt   DateTime @default(now())
+
+  equipment   Equipment @relation(fields: [equipmentId], references: [id], onDelete: Cascade)
+}
