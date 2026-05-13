@@ -17,6 +17,7 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   title: "Учёт техники на предприятии",
   description: "Система учёта техники, ремонта и компаний",
+  viewport: "width=device-width, initial-scale=1, maximum-scale=1",
 };
 
 export default function RootLayout({
@@ -37,7 +38,7 @@ export default function RootLayout({
         >
           {children}
         </ThemeProvider>
-        <Toaster richColors position="top-right" />
+        <Toaster richColors position="top-right" className="sm:!top-auto sm:!bottom-4 sm:!right-4 sm:!top-4" />
       </body>
     </html>
   );

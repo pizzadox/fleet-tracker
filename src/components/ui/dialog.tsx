@@ -38,7 +38,9 @@ function DialogOverlay({
     <DialogPrimitive.Overlay
       data-slot="dialog-overlay"
       className={cn(
-        "data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 fixed inset-0 z-50 bg-black/50",
+        "fixed inset-0 z-50 bg-black/50",
+        "data-[state=open]:animate-in data-[state=closed]:animate-out",
+        "data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0",
         className
       )}
       {...props}
@@ -58,15 +60,16 @@ function DialogContent({
     <DialogPortal data-slot="dialog-portal">
       <DialogOverlay />
       <div className="fixed inset-0 z-50 overflow-y-auto">
-        <div className="flex min-h-full items-center justify-center py-8 px-4 text-center">
+        <div className="flex min-h-full items-start sm:items-center justify-center py-4 px-3 sm:py-8 sm:px-4">
           <DialogPrimitive.Content
             data-slot="dialog-content"
             className={cn(
-              "bg-background w-full max-w-[calc(100%-2rem)] rounded-lg border p-6 shadow-lg relative text-left",
+              "bg-background w-full max-w-[calc(100%-1.5rem)] sm:max-w-lg rounded-lg border p-4 sm:p-6 shadow-lg relative text-left",
               "data-[state=open]:animate-in data-[state=closed]:animate-out",
               "data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0",
               "data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95",
-              "duration-200 grid gap-4 sm:max-w-lg",
+              "duration-200 grid gap-4",
+              "sm:my-8",
               className
             )}
             {...props}
@@ -75,10 +78,11 @@ function DialogContent({
             {showCloseButton && (
               <DialogPrimitive.Close
                 data-slot="dialog-close"
-                className="ring-offset-background focus:ring-ring data-[state=open]:bg-accent data-[state=open]:text-muted-foreground absolute top-4 right-4 rounded-xs opacity-70 transition-opacity hover:opacity-100 focus:ring-2 focus:ring-offset-2 focus:outline-hidden disabled:pointer-events-none [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4"
+                className="absolute top-3 right-3 sm:top-4 sm:right-4 rounded-xs opacity-70 transition-opacity hover:opacity-100 focus:outline-hidden focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:pointer-events-none [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4 flex items-center justify-center size-8 sm:size-7"
+                aria-label="Закрыть"
               >
                 <XIcon />
-                <span className="sr-only">Close</span>
+                <span className="sr-only">Закрыть</span>
               </DialogPrimitive.Close>
             )}
           </DialogPrimitive.Content>
