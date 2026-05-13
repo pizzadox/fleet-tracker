@@ -42,7 +42,9 @@ import {
   ChevronRight, ChevronLeft, ImagePlus, X, Loader2, Camera, FileText,
   History, ClipboardList, Eye, Upload, Calendar, Phone, Mail, MapPin,
   Settings2, Info, DollarSign, Shield, User, Users, ArrowRight,
-  CheckCircle2, Clock, XCircle, AlertTriangle, Activity, Gauge
+  CheckCircle2, Clock, XCircle, AlertTriangle, Activity, Gauge,
+  Navigation, Fuel, Thermometer, Zap, Cog, RefreshCw, Wifi, WifiOff,
+  Satellite
 } from 'lucide-react'
 
 // ═══════════════════════════════════════════════════════════════
@@ -114,6 +116,33 @@ interface Equipment {
   _count?: { repairs: number; photos: number };
   photos?: EquipmentPhoto[]; repairs?: Repair[];
   history?: EquipmentHistory[]; documents?: EquipmentDocument[];
+  trackers?: GlonassTracker[];
+}
+
+interface GlonassTracker {
+  id: string; equipmentId: string; trackerId: string; trackerName?: string | null;
+  imei?: string | null; phoneNumber?: string | null;
+  lastLatitude?: number | null; lastLongitude?: number | null;
+  lastSpeed?: number | null; lastCourse?: number | null; lastAltitude?: number | null;
+  lastIgnition?: boolean | null; lastFuelLevel?: number | null;
+  lastMileage?: number | null; lastEngineTemp?: number | null;
+  lastSeenAt?: string | null; lastPositionAt?: string | null;
+  axentaCloudId?: string | null; isActive: boolean;
+  createdAt: string; updatedAt: string;
+  equipment?: { id: string; name: string; registrationNum?: string | null };
+  sensorData?: GlonassSensorData[];
+}
+
+interface GlonassSensorData {
+  id: string; trackerId: string; sensorType: string; sensorName?: string | null;
+  value?: number | null; stringValue?: string | null; unit?: string | null;
+  timestamp: string; createdAt: string;
+}
+
+interface AxentaSettings {
+  id?: string; apiUrl: string; apiKey: string; username?: string | null;
+  password?: string | null; syncInterval: number; lastSyncAt?: string | null;
+  isActive: boolean;
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -159,6 +188,11 @@ const COMPANY_TYPES: Record<string, string> = {
 function formatDate(d?: string | null): string {
   if (!d) return '—'
   try { return new Date(d).toLocaleDateString('ru-RU') } catch { return '—' }
+}
+
+function formatDateTime(d?: string | null): string {
+  if (!d) return '—'
+  try { return new Date(d).toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }) } catch { return '—' }
 }
 
 function formatPrice(p?: number | null): string {
@@ -264,6 +298,12 @@ export default function Home() {
   // ─── Photo category filter ──────────────────────────────────
   const [photoCategoryFilter, setPhotoCategoryFilter] = useState('all')
 
+  // ─── Axenta settings dialog ────────────────────────────────
+  const [settingsOpen, setSettingsOpen] = useState(false)
+  const [axentaSettings, setAxentaSettings] = useState<AxentaSettings>({ apiUrl: '', apiKey: '', username: '', password: '', syncInterval: 300, isActive: false })
+  const [settingsSaving, setSettingsSaving] = useState(false)
+  const [syncing, setSyncing] = useState(false)
+
   // ═════════════════════════════════════════════════════════════
   // DATA FETCHING
   // ═════════════════════════════════════════════════════════════
@@ -306,6 +346,20 @@ export default function Home() {
   }, [fetchEquipment, fetchCompanies, fetchRepairs])
 
   useEffect(() => { fetchAll() }, [fetchAll])
+
+  // ─── Load Axenta settings ──────────────────────────────────
+  useEffect(() => {
+    const loadSettings = async () => {
+      try {
+        const res = await fetch('/api/glonass/settings')
+        if (res.ok) {
+          const data = await res.json()
+          if (data.apiUrl) setAxentaSettings(data)
+        }
+      } catch { /* ignore */ }
+    }
+    loadSettings()
+  }, [])
 
   // ─── Fetch single equipment detail ──────────────────────────
   const fetchEquipmentDetail = async (id: string) => {
@@ -404,11 +458,16 @@ export default function Home() {
                 <p className="text-xs text-muted-foreground">Система управления оборудованием предприятия</p>
               </div>
             </div>
-            {mounted && (
-              <Button variant="ghost" size="icon" onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}>
-                {theme === 'dark' ? <Sun className="size-4" /> : <Moon className="size-4" />}
+            <div className="flex items-center gap-1">
+              <Button variant="ghost" size="icon" onClick={() => setSettingsOpen(true)} title="Настройки Axenta.cloud">
+                <Cog className="size-4" />
               </Button>
-            )}
+              {mounted && (
+                <Button variant="ghost" size="icon" onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}>
+                  {theme === 'dark' ? <Sun className="size-4" /> : <Moon className="size-4" />}
+                </Button>
+              )}
+            </div>
           </div>
           {/* Stats */}
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
@@ -423,10 +482,10 @@ export default function Home() {
       {/* ─── MAIN CONTENT ─────────────────────────────────────── */}
       <main className="flex-1 max-w-7xl mx-auto w-full px-4 sm:px-6 py-6">
         <Tabs value={mainTab} onValueChange={setMainTab}>
-          <TabsList className="mb-6 w-full sm:w-auto">
-            <TabsTrigger value="equipment" className="gap-1.5"><Truck className="size-4" />Техника</TabsTrigger>
-            <TabsTrigger value="repairs" className="gap-1.5"><Wrench className="size-4" />Ремонты</TabsTrigger>
-            <TabsTrigger value="companies" className="gap-1.5"><Building2 className="size-4" />Компании</TabsTrigger>
+          <TabsList className="mb-4 sm:mb-6 w-full sm:w-auto">
+            <TabsTrigger value="equipment" className="gap-1"><Truck className="size-4" /><span className="hidden sm:inline">Техника</span></TabsTrigger>
+            <TabsTrigger value="repairs" className="gap-1"><Wrench className="size-4" /><span className="hidden sm:inline">Ремонты</span></TabsTrigger>
+            <TabsTrigger value="companies" className="gap-1"><Building2 className="size-4" /><span className="hidden sm:inline">Компании</span></TabsTrigger>
           </TabsList>
 
           <TabsContent value="equipment">
@@ -594,6 +653,66 @@ export default function Home() {
         </DialogContent>
       </Dialog>
 
+      {/* ─── AXENTA SETTINGS DIALOG ──────────────────────────── */}
+      <Dialog open={settingsOpen} onOpenChange={setSettingsOpen}>
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2"><Cog className="size-5" />Настройки Axenta.cloud</DialogTitle>
+            <DialogDescription>Подключение к API Axenta.cloud для получения данных ГЛОНАСС</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div><Label>API URL *</Label><Input placeholder="https://axenta.cloud/api" value={axentaSettings.apiUrl} onChange={e => setAxentaSettings(s => ({ ...s, apiUrl: e.target.value }))} /></div>
+            <div><Label>API Key *</Label><Input type="password" placeholder="Ваш API-ключ" value={axentaSettings.apiKey} onChange={e => setAxentaSettings(s => ({ ...s, apiKey: e.target.value }))} /></div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div><Label>Логин</Label><Input placeholder="Логин (опционально)" value={axentaSettings.username || ''} onChange={e => setAxentaSettings(s => ({ ...s, username: e.target.value }))} /></div>
+              <div><Label>Пароль</Label><Input type="password" placeholder="Пароль (опционально)" value={axentaSettings.password || ''} onChange={e => setAxentaSettings(s => ({ ...s, password: e.target.value }))} /></div>
+            </div>
+            <div><Label>Интервал синхронизации (сек)</Label><Input type="number" value={axentaSettings.syncInterval} onChange={e => setAxentaSettings(s => ({ ...s, syncInterval: parseInt(e.target.value) || 300 }))} /></div>
+            <div className="flex items-center justify-between">
+              <Label>Интеграция активна</Label>
+              <Button variant={axentaSettings.isActive ? 'default' : 'outline'} size="sm" onClick={() => setAxentaSettings(s => ({ ...s, isActive: !s.isActive }))}>
+                {axentaSettings.isActive ? 'Вкл' : 'Выкл'}
+              </Button>
+            </div>
+            {axentaSettings.lastSyncAt && (
+              <p className="text-xs text-muted-foreground">Последняя синхронизация: {formatDateTime(axentaSettings.lastSyncAt)}</p>
+            )}
+          </div>
+          <DialogFooter className="gap-2 sm:gap-0 flex-wrap">
+            <Button variant="outline" onClick={async () => {
+              setSyncing(true)
+              try {
+                const res = await fetch('/api/glonass/sync', { method: 'POST' })
+                const data = await res.json()
+                if (data.synced !== undefined) toast.success(`Синхронизация: ${data.synced} из ${data.totalTrackers}`)
+                else toast.error(data.error || 'Ошибка')
+              } catch { toast.error('Ошибка синхронизации') }
+              setSyncing(false)
+            }} disabled={syncing}>
+              {syncing ? <Loader2 className="size-4 animate-spin" /> : <RefreshCw className="size-4" />}
+              Синхронизировать
+            </Button>
+            <Button onClick={async () => {
+              setSettingsSaving(true)
+              try {
+                const res = await fetch('/api/glonass/settings', {
+                  method: 'PUT', headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify(axentaSettings)
+                })
+                if (!res.ok) throw new Error()
+                const data = await res.json()
+                setAxentaSettings(data)
+                toast.success('Настройки сохранены')
+              } catch { toast.error('Ошибка сохранения настроек') }
+              setSettingsSaving(false)
+            }} disabled={settingsSaving}>
+              {settingsSaving ? <Loader2 className="size-4 animate-spin" /> : <CheckCircle2 className="size-4" />}
+              Сохранить
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       {/* ─── DELETE CONFIRM ──────────────────────────────────── */}
       <AlertDialog open={deleteDialog.open} onOpenChange={(open) => setDeleteDialog({ ...deleteDialog, open })}>
         <AlertDialogContent>
@@ -713,12 +832,12 @@ function EquipmentTab({ equipment, companies, eqSearch, setEqSearch, eqStatusFil
                   <Wrench className="size-3" />{eq._count?.repairs || 0} ремонтов
                   <Camera className="size-3 ml-2" />{eq._count?.photos || 0} фото
                 </div>
-                <div className="flex gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity pt-1" onClick={e => e.stopPropagation()}>
+                <div className="flex gap-1.5 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity pt-1" onClick={e => e.stopPropagation()}>
                   <Button size="sm" variant="ghost" className="h-7 text-xs gap-1" onClick={() => onEdit(eq)}>
-                    <Edit className="size-3" />Изменить
+                    <Edit className="size-3" /><span className="sm:inline">Изменить</span>
                   </Button>
                   <Button size="sm" variant="ghost" className="h-7 text-xs gap-1 text-destructive hover:text-destructive" onClick={() => onDelete(eq)}>
-                    <Trash2 className="size-3" />Удалить
+                    <Trash2 className="size-3" /><span className="sm:inline">Удалить</span>
                   </Button>
                 </div>
               </CardContent>
@@ -765,12 +884,13 @@ function EquipmentDetailSheet({ open, onOpenChange, equipment, loading, detailTa
         </SheetHeader>
 
         <Tabs value={detailTab} onValueChange={setDetailTab} className="flex-1 flex flex-col min-h-0">
-          <div className="px-6 border-b">
-            <TabsList className="w-full">
-              <TabsTrigger value="info" className="gap-1"><Info className="size-3.5" />Информация</TabsTrigger>
-              <TabsTrigger value="photos" className="gap-1"><Camera className="size-3.5" />Фото</TabsTrigger>
-              <TabsTrigger value="repairs" className="gap-1"><Wrench className="size-3.5" />Ремонты</TabsTrigger>
-              <TabsTrigger value="history" className="gap-1"><History className="size-3.5" />История</TabsTrigger>
+          <div className="px-4 sm:px-6 border-b overflow-x-auto">
+            <TabsList className="w-full min-w-max">
+              <TabsTrigger value="info" className="gap-1"><Info className="size-3.5" /><span className="hidden sm:inline">Информация</span></TabsTrigger>
+              <TabsTrigger value="photos" className="gap-1"><Camera className="size-3.5" /><span className="hidden sm:inline">Фото</span></TabsTrigger>
+              <TabsTrigger value="repairs" className="gap-1"><Wrench className="size-3.5" /><span className="hidden sm:inline">Ремонты</span></TabsTrigger>
+              <TabsTrigger value="glonass" className="gap-1"><MapPin className="size-3.5" /><span className="hidden sm:inline">ГЛОНАСС</span></TabsTrigger>
+              <TabsTrigger value="history" className="gap-1"><History className="size-3.5" /><span className="hidden sm:inline">История</span></TabsTrigger>
             </TabsList>
           </div>
 
@@ -914,6 +1034,120 @@ function EquipmentDetailSheet({ open, onOpenChange, equipment, loading, detailTa
                   </ScrollArea>
                 )}
 
+                {/* GLONASS TAB */}
+                {detailTab === 'glonass' && (
+                  <ScrollArea className="h-[calc(100vh-260px)]">
+                    <div className="px-4 sm:px-6 py-4 space-y-4">
+                      {(!eq.trackers || eq.trackers.length === 0) ? (
+                        <div className="text-center py-12">
+                          <Satellite className="size-12 mx-auto mb-3 text-muted-foreground/40" />
+                          <p className="text-muted-foreground mb-2">ГЛОНАСС трекер не подключён</p>
+                          <p className="text-xs text-muted-foreground/70 mb-4">Подключите трекер для отслеживания местоположения и данных датчиков</p>
+                          <Button size="sm" className="gap-1.5" onClick={async () => {
+                            const tid = prompt('Введите ID трекера:')
+                            if (!tid) return
+                            const tname = prompt('Название трекера:') || ''
+                            try {
+                              const res = await fetch('/api/glonass', {
+                                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({ equipmentId: eq.id, trackerId: tid, trackerName: tname })
+                              })
+                              if (!res.ok) throw new Error()
+                              toast.success('Трекер подключён')
+                              onRefresh()
+                            } catch { toast.error('Ошибка подключения трекера') }
+                          }}><Plus className="size-3.5" />Подключить трекер</Button>
+                        </div>
+                      ) : (
+                        eq.trackers?.map(tracker => (
+                          <Card key={tracker.id}>
+                            <CardHeader className="pb-2 pt-4 px-4">
+                              <div className="flex items-center justify-between gap-2">
+                                <div className="flex items-center gap-2">
+                                  <div className={`flex items-center justify-center size-8 rounded-lg ${tracker.isActive ? 'bg-emerald-100 dark:bg-emerald-900/40' : 'bg-red-100 dark:bg-red-900/40'}`}>
+                                    {tracker.isActive ? <Wifi className="size-4 text-emerald-600 dark:text-emerald-400" /> : <WifiOff className="size-4 text-red-600 dark:text-red-400" />}
+                                  </div>
+                                  <div>
+                                    <CardTitle className="text-sm font-semibold">{tracker.trackerName || `Трекер ${tracker.trackerId}`}</CardTitle>
+                                    <p className="text-xs text-muted-foreground">ID: {tracker.trackerId}{tracker.imei ? ` • IMEI: ${tracker.imei}` : ''}</p>
+                                  </div>
+                                </div>
+                                <span className={`inline-flex items-center rounded-md px-2 py-0.5 text-xs font-medium ${tracker.isActive ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-400' : 'bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-400'}`}>
+                                  {tracker.isActive ? 'Активен' : 'Неактивен'}
+                                </span>
+                              </div>
+                            </CardHeader>
+                            <CardContent className="px-4 pb-4 pt-0 space-y-3">
+                              <Separator />
+                              {/* Position data */}
+                              <DetailSection title="Местоположение" icon={<MapPin className="size-4" />}>
+                                <DetailRow label="Широта" value={tracker.lastLatitude?.toFixed(6)} />
+                                <DetailRow label="Долгота" value={tracker.lastLongitude?.toFixed(6)} />
+                                <DetailRow label="Скорость" value={tracker.lastSpeed != null ? `${tracker.lastSpeed} км/ч` : undefined} />
+                                <DetailRow label="Курс" value={tracker.lastCourse != null ? `${tracker.lastCourse}°` : undefined} />
+                                <DetailRow label="Высота" value={tracker.lastAltitude != null ? `${tracker.lastAltitude} м` : undefined} />
+                              </DetailSection>
+                              {/* Sensor data */}
+                              <DetailSection title="Датчики" icon={<Gauge className="size-4" />}>
+                                <DetailRow label="Зажигание" value={tracker.lastIgnition != null ? (tracker.lastIgnition ? 'Вкл' : 'Выкл') : undefined} />
+                                <DetailRow label="Уровень топлива" value={tracker.lastFuelLevel != null ? `${tracker.lastFuelLevel}%` : undefined} />
+                                <DetailRow label="Пробег" value={tracker.lastMileage != null ? `${tracker.lastMileage?.toLocaleString('ru-RU')} км` : undefined} />
+                                <DetailRow label="Температура двигателя" value={tracker.lastEngineTemp != null ? `${tracker.lastEngineTemp}°C` : undefined} />
+                              </DetailSection>
+                              <DetailSection title="Связь" icon={<Clock className="size-4" />}>
+                                <DetailRow label="Последний выход на связь" value={formatDateTime(tracker.lastSeenAt)} />
+                                <DetailRow label="Последняя позиция" value={formatDateTime(tracker.lastPositionAt)} />
+                              </DetailSection>
+                              {/* Sensor data history */}
+                              {tracker.sensorData && tracker.sensorData.length > 0 && (
+                                <div>
+                                  <div className="flex items-center gap-2 mb-2">
+                                    <Activity className="size-4 text-muted-foreground" />
+                                    <h3 className="text-sm font-semibold">История показаний датчиков</h3>
+                                  </div>
+                                  <div className="space-y-1 max-h-48 overflow-y-auto pl-6">
+                                    {tracker.sensorData.slice(0, 20).map(sd => (
+                                      <div key={sd.id} className="flex items-baseline justify-between gap-2 text-xs py-0.5 border-b border-dashed border-border/50">
+                                        <span className="text-muted-foreground">{sd.sensorName || sd.sensorType}</span>
+                                        <span className="font-medium">{sd.value != null ? `${sd.value}${sd.unit ? ' ' + sd.unit : ''}` : (sd.stringValue || '—')}</span>
+                                        <span className="text-muted-foreground text-[10px] shrink-0">{formatDateTime(sd.timestamp)}</span>
+                                      </div>
+                                    ))}
+                                  </div>
+                                </div>
+                              )}
+                              {/* Actions */}
+                              <div className="flex flex-wrap gap-2 pt-2">
+                                <Button size="sm" variant="outline" className="gap-1.5" onClick={async () => {
+                                  try {
+                                    const res = await fetch('/api/glonass/sync', { method: 'POST' })
+                                    const data = await res.json()
+                                    if (data.synced !== undefined) {
+                                      toast.success(`Синхронизация: ${data.synced} из ${data.totalTrackers} трекеров`)
+                                    } else {
+                                      toast.error(data.error || 'Ошибка синхронизации')
+                                    }
+                                    onRefresh()
+                                  } catch { toast.error('Ошибка синхронизации') }
+                                }}><RefreshCw className="size-3.5" />Синхронизировать</Button>
+                                <Button size="sm" variant="outline" className="gap-1.5" onClick={onRefresh}><Activity className="size-3.5" />Обновить</Button>
+                                <div className="flex-1" />
+                                <Button size="sm" variant="destructive" className="gap-1.5" onClick={async () => {
+                                  try {
+                                    await fetch(`/api/glonass/${tracker.id}`, { method: 'DELETE' })
+                                    toast.success('Трекер отключён')
+                                    onRefresh()
+                                  } catch { toast.error('Ошибка отключения трекера') }
+                                }}><Trash2 className="size-3.5" />Отключить</Button>
+                              </div>
+                            </CardContent>
+                          </Card>
+                        ))
+                      )}
+                    </div>
+                  </ScrollArea>
+                )}
+
                 {/* HISTORY TAB */}
                 {detailTab === 'history' && (
                   <ScrollArea className="h-[calc(100vh-260px)]">
@@ -954,7 +1188,7 @@ function EquipmentDetailSheet({ open, onOpenChange, equipment, loading, detailTa
         </Tabs>
 
         {/* Actions */}
-        <div className="border-t px-6 py-3 flex gap-2">
+        <div className="border-t px-4 sm:px-6 py-3 flex flex-wrap gap-2">
           <Button variant="outline" size="sm" className="gap-1.5" onClick={() => onEdit(eq)}>
             <Edit className="size-3.5" />Редактировать
           </Button>
@@ -1565,8 +1799,42 @@ function CompaniesTab({ companies, onAdd, onEdit, onDelete }: {
           </CardContent>
         </Card>
       ) : (
-        <Card>
-          <Table>
+        <>
+          {/* Mobile card layout */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 md:hidden">
+            {filtered.map(c => (
+              <Card key={c.id}>
+                <CardContent className="p-4 space-y-2">
+                  <div className="flex items-center gap-2">
+                    <div className="flex items-center justify-center size-8 rounded-lg bg-muted shrink-0">
+                      <Building2 className="size-4 text-muted-foreground" />
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <p className="font-medium truncate">{c.name}</p>
+                      <p className="text-xs text-muted-foreground">{c.inn || '—'}</p>
+                    </div>
+                    <span className={`inline-flex items-center rounded-md px-2 py-0.5 text-xs font-medium ${c.type === 'owner' ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-400' : c.type === 'renter' ? 'bg-sky-100 text-sky-800 dark:bg-sky-900/40 dark:text-sky-400' : 'bg-violet-100 text-violet-800 dark:bg-violet-900/40 dark:text-violet-400'}`}>
+                      {COMPANY_TYPES[c.type] || c.type}
+                    </span>
+                  </div>
+                  <Separator />
+                  <div className="grid grid-cols-2 gap-2 text-xs">
+                    <div><span className="text-muted-foreground">Телефон:</span><p className="font-medium">{c.phone || '—'}</p></div>
+                    <div><span className="text-muted-foreground">Email:</span><p className="font-medium truncate">{c.email || '—'}</p></div>
+                    <div><span className="text-muted-foreground">Владеет:</span><p className="font-medium">{c._count?.ownedEquipment || 0}</p></div>
+                    <div><span className="text-muted-foreground">Арендует:</span><p className="font-medium">{c._count?.rentedEquipment || 0}</p></div>
+                  </div>
+                  <div className="flex gap-1.5 pt-1">
+                    <Button size="sm" variant="ghost" className="h-7 text-xs gap-1" onClick={() => onEdit(c)}><Edit className="size-3" />Изменить</Button>
+                    <Button size="sm" variant="ghost" className="h-7 text-xs gap-1 text-destructive hover:text-destructive" onClick={() => onDelete(c)}><Trash2 className="size-3" />Удалить</Button>
+                  </div>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+          {/* Desktop table layout */}
+          <Card className="hidden md:block">
+            <Table>
             <TableHeader>
               <TableRow>
                 <TableHead>Название</TableHead>
@@ -1611,7 +1879,8 @@ function CompaniesTab({ companies, onAdd, onEdit, onDelete }: {
               ))}
             </TableBody>
           </Table>
-        </Card>
+          </Card>
+        </>
       )}
     </div>
   )

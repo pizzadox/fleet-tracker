@@ -68,6 +68,7 @@ model Equipment {
   repairs         Repair[]
   history         EquipmentHistory[]
   documents       EquipmentDocument[]
+  trackers        GlonassTracker[]
 }
 
 model EquipmentPhoto {
@@ -157,4 +158,58 @@ model EquipmentDocument {
   createdAt   DateTime @default(now())
 
   equipment   Equipment @relation(fields: [equipmentId], references: [id], onDelete: Cascade)
+}
+
+model GlonassTracker {
+  id             String   @id @default(cuid())
+  equipmentId    String   // Привязка к технике
+  trackerId      String   // ID трекера в Axenta.cloud
+  trackerName    String?  // Название трекера
+  imei           String?  // IMEI устройства
+  phoneNumber    String?  // Номер SIM-карты трекера
+  lastLatitude   Float?   // Последняя широта
+  lastLongitude  Float?   // Последняя долгота
+  lastSpeed      Float?   // Последняя скорость (км/ч)
+  lastCourse     Float?   // Последний курс (градусы)
+  lastAltitude   Float?   // Последняя высота (м)
+  lastIgnition   Boolean? @default(false) // Зажигание
+  lastFuelLevel  Float?   // Уровень топлива (%)
+  lastMileage    Float?   // Пробег по трекеру (км)
+  lastEngineTemp Float?   // Температура двигателя
+  lastSeenAt     DateTime? // Последний выход на связь
+  lastPositionAt DateTime? // Время последней позиции
+  axentaCloudId  String?  // ID объекта в Axenta.cloud
+  isActive       Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  equipment      Equipment @relation(fields: [equipmentId], references: [id], onDelete: Cascade)
+  sensorData     GlonassSensorData[]
+}
+
+model GlonassSensorData {
+  id           String   @id @default(cuid())
+  trackerId    String
+  sensorType   String   // Тип датчика: fuel, temperature, ignition, mileage, speed, door, custom
+  sensorName   String?  // Название датчика
+  value        Float?   // Числовое значение
+  stringValue  String?  // Строковое значение
+  unit         String?  // Единица измерения
+  timestamp    DateTime // Время замера
+  createdAt    DateTime @default(now())
+
+  tracker      GlonassTracker @relation(fields: [trackerId], references: [id], onDelete: Cascade)
+}
+
+model AxentaSettings {
+  id           String   @id @default(cuid())
+  apiUrl       String   // URL API Axenta.cloud
+  apiKey       String   // API-ключ
+  username     String?  // Логин
+  password     String?  // Пароль (зашифрованный)
+  syncInterval Int      @default(300) // Интервал синхронизации (секунды)
+  lastSyncAt   DateTime? // Последняя синхронизация
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
 }

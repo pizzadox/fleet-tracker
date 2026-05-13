@@ -36,6 +36,14 @@ export async function GET(request: NextRequest) {
         renter: true,
         _count: {
           select: { repairs: true, photos: true }
+        },
+        trackers: {
+          include: {
+            sensorData: {
+              orderBy: { timestamp: 'desc' },
+              take: 20,
+            }
+          }
         }
       }
     })

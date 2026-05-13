@@ -19,6 +19,14 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
         },
         history: { orderBy: { date: 'desc' } },
         documents: { orderBy: { createdAt: 'desc' } },
+        trackers: {
+          include: {
+            sensorData: {
+              orderBy: { timestamp: 'desc' },
+              take: 50,
+            }
+          }
+        },
       }
     })
     if (!equipment) {
