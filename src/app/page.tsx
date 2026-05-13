@@ -16,7 +16,7 @@ import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Badge } from '@/components/ui/badge'
 import { Separator } from '@/components/ui/separator'
-import { ScrollArea } from '@/components/ui/scroll-area'
+
 import { Progress } from '@/components/ui/progress'
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter
@@ -894,14 +894,13 @@ function EquipmentDetailSheet({ open, onOpenChange, equipment, loading, detailTa
             </TabsList>
           </div>
 
-          <div className="flex-1 min-h-0">
+          <div className="flex-1 min-h-0 overflow-y-auto">
             {loading ? (
               <div className="flex items-center justify-center h-48"><Loader2 className="size-6 animate-spin text-muted-foreground" /></div>
             ) : (
               <>
                 {/* INFO TAB */}
                 {detailTab === 'info' && (
-                  <ScrollArea className="h-[calc(100vh-260px)]">
                     <div className="px-6 py-4 space-y-5">
                       <DetailSection title="Основные данные" icon={<Settings2 className="size-4" />}>
                         <DetailRow label="Наименование" value={eq.name} />
@@ -949,7 +948,6 @@ function EquipmentDetailSheet({ open, onOpenChange, equipment, loading, detailTa
                         </DetailSection>
                       )}
                     </div>
-                  </ScrollArea>
                 )}
 
                 {/* PHOTOS TAB */}
@@ -994,7 +992,6 @@ function EquipmentDetailSheet({ open, onOpenChange, equipment, loading, detailTa
 
                 {/* REPAIRS TAB */}
                 {detailTab === 'repairs' && (
-                  <ScrollArea className="h-[calc(100vh-260px)]">
                     <div className="px-6 py-4 space-y-3">
                       <Button size="sm" className="gap-1.5 mb-2" onClick={() => onAddRepair(eq.id)}>
                         <Plus className="size-3.5" />Новый ремонт
@@ -1031,12 +1028,10 @@ function EquipmentDetailSheet({ open, onOpenChange, equipment, loading, detailTa
                         ))
                       )}
                     </div>
-                  </ScrollArea>
                 )}
 
                 {/* GLONASS TAB */}
                 {detailTab === 'glonass' && (
-                  <ScrollArea className="h-[calc(100vh-260px)]">
                     <div className="px-4 sm:px-6 py-4 space-y-4">
                       {(!eq.trackers || eq.trackers.length === 0) ? (
                         <div className="text-center py-12">
@@ -1145,12 +1140,10 @@ function EquipmentDetailSheet({ open, onOpenChange, equipment, loading, detailTa
                         ))
                       )}
                     </div>
-                  </ScrollArea>
                 )}
 
                 {/* HISTORY TAB */}
                 {detailTab === 'history' && (
-                  <ScrollArea className="h-[calc(100vh-260px)]">
                     <div className="px-6 py-4">
                       {(!eq.history || eq.history.length === 0) ? (
                         <div className="text-center py-12 text-muted-foreground">
@@ -1180,7 +1173,6 @@ function EquipmentDetailSheet({ open, onOpenChange, equipment, loading, detailTa
                         </div>
                       )}
                     </div>
-                  </ScrollArea>
                 )}
               </>
             )}
@@ -1301,7 +1293,7 @@ function EquipmentFormDialog({ open, onOpenChange, editData, companies, step, se
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-2xl max-h-[90vh] flex flex-col">
+      <DialogContent className="sm:max-w-2xl flex flex-col">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             {editData ? <Edit className="size-5" /> : <Plus className="size-5" />}
@@ -1319,8 +1311,7 @@ function EquipmentFormDialog({ open, onOpenChange, editData, companies, step, se
           ))}
         </div>
 
-        <ScrollArea className="flex-1 min-h-0">
-          <div className="space-y-4 pr-3 py-2">
+        <div className="space-y-4 py-2">
             {/* Step 0: Основные данные */}
             {step === 0 && (
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -1377,7 +1368,6 @@ function EquipmentFormDialog({ open, onOpenChange, editData, companies, step, se
               </div>
             )}
           </div>
-        </ScrollArea>
 
         <DialogFooter className="gap-2 sm:gap-0">
           <Button variant="outline" onClick={() => setStep(Math.max(0, step - 1))} disabled={step === 0}>
@@ -1522,7 +1512,7 @@ function RepairDetailDialog({ open, onOpenChange, repair, loading, fullPhoto, se
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-3xl max-h-[90vh] flex flex-col">
+      <DialogContent className="sm:max-w-3xl flex flex-col">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Wrench className="size-5" />Ремонт: {r.description}
@@ -1536,8 +1526,7 @@ function RepairDetailDialog({ open, onOpenChange, repair, loading, fullPhoto, se
         {loading ? (
           <div className="flex items-center justify-center h-48"><Loader2 className="size-6 animate-spin text-muted-foreground" /></div>
         ) : (
-          <ScrollArea className="flex-1 min-h-0">
-            <div className="space-y-5 pr-3">
+          <div className="space-y-5">
               {/* Repair info */}
               <DetailSection title="Информация о ремонте" icon={<ClipboardList className="size-4" />}>
                 <DetailRow label="Описание" value={r.description} />
@@ -1614,7 +1603,6 @@ function RepairDetailDialog({ open, onOpenChange, repair, loading, fullPhoto, se
                 </div>
               </DetailSection>
             </div>
-          </ScrollArea>
         )}
 
         <DialogFooter className="gap-2 sm:gap-0">
@@ -1700,15 +1688,14 @@ function RepairFormDialog({ open, onOpenChange, editData, equipmentId, equipment
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-2xl max-h-[90vh] flex flex-col">
+      <DialogContent className="sm:max-w-2xl flex flex-col">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             {editData ? <Edit className="size-5" /> : <Plus className="size-5" />}
             {editData ? 'Редактирование ремонта' : 'Новый ремонт'}
           </DialogTitle>
         </DialogHeader>
-        <ScrollArea className="flex-1 min-h-0">
-          <div className="space-y-4 pr-3">
+        <div className="space-y-4">
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div className="sm:col-span-2">
                 <Label>Техника *</Label>
@@ -1754,7 +1741,6 @@ function RepairFormDialog({ open, onOpenChange, editData, equipmentId, equipment
               </div>
             )}
           </div>
-        </ScrollArea>
         <DialogFooter>
           <Button onClick={handleSave} disabled={saving}>
             {saving ? <Loader2 className="size-4 animate-spin" /> : <CheckCircle2 className="size-4" />}
@@ -1930,15 +1916,14 @@ function CompanyFormDialog({ open, onOpenChange, editData, saving, setSaving, on
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-2xl max-h-[90vh] flex flex-col">
+      <DialogContent className="sm:max-w-2xl flex flex-col">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             {editData ? <Edit className="size-5" /> : <Plus className="size-5" />}
             {editData ? 'Редактирование компании' : 'Новая компания'}
           </DialogTitle>
         </DialogHeader>
-        <ScrollArea className="flex-1 min-h-0">
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pr-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div className="sm:col-span-2"><Label>Название *</Label><Input value={f('name')} onChange={e => setF('name', e.target.value)} /></div>
             <div><Label>ИНН</Label><Input value={f('inn')} onChange={e => setF('inn', e.target.value)} /></div>
             <div><Label>КПП</Label><Input value={f('kpp')} onChange={e => setF('kpp', e.target.value)} /></div>
@@ -1950,7 +1935,6 @@ function CompanyFormDialog({ open, onOpenChange, editData, saving, setSaving, on
             <div><Label>Email</Label><Input type="email" value={f('email')} onChange={e => setF('email', e.target.value)} /></div>
             <div className="sm:col-span-2"><Label>ФИО директора</Label><Input value={f('director')} onChange={e => setF('director', e.target.value)} /></div>
           </div>
-        </ScrollArea>
         <DialogFooter>
           <Button onClick={handleSave} disabled={saving}>
             {saving ? <Loader2 className="size-4 animate-spin" /> : <CheckCircle2 className="size-4" />}
