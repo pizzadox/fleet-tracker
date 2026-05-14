@@ -92,3 +92,35 @@ Stage Summary:
 - Settings dialog for Axenta.cloud configuration
 - All APIs tested and working (200 status codes)
 - ESLint passes with no errors
+
+---
+Task ID: 5
+Agent: Main
+Task: Fix server startup, photo upload error, add trips/crews, fix React Hooks error
+
+Work Log:
+- Investigated server crash issue — background processes killed when bash tool session ends
+- Found workaround: using zscripts/dev.sh with `setsid` and `disown` for persistent server
+- Verified all API endpoints work correctly (equipment, companies, repairs, trips, crews)
+- Tested photo upload via API — works correctly, files saved to public/uploads/
+- Verified photo serving via HTTP (200 status on /uploads/filename.jpg)
+- Added Trip (Рейс) and Crew (Экипаж) models to Prisma schema
+- Created API routes: /api/trips, /api/trips/[id], /api/crews, /api/crews/[id]
+- Added TripsTab component with filters, search, and crew management
+- Added TripDetailDialog with sections: route, cargo, time, crew, fuel/mileage, finances
+- Added TripFormDialog with all fields including crew selection
+- Added CrewFormDialog with dynamic member management
+- Fixed critical React Hooks order error in EquipmentDetailSheet — moved `if (!equipment) return null` after all hooks (useRef, useState, useEffect)
+- Tested full application flow via agent-browser — all features working
+- Created test trip (Москва — Санкт-Петербург) with crew assignment
+- Created test crew (Экипаж №1) with 2 members
+- Reduced Prisma logging from ['query'] to ['error', 'warn'] to reduce output noise
+- Verified no console errors after fix
+
+Stage Summary:
+- Server runs persistently via zscripts/dev.sh
+- Photo upload works end-to-end (API + UI)
+- Trips and crews features fully functional with CRUD operations
+- Critical React Hooks error fixed — EquipmentDetailSheet now works correctly
+- All 4 tabs working: Техника, Ремонты, Рейсы, Компании
+- Equipment detail sheet shows all 6 sub-tabs: Информация, Фото, Ремонты, ГЛОНАСС, Рейсы, История

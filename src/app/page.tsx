@@ -795,15 +795,16 @@ function EquipmentDetailSheet({ open, onOpenChange, equipment, loading, detailTa
 }) {
   const contentRef = useRef<HTMLDivElement>(null)
   const [localTrips, setLocalTrips] = useState<Trip[]>([])
-  if (!equipment) return null
   const eq = equipment
-  const filteredPhotos = eq.photos?.filter(p => photoCategoryFilter === 'all' || p.category === photoCategoryFilter) || []
+  const filteredPhotos = eq?.photos?.filter(p => photoCategoryFilter === 'all' || p.category === photoCategoryFilter) || []
 
   useEffect(() => {
     if (open && eq && detailTab === 'trips') {
       fetch(`/api/trips?equipmentId=${eq.id}`).then(r => r.json()).then(setLocalTrips).catch(() => {})
     }
   }, [open, eq, detailTab])
+
+  if (!equipment) return null
 
   const handleTabChange = (v: string) => {
     setDetailTab(v)
