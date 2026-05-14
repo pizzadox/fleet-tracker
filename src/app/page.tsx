@@ -2822,6 +2822,126 @@ function MapTab({ equipment, onSync }: {
   const [newRuleDesc, setNewRuleDesc] = useState('')
   const [savingRule, setSavingRule] = useState(false)
 
+  // ─── Track viewing state ────────────────────────────────────
+  const [trackEqId, setTrackEqId] = useState<string>('')
+  const [trackDateFrom, setTrackDateFrom] = useState<string>('')
+  const [trackDateTo, setTrackDateTo] = useState<string>('')
+  const [trackPoints, setTrackPoints] = useState<Array<{ lat: number; lng: number }>>([])
+  const [trackLoading, setTrackLoading] = useState(false)
+  const [trackStats, setTrackStats] = useState<Record<string, unknown> | null>(null)
+  const [showTrackPanel, setShowTrackPanel] = useState(false)
+
+  // Equipment that has trackers for track selection
+  const trackedEquipment = useMemo(() =>
+    equipment.filter(e => e.trackers && e.trackers.length > 0),
+  [equipment])
+
+  // Apply date preset for tracks
+  const applyTrackDatePreset = (preset: string) => {
+    const now = new Date()
+    let from = new Date()
+    switch (preset) {
+      case 'Сегодня':
+        from = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+        break
+      case 'Вчера':
+        from = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1)
+        now.setDate(now.getDate() - 1); now.setHours(23, 59, 59)
+        break
+      case 'Неделя':
+        from = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 7)
+        break
+      case 'Месяц':
+        from = new Date(now.getFullYear(), now.getMonth() - 1, now.getDate())
+        break
+    }
+    setTrackDateFrom(from.toISOString().slice(0, 16))
+    setTrackDateTo(now.toISOString().slice(0, 16))
+  }
+
+  // Fetch track for selected equipment
+  const fetchTrack = async () => {
+    if (!trackEqId || !trackDateFrom || !trackDateTo) return
+    const eq = equipment.find(e => e.id === trackEqId)
+    if (!eq || !eq.trackers || eq.trackers.length === 0) return
+
+    const tracker = eq.trackers[0]
+    const axentaId = tracker.axentaCloudId || tracker.trackerId
+
+    setTrackLoading(true)
+    setTrackPoints([])
+    setTrackStats(null)
+
+    try {
+      // Fetch track
+      const tracksRes = await fetch('/api/glonass/tracks', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          objectId: axentaId,
+          startDate: new Date(trackDateFrom).toISOString(),
+          endDate: new Date(trackDateTo).toISOString(),
+        })
+      })
+      if (tracksRes.ok) {
+        const tracksData = await tracksRes.json()
+        const points: Array<{ lat: number; lng: number }> = []
+        if (Array.isArray(tracksData)) {
+          for (const track of tracksData) {
+            if (track.points && Array.isArray(track.points)) {
+              for (const p of track.points) {
+                if (p.pos) {
+                  points.push({ lat: p.pos.y, lng: p.pos.x })
+                } else if (p.lat != null && p.lng != null) {
+                  points.push({ lat: p.lat, lng: p.lng })
+                }
+              }
+            }
+          }
+        }
+        setTrackPoints(points)
+      }
+
+      // Fetch stats
+      const statsRes = await fetch('/api/glonass/stats', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          objectId: axentaId,
+          startDate: new Date(trackDateFrom).toISOString(),
+          endDate: new Date(trackDateTo).toISOString(),
+        })
+      })
+      if (statsRes.ok) {
+        const statsData = await statsRes.json()
+        setTrackStats(statsData)
+      }
+
+      if (tracksRes.ok) {
+        toast.success(`Трек загружен${trackPoints.length > 0 ? ` (${trackPoints.length} точек)` : ''}`)
+      } else {
+        toast.error('Ошибка загрузки трека')
+      }
+    } catch {
+      toast.error('Ошибка загрузки трека')
+    }
+    setTrackLoading(false)
+  }
+
+  const clearTrack = () => {
+    setTrackPoints([])
+    setTrackStats(null)
+    setTrackEqId('')
+    setTrackDateFrom('')
+    setTrackDateTo('')
+  }
+
+  function formatDuration(seconds: number): string {
+    const h = Math.floor(seconds / 3600)
+    const m = Math.floor((seconds % 3600) / 60)
+    return h > 0 ? `${h} ч ${m} мин` : `${m} мин`
+  }
+
   const loadRules = useCallback(async () => {
     try {
       const res = await fetch('/api/notifications/rules')
@@ -2950,11 +3070,88 @@ function MapTab({ equipment, onSync }: {
               </Button>
             </div>
             <div className="flex-1" />
+            <Button size="sm" variant={showTrackPanel ? 'default' : 'outline'} className="h-7 text-[11px] gap-1" onClick={() => setShowTrackPanel(!showTrackPanel)}>
+              <Route className="size-3" />Трек
+              {trackPoints.length > 0 && <span className="ml-0.5 bg-primary/20 rounded-full px-1.5 text-[9px]">{trackPoints.length}</span>}
+            </Button>
             <Button size="sm" variant="outline" className="h-7 text-[11px] gap-1" disabled={syncing} onClick={async () => { setSyncing(true); await onSync(); setSyncing(false) }}>
               {syncing ? <Loader2 className="size-3 animate-spin" /> : <RefreshCw className="size-3" />}
               Синхронизировать
             </Button>
           </div>
+
+          {/* Track panel */}
+          {showTrackPanel && (
+            <Card className="border-dashed">
+              <CardContent className="p-3 space-y-3">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-xs font-semibold flex items-center gap-1.5">
+                    <Route className="size-3.5" />Просмотр трека за период
+                  </h3>
+                  {trackPoints.length > 0 && (
+                    <Button size="sm" variant="ghost" className="h-6 text-[10px] gap-1 text-muted-foreground" onClick={clearTrack}>
+                      <X className="size-3" />Очистить
+                    </Button>
+                  )}
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-4 gap-2">
+                  <div className="sm:col-span-1">
+                    <Label className="text-[10px]">Техника</Label>
+                    <Select value={trackEqId} onValueChange={setTrackEqId}>
+                      <SelectTrigger className="h-7 text-[11px]">
+                        <SelectValue placeholder="Выберите..." />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {trackedEquipment.map(eq => (
+                          <SelectItem key={eq.id} value={eq.id}>
+                            {eq.name} {eq.registrationNum ? `(${eq.registrationNum})` : ''}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div>
+                    <Label className="text-[10px]">С</Label>
+                    <Input type="datetime-local" className="h-7 text-[11px]" value={trackDateFrom} onChange={e => setTrackDateFrom(e.target.value)} />
+                  </div>
+                  <div>
+                    <Label className="text-[10px]">По</Label>
+                    <Input type="datetime-local" className="h-7 text-[11px]" value={trackDateTo} onChange={e => setTrackDateTo(e.target.value)} />
+                  </div>
+                  <div className="flex items-end">
+                    <Button size="sm" className="h-7 text-[11px] w-full gap-1" disabled={!trackEqId || !trackDateFrom || !trackDateTo || trackLoading} onClick={fetchTrack}>
+                      {trackLoading ? <Loader2 className="size-3 animate-spin" /> : <Search className="size-3" />}
+                      Загрузить
+                    </Button>
+                  </div>
+                </div>
+                <div className="flex flex-wrap gap-1">
+                  {['Сегодня', 'Вчера', 'Неделя', 'Месяц'].map(preset => (
+                    <Button key={preset} variant="outline" size="sm" className="h-6 text-[10px]" onClick={() => applyTrackDatePreset(preset)}>{preset}</Button>
+                  ))}
+                </div>
+                {/* Track stats */}
+                {trackStats && (
+                  <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-6 gap-2 pt-1 border-t border-dashed">
+                    {trackStats.mileage != null && <div className="text-center"><p className="text-[9px] text-muted-foreground">Пробег</p><p className="text-[11px] font-semibold">{Number(trackStats.mileage).toFixed(1)} км</p></div>}
+                    {trackStats.avgSpeed != null && <div className="text-center"><p className="text-[9px] text-muted-foreground">Ср. скорость</p><p className="text-[11px] font-semibold">{Number(trackStats.avgSpeed).toFixed(1)} км/ч</p></div>}
+                    {trackStats.maxSpeed != null && <div className="text-center"><p className="text-[9px] text-muted-foreground">Макс. скорость</p><p className="text-[11px] font-semibold">{Number(trackStats.maxSpeed).toFixed(1)} км/ч</p></div>}
+                    {trackStats.fuelConsumption != null && <div className="text-center"><p className="text-[9px] text-muted-foreground">Расход топлива</p><p className="text-[11px] font-semibold">{Number(trackStats.fuelConsumption).toFixed(1)} л</p></div>}
+                    {trackStats.tripsDuration != null && <div className="text-center"><p className="text-[9px] text-muted-foreground">Время поездок</p><p className="text-[11px] font-semibold">{formatDuration(Number(trackStats.tripsDuration))}</p></div>}
+                    {trackStats.parkingsDuration != null && <div className="text-center"><p className="text-[9px] text-muted-foreground">Стоянки</p><p className="text-[11px] font-semibold">{formatDuration(Number(trackStats.parkingsDuration))}</p></div>}
+                    {trackStats.refuelVolume != null && <div className="text-center"><p className="text-[9px] text-muted-foreground">Заправки</p><p className="text-[11px] font-semibold">{Number(trackStats.refuelVolume).toFixed(1)} л</p></div>}
+                    {trackStats.plumVolume != null && <div className="text-center"><p className="text-[9px] text-muted-foreground">Сливы</p><p className="text-[11px] font-semibold">{Number(trackStats.plumVolume).toFixed(1)} л</p></div>}
+                    {trackStats.engineHours != null && <div className="text-center"><p className="text-[9px] text-muted-foreground">Моточасы</p><p className="text-[11px] font-semibold">{Number(trackStats.engineHours).toFixed(1)} ч</p></div>}
+                  </div>
+                )}
+                {trackPoints.length > 0 && (
+                  <div className="text-[10px] text-muted-foreground flex items-center gap-1">
+                    <div className="w-4 h-0.5 bg-blue-500 rounded" /> Трек: {trackPoints.length} точек
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          )}
 
           {/* Map */}
           {filter === 'notracker' ? (
@@ -3003,7 +3200,7 @@ function MapTab({ equipment, onSync }: {
                       <p className="text-xs mt-1">Подключите ГЛОНАСС трекеры к технике для отображения на карте</p>
                     </div>
                   ) : (
-                    <TrackerMap trackers={filteredTrackers} />
+                    <TrackerMap trackers={filteredTrackers} trackPoints={trackPoints} />
                   )}
                 </div>
               </CardContent>
