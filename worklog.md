@@ -147,3 +147,38 @@ Stage Summary:
 - Auto-refresh token on 401/403 during sync
 - UI updated with clear instructions on how to get a token
 - App confirmed running and all endpoints working
+
+---
+Task ID: 7
+Agent: Main
+Task: Align Axenta.cloud integration with official API documentation
+
+Work Log:
+- Downloaded and parsed OpenAPI specification from https://axenta.cloud/api-docs/openapi.yaml (218KB, 170 endpoints, 84 schemas)
+- Identified critical mismatches between existing code and actual API:
+  - Wrong position field mapping (was: data.state.position.latitude, actual: lastMessage.pos.y/.x)
+  - Missing key endpoints: /api/objects/monitoring/, /api/objects/{id}/sensors/, /api/objects/stats/, /api/tracks/create/, /api/geocoding/reverse/
+  - Wrong auth verification endpoint
+  - No bulk monitoring data fetch
+  - No reverse geocoding for addresses
+- Completely rewrote /api/glonass/sync/route.ts:
+  - Uses GET /api/objects/monitoring/ for bulk data fetch (efficient)
+  - Correctly maps lastMessage.pos.x=lng, .y=lat, .z=alt, .s=speed, .c=course
+  - Fetches sensors via GET /api/objects/{id}/sensors/
+  - Fetches daily stats via POST /api/objects/stats/
+  - Reverse geocodes via POST /api/geocoding/reverse/
+  - Auto-refreshes expired tokens
+- Created new endpoints:
+  - GET /api/glonass/objects — proxy to Axenta monitoring, shows available objects
+  - POST /api/glonass/tracks — build tracks with trips/stops/parkings/refuels
+  - POST /api/glonass/stats — get object statistics (mileage, speed, fuel)
+- Added `lastAddress` field to GlonassTracker schema (reverse geocoding)
+- Updated auth route to use GET /api/current_user/ for token verification
+- Verified: API returns 80 real objects with live positions from Axenta.cloud
+- All endpoints tested and working (200 status)
+
+Stage Summary:
+- Full alignment with Axenta.cloud API v1 documentation
+- Position data correctly mapped: pos.x=longitude, pos.y=latitude (Axenta convention)
+- New features: object listing, track building, stats, reverse geocoding
+- Real data confirmed: 80 vehicles tracked with live GPS positions

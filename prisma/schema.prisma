@@ -177,9 +177,10 @@ model GlonassTracker {
   lastFuelLevel  Float?   // Уровень топлива (%)
   lastMileage    Float?   // Пробег по трекеру (км)
   lastEngineTemp Float?   // Температура двигателя
+  lastAddress    String?  // Последний адрес (обратное геокодирование)
   lastSeenAt     DateTime? // Последний выход на связь
   lastPositionAt DateTime? // Время последней позиции
-  axentaCloudId  String?  // ID объекта в Axenta.cloud
+  axentaCloudId  String?  // ID объекта в Axenta.cloud (integer)
   isActive       Boolean  @default(true)
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt

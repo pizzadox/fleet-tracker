@@ -126,7 +126,7 @@ interface GlonassTracker {
   lastSpeed?: number | null; lastCourse?: number | null; lastAltitude?: number | null;
   lastIgnition?: boolean | null; lastFuelLevel?: number | null;
   lastMileage?: number | null; lastEngineTemp?: number | null;
-  lastSeenAt?: string | null; lastPositionAt?: string | null;
+  lastAddress?: string | null; lastSeenAt?: string | null; lastPositionAt?: string | null;
   axentaCloudId?: string | null; isActive: boolean;
   createdAt: string; updatedAt: string;
   equipment?: { id: string; name: string; registrationNum?: string | null };
@@ -639,7 +639,7 @@ export default function Home() {
               </ol>
               <p className="text-[10px] text-muted-foreground">API: <code className="text-[10px] bg-muted px-1 py-0.5 rounded">POST /api/auth/login/</code> → <code className="text-[10px] bg-muted px-1 py-0.5 rounded">Authorization: Token &lt;ваш_токен&gt;</code></p>
             </div>
-            <div><Label className="text-xs">API URL *</Label><Input placeholder="https://monitoring.axenta.cloud" value={axentaSettings.apiUrl} onChange={e => setAxentaSettings(s => ({ ...s, apiUrl: e.target.value }))} /></div>
+            <div><Label className="text-xs">API URL *</Label><Input placeholder="https://axenta.cloud" value={axentaSettings.apiUrl} onChange={e => setAxentaSettings(s => ({ ...s, apiUrl: e.target.value }))} /><p className="text-[10px] text-muted-foreground mt-0.5">Базовый адрес: https://axenta.cloud</p></div>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div><Label className="text-xs">Логин *</Label><Input placeholder="Логин Axenta" value={axentaSettings.username || ''} onChange={e => setAxentaSettings(s => ({ ...s, username: e.target.value }))} /></div>
               <div><Label className="text-xs">Пароль *</Label><Input type="password" placeholder="Пароль Axenta" value={axentaSettings.password || ''} onChange={e => setAxentaSettings(s => ({ ...s, password: e.target.value }))} /></div>
