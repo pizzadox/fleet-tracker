@@ -3529,7 +3529,7 @@ function MapTab({ equipment, onSync, onOpenDetail }: {
               </Card>
             </div>
           ) : (
-            <Card className="top-0 z-10">
+            <Card>
               <CardContent className="p-0">
                 <div className="h-[calc(100vh-220px)] min-h-[400px] rounded-lg overflow-hidden">
                   {trackersForMap.length === 0 ? (
