@@ -47,7 +47,7 @@ import {
   CheckCircle2, Clock, XCircle, AlertTriangle, Activity, Gauge,
   Navigation, Fuel, Thermometer, Zap, Cog, RefreshCw, Wifi, WifiOff,
   Satellite, ArrowLeft, ChevronDown, ChevronUp, Filter, ListFilter,
-  Route, Package, Weight, UserCircle, IdCard, ClipboardCheck, Map
+  Route, Package, Weight, UserCircle, IdCard, ClipboardCheck, Map, Bell
 } from 'lucide-react'
 
 // ═══════════════════════════════════════════════════════════════
@@ -343,6 +343,18 @@ export default function Home() {
   const [crewFormOpen, setCrewFormOpen] = useState(false)
   const [crewFormEdit, setCrewFormEdit] = useState<Crew | null>(null)
   const [crewFormSaving, setCrewFormSaving] = useState(false)
+  const [notificationRules, setNotificationRules] = useState<Array<{
+    id: string; equipmentId: string; conditionType: string; thresholdValue: number | null;
+    isActive: boolean; lastTriggeredAt?: string | null; description?: string | null;
+    equipment?: { id: string; name: string; registrationNum?: string | null };
+  }>>([])
+  const [activeAlerts, setActiveAlerts] = useState<Array<{
+    ruleId: string; equipmentId: string; equipmentName: string; registrationNum: string | null;
+    conditionType: string; message: string; severity: 'warning' | 'critical'; triggeredAt: string;
+  }>>([])
+  const [showAlerts, setShowAlerts] = useState(false)
+  const [lastSyncTime, setLastSyncTime] = useState<Date | null>(null)
+  const [autoRefreshEnabled, setAutoRefreshEnabled] = useState(true)
 
   // ═══════════════════════════════════════════════════════════════
   // DATA FETCHING
@@ -414,6 +426,57 @@ export default function Home() {
     }
     loadSettings()
   }, [])
+
+  // Fetch notification rules
+  const fetchNotificationRules = useCallback(async () => {
+    try {
+      const res = await fetch('/api/notifications/rules')
+      if (res.ok) { const data = await res.json(); setNotificationRules(data) }
+    } catch { /* ignore */ }
+  }, [])
+
+  useEffect(() => { fetchNotificationRules() }, [fetchNotificationRules])
+
+  // Check notification rules and trigger alerts
+  const checkNotifications = useCallback(async () => {
+    try {
+      const res = await fetch('/api/notifications/check', { method: 'POST' })
+      if (res.ok) {
+        const data = await res.json()
+        if (data.alerts && data.alerts.length > 0) {
+          setActiveAlerts(data.alerts)
+          setShowAlerts(true)
+          // Show toast for each alert
+          for (const alert of data.alerts) {
+            if (alert.severity === 'critical') {
+              toast.error(`⚠️ ${alert.message}`, { duration: 8000 })
+            } else {
+              toast.warning(`🔔 ${alert.message}`, { duration: 6000 })
+            }
+          }
+        }
+      }
+    } catch { /* ignore */ }
+  }, [])
+
+  // Auto-refresh: sync + check notifications every 60 seconds
+  useEffect(() => {
+    if (!autoRefreshEnabled) return
+    const interval = setInterval(async () => {
+      try {
+        // Sync GLONASS data
+        const syncRes = await fetch('/api/glonass/sync', { method: 'POST' })
+        if (syncRes.ok) {
+          setLastSyncTime(new Date())
+        }
+        // Refresh equipment data
+        await fetchEquipment()
+        // Check notification rules
+        await checkNotifications()
+      } catch { /* ignore auto-refresh errors */ }
+    }, 60000) // every 60 seconds
+    return () => clearInterval(interval)
+  }, [autoRefreshEnabled, fetchEquipment, checkNotifications])
 
   const fetchEquipmentDetail = async (id: string) => {
     setEqDetailLoading(true)
@@ -536,6 +599,50 @@ export default function Home() {
               </div>
             </div>
             <div className="flex items-center gap-1">
+              {/* Auto-refresh toggle */}
+              <Button variant="ghost" size="icon" className={`size-8 ${autoRefreshEnabled ? 'text-emerald-600' : 'text-muted-foreground'}`} onClick={() => setAutoRefreshEnabled(!autoRefreshEnabled)} aria-label="Автообновление" title={autoRefreshEnabled ? 'Автообновление вкл (каждые 60 сек)' : 'Автообновление выкл'}>
+                <RefreshCw className={`size-4 ${autoRefreshEnabled ? '' : 'opacity-50'}`} />
+              </Button>
+              {/* Notification bell */}
+              <div className="relative">
+                <Button variant="ghost" size="icon" className="size-8" onClick={() => setShowAlerts(!showAlerts)} aria-label="Уведомления">
+                  <Bell className="size-4" />
+                  {activeAlerts.length > 0 && (
+                    <span className="absolute -top-0.5 -right-0.5 size-4 rounded-full bg-red-500 text-white text-[9px] font-bold flex items-center justify-center animate-pulse">{activeAlerts.length}</span>
+                  )}
+                </Button>
+                {/* Alerts dropdown */}
+                {showAlerts && (
+                  <div className="absolute right-0 top-full mt-1 w-80 max-h-72 overflow-y-auto bg-card border rounded-lg shadow-lg z-50">
+                    <div className="p-2 border-b flex items-center justify-between">
+                      <span className="text-xs font-semibold">Уведомления ({activeAlerts.length})</span>
+                      {activeAlerts.length > 0 && (
+                        <Button variant="ghost" size="sm" className="h-6 text-[10px]" onClick={() => { setActiveAlerts([]); setShowAlerts(false) }}>Очистить</Button>
+                      )}
+                    </div>
+                    {activeAlerts.length === 0 ? (
+                      <div className="p-4 text-center text-xs text-muted-foreground">Нет активных уведомлений</div>
+                    ) : (
+                      activeAlerts.map((alert, i) => (
+                        <div key={i} className={`p-2.5 border-b last:border-0 ${alert.severity === 'critical' ? 'bg-red-50 dark:bg-red-950/30' : 'bg-amber-50 dark:bg-amber-950/30'}`}>
+                          <div className="flex items-start gap-2">
+                            {alert.severity === 'critical' ? <AlertTriangle className="size-4 text-red-500 mt-0.5 shrink-0" /> : <Bell className="size-4 text-amber-500 mt-0.5 shrink-0" />}
+                            <div className="flex-1 min-w-0">
+                              <p className="text-xs font-medium">{alert.message}</p>
+                              <p className="text-[10px] text-muted-foreground mt-0.5">{formatDateTime(alert.triggeredAt)}</p>
+                            </div>
+                          </div>
+                        </div>
+                      ))
+                    )}
+                    {notificationRules.length > 0 && (
+                      <div className="p-2 border-t">
+                        <p className="text-[10px] text-muted-foreground">Активных правил: {notificationRules.filter(r => r.isActive).length} из {notificationRules.length}</p>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
               <Button variant="ghost" size="icon" className="size-8" onClick={() => setSettingsOpen(true)} aria-label="Настройки"><Cog className="size-4" /></Button>
               {mounted && (
                 <Button variant="ghost" size="icon" className="size-8" onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')} aria-label="Тема">
@@ -2702,8 +2809,86 @@ function MapTab({ equipment, onSync }: {
 }) {
   const [syncing, setSyncing] = useState(false)
   const [filter, setFilter] = useState<'all' | 'online' | 'offline' | 'notracker'>('all')
+  const [subTab, setSubTab] = useState<'map' | 'notifications'>('map')
+  const [notifRules, setNotifRules] = useState<Array<{
+    id: string; equipmentId: string; conditionType: string; thresholdValue: number | null;
+    isActive: boolean; lastTriggeredAt?: string | null; description?: string | null;
+    equipment?: { id: string; name: string; registrationNum?: string | null };
+  }>>([])
+  const [addRuleOpen, setAddRuleOpen] = useState(false)
+  const [newRuleEqId, setNewRuleEqId] = useState('')
+  const [newRuleType, setNewRuleType] = useState('offline')
+  const [newRuleThreshold, setNewRuleThreshold] = useState('')
+  const [newRuleDesc, setNewRuleDesc] = useState('')
+  const [savingRule, setSavingRule] = useState(false)
 
-  // Prepare tracker data for map
+  const loadRules = useCallback(async () => {
+    try {
+      const res = await fetch('/api/notifications/rules')
+      if (res.ok) setNotifRules(await res.json())
+    } catch { /* ignore */ }
+  }, [])
+
+  useEffect(() => { loadRules() }, [loadRules])
+
+  const addRule = async () => {
+    if (!newRuleEqId || !newRuleType) return
+    setSavingRule(true)
+    try {
+      const res = await fetch('/api/notifications/rules', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          equipmentId: newRuleEqId,
+          conditionType: newRuleType,
+          thresholdValue: newRuleThreshold ? parseFloat(newRuleThreshold) : null,
+          description: newRuleDesc || null,
+          isActive: true,
+        }),
+      })
+      if (res.ok) {
+        toast.success('Правило добавлено')
+        setAddRuleOpen(false)
+        setNewRuleEqId('')
+        setNewRuleType('offline')
+        setNewRuleThreshold('')
+        setNewRuleDesc('')
+        loadRules()
+      } else {
+        toast.error('Ошибка добавления правила')
+      }
+    } catch { toast.error('Ошибка') }
+    setSavingRule(false)
+  }
+
+  const toggleRule = async (ruleId: string, isActive: boolean) => {
+    try {
+      const res = await fetch(`/api/notifications/rules/${ruleId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ isActive: !isActive }),
+      })
+      if (res.ok) loadRules()
+    } catch { /* ignore */ }
+  }
+
+  const deleteRule = async (ruleId: string) => {
+    try {
+      const res = await fetch(`/api/notifications/rules/${ruleId}`, { method: 'DELETE' })
+      if (res.ok) { loadRules(); toast.success('Правило удалено') }
+    } catch { toast.error('Ошибка удаления') }
+  }
+
+  const CONDITION_LABELS: Record<string, string> = {
+    offline: 'Не в сети',
+    not_synced: 'Нет синхронизации (ч)',
+    not_moving: 'Не движется (ч)',
+    speed_exceeded: 'Превышение скорости (км/ч)',
+    fuel_low: 'Низкое топливо (%)',
+    zone_exit: 'Выход из зоны',
+  }
+
+  // Prepare tracker data for map — include sensor data
   const trackersForMap = useMemo(() => {
     return equipment.flatMap(eq =>
       (eq.trackers || [])
@@ -2714,6 +2899,7 @@ function MapTab({ equipment, onSync }: {
           registrationNum: eq.registrationNum,
           equipmentType: eq.type,
           equipmentStatus: eq.status,
+          sensorData: t.sensorData || [],
         }))
     )
   }, [equipment])
@@ -2732,116 +2918,301 @@ function MapTab({ equipment, onSync }: {
 
   return (
     <div className="space-y-4">
-      {/* Toolbar */}
-      <div className="flex flex-wrap items-center gap-2">
-        <div className="flex items-center gap-1.5 flex-wrap">
-          <Button size="sm" variant={filter === 'all' ? 'default' : 'outline'} className="h-7 text-[11px] gap-1" onClick={() => setFilter('all')}>
-            <MapPin className="size-3" />Все ({trackersForMap.length})
-          </Button>
-          <Button size="sm" variant={filter === 'online' ? 'default' : 'outline'} className="h-7 text-[11px] gap-1" onClick={() => setFilter('online')}>
-            <Wifi className="size-3" />Онлайн ({onlineCount})
-          </Button>
-          <Button size="sm" variant={filter === 'offline' ? 'default' : 'outline'} className="h-7 text-[11px] gap-1" onClick={() => setFilter('offline')}>
-            <WifiOff className="size-3" />Оффлайн ({offlineCount})
-          </Button>
-          <Button size="sm" variant={filter === 'notracker' ? 'default' : 'outline'} className="h-7 text-[11px] gap-1" onClick={() => setFilter('notracker')}>
-            <Satellite className="size-3" />Без трекера ({noTrackerCount})
-          </Button>
-        </div>
-        <div className="flex-1" />
-        <Button size="sm" variant="outline" className="h-7 text-[11px] gap-1" disabled={syncing} onClick={async () => { setSyncing(true); await onSync(); setSyncing(false) }}>
-          {syncing ? <Loader2 className="size-3 animate-spin" /> : <RefreshCw className="size-3" />}
-          Синхронизировать
+      {/* Sub-tabs: Map / Notifications */}
+      <div className="flex items-center gap-2 flex-wrap">
+        <Button size="sm" variant={subTab === 'map' ? 'default' : 'outline'} className="h-7 text-[11px] gap-1" onClick={() => setSubTab('map')}>
+          <Map className="size-3" />Карта
+        </Button>
+        <Button size="sm" variant={subTab === 'notifications' ? 'default' : 'outline'} className="h-7 text-[11px] gap-1" onClick={() => setSubTab('notifications')}>
+          <Bell className="size-3" />Уведомления
+          {notifRules.filter(r => r.isActive).length > 0 && (
+            <span className="ml-1 bg-primary/20 rounded-full px-1.5 text-[9px]">{notifRules.filter(r => r.isActive).length}</span>
+          )}
         </Button>
       </div>
 
-      {/* Map */}
-      {filter === 'notracker' ? (
-        <div className="space-y-2">
+      {subTab === 'map' ? (
+        <>
+          {/* Toolbar */}
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="flex items-center gap-1.5 flex-wrap">
+              <Button size="sm" variant={filter === 'all' ? 'default' : 'outline'} className="h-7 text-[11px] gap-1" onClick={() => setFilter('all')}>
+                <MapPin className="size-3" />Все ({trackersForMap.length})
+              </Button>
+              <Button size="sm" variant={filter === 'online' ? 'default' : 'outline'} className="h-7 text-[11px] gap-1" onClick={() => setFilter('online')}>
+                <Wifi className="size-3" />Онлайн ({onlineCount})
+              </Button>
+              <Button size="sm" variant={filter === 'offline' ? 'default' : 'outline'} className="h-7 text-[11px] gap-1" onClick={() => setFilter('offline')}>
+                <WifiOff className="size-3" />Оффлайн ({offlineCount})
+              </Button>
+              <Button size="sm" variant={filter === 'notracker' ? 'default' : 'outline'} className="h-7 text-[11px] gap-1" onClick={() => setFilter('notracker')}>
+                <Satellite className="size-3" />Без трекера ({noTrackerCount})
+              </Button>
+            </div>
+            <div className="flex-1" />
+            <Button size="sm" variant="outline" className="h-7 text-[11px] gap-1" disabled={syncing} onClick={async () => { setSyncing(true); await onSync(); setSyncing(false) }}>
+              {syncing ? <Loader2 className="size-3 animate-spin" /> : <RefreshCw className="size-3" />}
+              Синхронизировать
+            </Button>
+          </div>
+
+          {/* Map */}
+          {filter === 'notracker' ? (
+            <div className="space-y-2">
+              <Card>
+                <CardHeader className="pb-2 pt-3 px-4">
+                  <CardTitle className="text-sm font-semibold flex items-center gap-2">
+                    <Satellite className="size-4 text-muted-foreground" />
+                    Техника без ГЛОНАСС трекера
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="px-4 pb-3">
+                  {equipment.filter(e => !e.trackers || e.trackers.length === 0).length === 0 ? (
+                    <p className="text-sm text-muted-foreground text-center py-6">Вся техника подключена к трекерам</p>
+                  ) : (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+                      {equipment.filter(e => !e.trackers || e.trackers.length === 0).map(eq => (
+                        <Card key={eq.id} className="border-l-4 border-l-amber-400">
+                          <CardContent className="p-3">
+                            <div className="flex items-center gap-2">
+                              <div className="size-8 rounded-md bg-amber-100 dark:bg-amber-900/40 flex items-center justify-center">
+                                <Truck className="size-4 text-amber-600 dark:text-amber-400" />
+                              </div>
+                              <div className="flex-1 min-w-0">
+                                <p className="text-xs font-medium truncate">{eq.name}</p>
+                                <p className="text-[10px] text-muted-foreground">{eq.type} • {eq.registrationNum || '—'}</p>
+                              </div>
+                              {statusBadge(eq.status, EQUIPMENT_STATUS_MAP)}
+                            </div>
+                          </CardContent>
+                        </Card>
+                      ))}
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            </div>
+          ) : (
+            <Card>
+              <CardContent className="p-0">
+                <div className="h-[calc(100vh-320px)] min-h-[400px] rounded-lg overflow-hidden">
+                  {trackersForMap.length === 0 ? (
+                    <div className="flex flex-col items-center justify-center h-full text-muted-foreground">
+                      <Satellite className="size-12 mb-3 opacity-30" />
+                      <p className="text-sm font-medium">Нет техники с трекерами</p>
+                      <p className="text-xs mt-1">Подключите ГЛОНАСС трекеры к технике для отображения на карте</p>
+                    </div>
+                  ) : (
+                    <TrackerMap trackers={filteredTrackers} />
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Equipment list below map */}
+          {filter !== 'notracker' && filteredTrackers.length > 0 && (
+            <div className="space-y-2">
+              <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Техника на карте ({filteredTrackers.length})</h3>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+                {filteredTrackers.map(t => (
+                  <Card key={t.id} className={`border-l-4 ${t.isActive ? 'border-l-emerald-500' : 'border-l-red-400'}`}>
+                    <CardContent className="p-3">
+                      <div className="flex items-center gap-2 mb-2">
+                        <div className={`size-8 rounded-md flex items-center justify-center ${t.isActive ? 'bg-emerald-100 dark:bg-emerald-900/40' : 'bg-red-100 dark:bg-red-900/40'}`}>
+                          {t.isActive ? <Wifi className="size-4 text-emerald-600 dark:text-emerald-400" /> : <WifiOff className="size-4 text-red-600 dark:text-red-400" />}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-xs font-medium truncate">{t.equipmentName}</p>
+                          <p className="text-[10px] text-muted-foreground">{t.registrationNum || '—'} • {t.equipmentType}</p>
+                        </div>
+                      </div>
+                      <div className="grid grid-cols-2 gap-x-3 gap-y-1 text-[10px]">
+                        {t.lastSpeed != null && <div className="flex items-center gap-1"><Gauge className="size-3 text-muted-foreground" /><span className="font-medium">{t.lastSpeed} км/ч</span></div>}
+                        {t.lastIgnition != null && <div className="flex items-center gap-1"><Zap className="size-3 text-muted-foreground" /><span className={t.lastIgnition ? 'text-emerald-600 dark:text-emerald-400 font-medium' : 'text-muted-foreground'}>{t.lastIgnition ? 'Зажигание' : 'Выключено'}</span></div>}
+                        {t.lastFuelLevel != null && <div className="flex items-center gap-1"><Fuel className="size-3 text-muted-foreground" /><span className="font-medium">{t.lastFuelLevel}%</span></div>}
+                        {t.lastMileage != null && <div className="flex items-center gap-1"><Navigation className="size-3 text-muted-foreground" /><span className="font-medium">{t.lastMileage} км</span></div>}
+                        {t.lastAddress && <div className="col-span-2 flex items-start gap-1"><MapPin className="size-3 text-muted-foreground mt-0.5 shrink-0" /><span className="truncate">{t.lastAddress}</span></div>}
+                        {t.lastSeenAt && <div className="flex items-center gap-1"><Clock className="size-3 text-muted-foreground" /><span className="text-muted-foreground">{formatDateTime(t.lastSeenAt)}</span></div>}
+                      </div>
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+            </div>
+          )}
+        </>
+      ) : (
+        /* ─── NOTIFICATION RULES TAB ──────────────────────────────── */
+        <div className="space-y-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <h3 className="text-sm font-semibold flex items-center gap-2"><Bell className="size-4" />Правила уведомлений</h3>
+              <p className="text-[11px] text-muted-foreground mt-0.5">Настройте условия для получения важных уведомлений о технике</p>
+            </div>
+            <Button size="sm" className="h-7 text-[11px] gap-1" onClick={() => setAddRuleOpen(true)}>
+              <Plus className="size-3" />Добавить правило
+            </Button>
+          </div>
+
+          {notifRules.length === 0 ? (
+            <Card>
+              <CardContent className="py-8 text-center">
+                <Bell className="size-10 text-muted-foreground/30 mx-auto mb-3" />
+                <p className="text-sm font-medium text-muted-foreground">Нет правил уведомлений</p>
+                <p className="text-xs text-muted-foreground mt-1">Создайте правила для отслеживания состояния техники</p>
+                <Button size="sm" className="mt-3 h-7 text-[11px] gap-1" onClick={() => setAddRuleOpen(true)}>
+                  <Plus className="size-3" />Создать первое правило
+                </Button>
+              </CardContent>
+            </Card>
+          ) : (
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+              {notifRules.map(rule => (
+                <Card key={rule.id} className={`border-l-4 ${rule.isActive ? 'border-l-sky-500' : 'border-l-gray-300'}`}>
+                  <CardContent className="p-3">
+                    <div className="flex items-start justify-between mb-2">
+                      <div className="flex-1 min-w-0">
+                        <p className="text-xs font-semibold">{rule.equipment?.name || '—'}</p>
+                        <p className="text-[10px] text-muted-foreground">{rule.equipment?.registrationNum || '—'}</p>
+                      </div>
+                      <div className="flex items-center gap-1">
+                        <button onClick={() => toggleRule(rule.id, rule.isActive)} className={`p-1 rounded transition-colors ${rule.isActive ? 'text-emerald-500 hover:text-emerald-600' : 'text-muted-foreground hover:text-foreground'}`}>
+                          {rule.isActive ? <CheckCircle2 className="size-3.5" /> : <XCircle className="size-3.5" />}
+                        </button>
+                        <button onClick={() => deleteRule(rule.id)} className="p-1 rounded text-muted-foreground hover:text-red-500 transition-colors">
+                          <Trash2 className="size-3.5" />
+                        </button>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-1.5 mb-1">
+                      <AlertTriangle className={`size-3 ${rule.isActive ? 'text-amber-500' : 'text-muted-foreground'}`} />
+                      <span className="text-[11px] font-medium">{CONDITION_LABELS[rule.conditionType] || rule.conditionType}</span>
+                      {rule.thresholdValue != null && (
+                        <span className="text-[11px] text-muted-foreground">: {rule.thresholdValue}</span>
+                      )}
+                    </div>
+                    {rule.description && <p className="text-[10px] text-muted-foreground">{rule.description}</p>}
+                    {rule.lastTriggeredAt && (
+                      <p className="text-[9px] text-muted-foreground mt-1">Сработало: {formatDateTime(rule.lastTriggeredAt)}</p>
+                    )}
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          )}
+
+          {/* Quick add presets */}
           <Card>
             <CardHeader className="pb-2 pt-3 px-4">
-              <CardTitle className="text-sm font-semibold flex items-center gap-2">
-                <Satellite className="size-4 text-muted-foreground" />
-                Техника без ГЛОНАСС трекера
-              </CardTitle>
+              <CardTitle className="text-xs font-semibold">Быстрые шаблоны</CardTitle>
             </CardHeader>
             <CardContent className="px-4 pb-3">
-              {equipment.filter(e => !e.trackers || e.trackers.length === 0).length === 0 ? (
-                <p className="text-sm text-muted-foreground text-center py-6">Вся техника подключена к трекерам</p>
-              ) : (
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
-                  {equipment.filter(e => !e.trackers || e.trackers.length === 0).map(eq => (
-                    <Card key={eq.id} className="border-l-4 border-l-amber-400">
-                      <CardContent className="p-3">
-                        <div className="flex items-center gap-2">
-                          <div className="size-8 rounded-md bg-amber-100 dark:bg-amber-900/40 flex items-center justify-center">
-                            <Truck className="size-4 text-amber-600 dark:text-amber-400" />
-                          </div>
-                          <div className="flex-1 min-w-0">
-                            <p className="text-xs font-medium truncate">{eq.name}</p>
-                            <p className="text-[10px] text-muted-foreground">{eq.type} • {eq.registrationNum || '—'}</p>
-                          </div>
-                          {statusBadge(eq.status, EQUIPMENT_STATUS_MAP)}
-                        </div>
-                      </CardContent>
-                    </Card>
-                  ))}
-                </div>
-              )}
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+                {[
+                  { type: 'offline', label: 'Не в сети', desc: 'Уведомление если трекер оффлайн', threshold: null },
+                  { type: 'not_synced', label: 'Нет данных 1 час', desc: 'Нет синхронизации более 1 часа', threshold: 1 },
+                  { type: 'not_synced', label: 'Нет данных 3 часа', desc: 'Нет синхронизации более 3 часов', threshold: 3 },
+                  { type: 'not_moving', label: 'Не движется 2 часа', desc: 'Скорость 0 более 2 часов', threshold: 2 },
+                  { type: 'speed_exceeded', label: 'Скорость > 90 км/ч', desc: 'Превышение лимита скорости', threshold: 90 },
+                  { type: 'fuel_low', label: 'Топливо < 15%', desc: 'Низкий уровень топлива', threshold: 15 },
+                ].map((preset, i) => (
+                  <button key={i} onClick={async () => {
+                    // Add rule for all equipment with trackers
+                    const eqsWithTrackers = equipment.filter(e => e.trackers && e.trackers.length > 0)
+                    if (eqsWithTrackers.length === 0) {
+                      toast.error('Нет техники с трекерами')
+                      return
+                    }
+                    setSavingRule(true)
+                    let created = 0
+                    for (const eq of eqsWithTrackers) {
+                      try {
+                        const res = await fetch('/api/notifications/rules', {
+                          method: 'POST',
+                          headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify({
+                            equipmentId: eq.id,
+                            conditionType: preset.type,
+                            thresholdValue: preset.threshold,
+                            description: preset.desc,
+                            isActive: true,
+                          }),
+                        })
+                        if (res.ok) created++
+                      } catch { /* ignore */ }
+                    }
+                    toast.success(`Добавлено ${created} правил`)
+                    setSavingRule(false)
+                    loadRules()
+                  }} className="flex items-center gap-2 p-2 rounded-md border text-left hover:bg-muted/50 transition-colors" disabled={savingRule}>
+                    <AlertTriangle className="size-3.5 text-amber-500 shrink-0" />
+                    <div>
+                      <p className="text-[11px] font-medium">{preset.label}</p>
+                      <p className="text-[9px] text-muted-foreground">{preset.desc} • для всей техники</p>
+                    </div>
+                  </button>
+                ))}
+              </div>
             </CardContent>
           </Card>
         </div>
-      ) : (
-        <Card>
-          <CardContent className="p-0">
-            <div className="h-[calc(100vh-280px)] min-h-[400px] rounded-lg overflow-hidden">
-              {trackersForMap.length === 0 ? (
-                <div className="flex flex-col items-center justify-center h-full text-muted-foreground">
-                  <Satellite className="size-12 mb-3 opacity-30" />
-                  <p className="text-sm font-medium">Нет техники с трекерами</p>
-                  <p className="text-xs mt-1">Подключите ГЛОНАСС трекеры к технике для отображения на карте</p>
-                </div>
-              ) : (
-                <TrackerMap trackers={filteredTrackers} />
-              )}
-            </div>
-          </CardContent>
-        </Card>
       )}
 
-      {/* Equipment list below map */}
-      {filter !== 'notracker' && filteredTrackers.length > 0 && (
-        <div className="space-y-2">
-          <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Техника на карте ({filteredTrackers.length})</h3>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
-            {filteredTrackers.map(t => (
-              <Card key={t.id} className={`border-l-4 ${t.isActive ? 'border-l-emerald-500' : 'border-l-red-400'}`}>
-                <CardContent className="p-3">
-                  <div className="flex items-center gap-2 mb-2">
-                    <div className={`size-8 rounded-md flex items-center justify-center ${t.isActive ? 'bg-emerald-100 dark:bg-emerald-900/40' : 'bg-red-100 dark:bg-red-900/40'}`}>
-                      {t.isActive ? <Wifi className="size-4 text-emerald-600 dark:text-emerald-400" /> : <WifiOff className="size-4 text-red-600 dark:text-red-400" />}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-xs font-medium truncate">{t.equipmentName}</p>
-                      <p className="text-[10px] text-muted-foreground">{t.registrationNum || '—'} • {t.equipmentType}</p>
-                    </div>
-                  </div>
-                  <div className="grid grid-cols-2 gap-x-3 gap-y-1 text-[10px]">
-                    <div className="flex items-center gap-1"><MapPin className="size-3 text-muted-foreground" /><span className="text-muted-foreground">Шир:</span> <span className="font-medium">{t.lastLatitude?.toFixed(4)}</span></div>
-                    <div className="flex items-center gap-1"><MapPin className="size-3 text-muted-foreground" /><span className="text-muted-foreground">Дол:</span> <span className="font-medium">{t.lastLongitude?.toFixed(4)}</span></div>
-                    {t.lastSpeed != null && <div className="flex items-center gap-1"><Gauge className="size-3 text-muted-foreground" /><span className="font-medium">{t.lastSpeed} км/ч</span></div>}
-                    {t.lastCourse != null && <div className="flex items-center gap-1"><Navigation className="size-3 text-muted-foreground" /><span className="font-medium">{t.lastCourse}°</span></div>}
-                    {t.lastIgnition != null && <div className="flex items-center gap-1"><Zap className="size-3 text-muted-foreground" /><span className={t.lastIgnition ? 'text-emerald-600 dark:text-emerald-400 font-medium' : 'text-muted-foreground'}>{t.lastIgnition ? 'Зажигание' : 'Выключено'}</span></div>}
-                    {t.lastFuelLevel != null && <div className="flex items-center gap-1"><Fuel className="size-3 text-muted-foreground" /><span className="font-medium">{t.lastFuelLevel}%</span></div>}
-                    {t.lastAddress && <div className="col-span-2 flex items-start gap-1"><MapPin className="size-3 text-muted-foreground mt-0.5 shrink-0" /><span className="truncate">{t.lastAddress}</span></div>}
-                    {t.lastSeenAt && <div className="flex items-center gap-1"><Clock className="size-3 text-muted-foreground" /><span className="text-muted-foreground">{formatDateTime(t.lastSeenAt)}</span></div>}
-                  </div>
-                </CardContent>
-              </Card>
-            ))}
+      {/* Add rule dialog */}
+      <Dialog open={addRuleOpen} onOpenChange={setAddRuleOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2"><Bell className="size-4" />Новое правило уведомления</DialogTitle>
+            <DialogDescription>Настройте условие, при котором вы получите важное уведомление</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div>
+              <Label className="text-xs">Техника</Label>
+              <Select value={newRuleEqId} onValueChange={setNewRuleEqId}>
+                <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="Выберите технику" /></SelectTrigger>
+                <SelectContent>
+                  {equipment.map(eq => (
+                    <SelectItem key={eq.id} value={eq.id}>{eq.name} ({eq.registrationNum || '—'})</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label className="text-xs">Условие</Label>
+              <Select value={newRuleType} onValueChange={setNewRuleType}>
+                <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="offline">Не в сети</SelectItem>
+                  <SelectItem value="not_synced">Нет синхронизации</SelectItem>
+                  <SelectItem value="not_moving">Не движется</SelectItem>
+                  <SelectItem value="speed_exceeded">Превышение скорости</SelectItem>
+                  <SelectItem value="fuel_low">Низкое топливо</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            {(newRuleType === 'not_synced' || newRuleType === 'not_moving' || newRuleType === 'speed_exceeded' || newRuleType === 'fuel_low') && (
+              <div>
+                <Label className="text-xs">
+                  {newRuleType === 'not_synced' || newRuleType === 'not_moving' ? 'Порог (часы)' : newRuleType === 'speed_exceeded' ? 'Порог (км/ч)' : 'Порог (%)'}
+                </Label>
+                <Input type="number" value={newRuleThreshold} onChange={e => setNewRuleThreshold(e.target.value)} className="h-8 text-xs" placeholder={newRuleType === 'speed_exceeded' ? '90' : newRuleType === 'fuel_low' ? '15' : '1'} />
+              </div>
+            )}
+            <div>
+              <Label className="text-xs">Описание (необязательно)</Label>
+              <Input value={newRuleDesc} onChange={e => setNewRuleDesc(e.target.value)} className="h-8 text-xs" placeholder="Описание правила" />
+            </div>
           </div>
-        </div>
-      )}
+          <DialogFooter>
+            <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => setAddRuleOpen(false)}>Отмена</Button>
+            <Button size="sm" className="h-7 text-xs" onClick={addRule} disabled={savingRule || !newRuleEqId}>
+              {savingRule ? <Loader2 className="size-3 animate-spin" /> : <Plus className="size-3" />}
+              Добавить
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

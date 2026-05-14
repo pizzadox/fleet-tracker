@@ -70,6 +70,7 @@ model Equipment {
   documents       EquipmentDocument[]
   trackers        GlonassTracker[]
   trips           Trip[]
+  notificationRules NotificationRule[]
 }
 
 model EquipmentPhoto {
@@ -271,4 +272,18 @@ model AxentaSettings {
   isActive     Boolean  @default(true)
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
+}
+
+model NotificationRule {
+  id              String    @id @default(cuid())
+  equipmentId     String    // Привязка к технике
+  conditionType   String    // Тип условия: offline, not_synced, not_moving, speed_exceeded, fuel_low, zone_exit
+  thresholdValue  Float?    // Пороговое значение (часы для not_synced/not_moving, км/ч для speed_exceeded, % для fuel_low)
+  isActive        Boolean   @default(true)
+  lastTriggeredAt DateTime? // Последнее срабатывание
+  description     String?   // Описание правила
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  equipment       Equipment @relation(fields: [equipmentId], references: [id], onDelete: Cascade)
 }
