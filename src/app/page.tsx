@@ -47,7 +47,7 @@ import {
   CheckCircle2, Clock, XCircle, AlertTriangle, Activity, Gauge,
   Navigation, Fuel, Thermometer, Zap, Cog, RefreshCw, Wifi, WifiOff,
   Satellite, ArrowLeft, ChevronDown, ChevronUp, Filter, ListFilter,
-  Route, Package, Weight, UserCircle, IdCard, ClipboardCheck
+  Route, Package, Weight, UserCircle, IdCard, ClipboardCheck, Map
 } from 'lucide-react'
 
 // ═══════════════════════════════════════════════════════════════
@@ -563,6 +563,7 @@ export default function Home() {
             <TabsTrigger value="repairs" className="gap-1.5"><Wrench className="size-4" />Ремонты</TabsTrigger>
             <TabsTrigger value="trips" className="gap-1.5"><Route className="size-4" />Рейсы</TabsTrigger>
             <TabsTrigger value="companies" className="gap-1.5"><Building2 className="size-4" />Компании</TabsTrigger>
+            <TabsTrigger value="map" className="gap-1.5"><Map className="size-4" />Карта</TabsTrigger>
           </TabsList>
           <TabsContent value="equipment">
             <EquipmentTab equipment={equipment} companies={companies} eqSearch={eqSearch} setEqSearch={setEqSearch} eqStatusFilter={eqStatusFilter} setEqStatusFilter={setEqStatusFilter} eqTypeFilter={eqTypeFilter} setEqTypeFilter={setEqTypeFilter} onOpenDetail={openEquipmentDetail} onAdd={() => { setEqFormEdit(null); setEqFormStep(0); setEqFormOpen(true) }} onEdit={(eq) => { setEqFormEdit(eq); setEqFormStep(0); setEqFormOpen(true) }} onDelete={(eq) => setDeleteDialog({ open: true, type: 'equipment', id: eq.id, name: eq.name })} />
@@ -576,6 +577,9 @@ export default function Home() {
           <TabsContent value="companies">
             <CompaniesTab companies={companies} onAdd={() => { setCompanyFormEdit(null); setCompanyFormOpen(true) }} onEdit={(c) => { setCompanyFormEdit(c); setCompanyFormOpen(true) }} onDelete={(c) => setDeleteDialog({ open: true, type: 'company', id: c.id, name: c.name })} />
           </TabsContent>
+          <TabsContent value="map">
+            <MapTab equipment={equipment} onSync={async () => { try { const res = await fetch('/api/glonass/sync', { method: 'POST' }); const data = await res.json(); if (data.synced !== undefined) toast.success(`Синхронизация: ${data.synced} из ${data.totalTrackers}`); else toast.error(data.error || 'Ошибка'); fetchEquipment() } catch { toast.error('Ошибка синхронизации') } }} />
+          </TabsContent>
         </Tabs>
 
         {/* Mobile: show active tab content directly */}
@@ -584,17 +588,19 @@ export default function Home() {
           {mainTab === 'repairs' && <RepairsTab repairs={repairs} equipment={equipment} onOpenDetail={openRepairDetail} onAdd={(eqId) => { setRepairFormEdit(null); setRepairFormEquipmentId(eqId || ''); setRepairFormOpen(true) }} onDelete={(r) => setDeleteDialog({ open: true, type: 'repair', id: r.id, name: r.description })} />}
           {mainTab === 'trips' && <TripsTab trips={trips} equipment={equipment} crews={crews} onOpenDetail={openTripDetail} onAdd={(eqId) => { setTripFormEdit(null); setTripFormEquipmentId(eqId || ''); setTripFormOpen(true) }} onDelete={(t) => setDeleteDialog({ open: true, type: 'trip', id: t.id, name: t.route })} onAddCrew={() => { setCrewFormEdit(null); setCrewFormOpen(true) }} onEditCrew={(c) => { setCrewFormEdit(c); setCrewFormOpen(true) }} onDeleteCrew={(c) => setDeleteDialog({ open: true, type: 'crew', id: c.id, name: c.name })} />}
           {mainTab === 'companies' && <CompaniesTab companies={companies} onAdd={() => { setCompanyFormEdit(null); setCompanyFormOpen(true) }} onEdit={(c) => { setCompanyFormEdit(c); setCompanyFormOpen(true) }} onDelete={(c) => setDeleteDialog({ open: true, type: 'company', id: c.id, name: c.name })} />}
+          {mainTab === 'map' && <MapTab equipment={equipment} onSync={async () => { try { const res = await fetch('/api/glonass/sync', { method: 'POST' }); const data = await res.json(); if (data.synced !== undefined) toast.success(`Синхронизация: ${data.synced} из ${data.totalTrackers}`); else toast.error(data.error || 'Ошибка'); fetchEquipment() } catch { toast.error('Ошибка синхронизации') } }} />}
         </div>
       </main>
 
       {/* ─── MOBILE BOTTOM NAV ────────────────────────────────── */}
       <nav className="md:hidden fixed bottom-0 left-0 right-0 z-40 border-t bg-card/95 backdrop-blur-sm">
-        <div className="grid grid-cols-4 h-14">
+        <div className="grid grid-cols-5 h-14">
           {[
             { value: 'equipment', icon: <Truck className="size-5" />, label: 'Техника' },
             { value: 'repairs', icon: <Wrench className="size-5" />, label: 'Ремонты' },
             { value: 'trips', icon: <Route className="size-5" />, label: 'Рейсы' },
             { value: 'companies', icon: <Building2 className="size-5" />, label: 'Компании' },
+            { value: 'map', icon: <Map className="size-5" />, label: 'Карта' },
           ].map(tab => (
             <button key={tab.value} onClick={() => setMainTab(tab.value)}
               className={`flex flex-col items-center justify-center gap-0.5 transition-colors ${mainTab === tab.value ? 'text-primary' : 'text-muted-foreground'}`}>
@@ -2683,5 +2689,159 @@ function CrewFormDialog({ open, onOpenChange, editData, saving, setSaving, onSav
         </DialogFooter>
       </DialogContent>
     </Dialog>
+  )
+}
+
+// ═══════════════════════════════════════════════════════════════
+// MAP TAB — Карта всей техники
+// ═══════════════════════════════════════════════════════════════
+
+function MapTab({ equipment, onSync }: {
+  equipment: Equipment[]
+  onSync: () => void
+}) {
+  const [syncing, setSyncing] = useState(false)
+  const [filter, setFilter] = useState<'all' | 'online' | 'offline' | 'notracker'>('all')
+
+  // Prepare tracker data for map
+  const trackersForMap = useMemo(() => {
+    return equipment.flatMap(eq =>
+      (eq.trackers || [])
+        .filter(t => t.lastLatitude != null && t.lastLongitude != null)
+        .map(t => ({
+          ...t,
+          equipmentName: eq.name,
+          registrationNum: eq.registrationNum,
+          equipmentType: eq.type,
+          equipmentStatus: eq.status,
+        }))
+    )
+  }, [equipment])
+
+  const onlineCount = trackersForMap.filter(t => t.isActive).length
+  const offlineCount = trackersForMap.filter(t => !t.isActive).length
+  const noTrackerCount = equipment.filter(e => !e.trackers || e.trackers.length === 0).length
+
+  const filteredTrackers = useMemo(() => {
+    switch (filter) {
+      case 'online': return trackersForMap.filter(t => t.isActive)
+      case 'offline': return trackersForMap.filter(t => !t.isActive)
+      default: return trackersForMap
+    }
+  }, [filter, trackersForMap])
+
+  return (
+    <div className="space-y-4">
+      {/* Toolbar */}
+      <div className="flex flex-wrap items-center gap-2">
+        <div className="flex items-center gap-1.5 flex-wrap">
+          <Button size="sm" variant={filter === 'all' ? 'default' : 'outline'} className="h-7 text-[11px] gap-1" onClick={() => setFilter('all')}>
+            <MapPin className="size-3" />Все ({trackersForMap.length})
+          </Button>
+          <Button size="sm" variant={filter === 'online' ? 'default' : 'outline'} className="h-7 text-[11px] gap-1" onClick={() => setFilter('online')}>
+            <Wifi className="size-3" />Онлайн ({onlineCount})
+          </Button>
+          <Button size="sm" variant={filter === 'offline' ? 'default' : 'outline'} className="h-7 text-[11px] gap-1" onClick={() => setFilter('offline')}>
+            <WifiOff className="size-3" />Оффлайн ({offlineCount})
+          </Button>
+          <Button size="sm" variant={filter === 'notracker' ? 'default' : 'outline'} className="h-7 text-[11px] gap-1" onClick={() => setFilter('notracker')}>
+            <Satellite className="size-3" />Без трекера ({noTrackerCount})
+          </Button>
+        </div>
+        <div className="flex-1" />
+        <Button size="sm" variant="outline" className="h-7 text-[11px] gap-1" disabled={syncing} onClick={async () => { setSyncing(true); await onSync(); setSyncing(false) }}>
+          {syncing ? <Loader2 className="size-3 animate-spin" /> : <RefreshCw className="size-3" />}
+          Синхронизировать
+        </Button>
+      </div>
+
+      {/* Map */}
+      {filter === 'notracker' ? (
+        <div className="space-y-2">
+          <Card>
+            <CardHeader className="pb-2 pt-3 px-4">
+              <CardTitle className="text-sm font-semibold flex items-center gap-2">
+                <Satellite className="size-4 text-muted-foreground" />
+                Техника без ГЛОНАСС трекера
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="px-4 pb-3">
+              {equipment.filter(e => !e.trackers || e.trackers.length === 0).length === 0 ? (
+                <p className="text-sm text-muted-foreground text-center py-6">Вся техника подключена к трекерам</p>
+              ) : (
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+                  {equipment.filter(e => !e.trackers || e.trackers.length === 0).map(eq => (
+                    <Card key={eq.id} className="border-l-4 border-l-amber-400">
+                      <CardContent className="p-3">
+                        <div className="flex items-center gap-2">
+                          <div className="size-8 rounded-md bg-amber-100 dark:bg-amber-900/40 flex items-center justify-center">
+                            <Truck className="size-4 text-amber-600 dark:text-amber-400" />
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-xs font-medium truncate">{eq.name}</p>
+                            <p className="text-[10px] text-muted-foreground">{eq.type} • {eq.registrationNum || '—'}</p>
+                          </div>
+                          {statusBadge(eq.status, EQUIPMENT_STATUS_MAP)}
+                        </div>
+                      </CardContent>
+                    </Card>
+                  ))}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </div>
+      ) : (
+        <Card>
+          <CardContent className="p-0">
+            <div className="h-[calc(100vh-280px)] min-h-[400px] rounded-lg overflow-hidden">
+              {trackersForMap.length === 0 ? (
+                <div className="flex flex-col items-center justify-center h-full text-muted-foreground">
+                  <Satellite className="size-12 mb-3 opacity-30" />
+                  <p className="text-sm font-medium">Нет техники с трекерами</p>
+                  <p className="text-xs mt-1">Подключите ГЛОНАСС трекеры к технике для отображения на карте</p>
+                </div>
+              ) : (
+                <TrackerMap trackers={filteredTrackers} />
+              )}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Equipment list below map */}
+      {filter !== 'notracker' && filteredTrackers.length > 0 && (
+        <div className="space-y-2">
+          <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Техника на карте ({filteredTrackers.length})</h3>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+            {filteredTrackers.map(t => (
+              <Card key={t.id} className={`border-l-4 ${t.isActive ? 'border-l-emerald-500' : 'border-l-red-400'}`}>
+                <CardContent className="p-3">
+                  <div className="flex items-center gap-2 mb-2">
+                    <div className={`size-8 rounded-md flex items-center justify-center ${t.isActive ? 'bg-emerald-100 dark:bg-emerald-900/40' : 'bg-red-100 dark:bg-red-900/40'}`}>
+                      {t.isActive ? <Wifi className="size-4 text-emerald-600 dark:text-emerald-400" /> : <WifiOff className="size-4 text-red-600 dark:text-red-400" />}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs font-medium truncate">{t.equipmentName}</p>
+                      <p className="text-[10px] text-muted-foreground">{t.registrationNum || '—'} • {t.equipmentType}</p>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-x-3 gap-y-1 text-[10px]">
+                    <div className="flex items-center gap-1"><MapPin className="size-3 text-muted-foreground" /><span className="text-muted-foreground">Шир:</span> <span className="font-medium">{t.lastLatitude?.toFixed(4)}</span></div>
+                    <div className="flex items-center gap-1"><MapPin className="size-3 text-muted-foreground" /><span className="text-muted-foreground">Дол:</span> <span className="font-medium">{t.lastLongitude?.toFixed(4)}</span></div>
+                    {t.lastSpeed != null && <div className="flex items-center gap-1"><Gauge className="size-3 text-muted-foreground" /><span className="font-medium">{t.lastSpeed} км/ч</span></div>}
+                    {t.lastCourse != null && <div className="flex items-center gap-1"><Navigation className="size-3 text-muted-foreground" /><span className="font-medium">{t.lastCourse}°</span></div>}
+                    {t.lastIgnition != null && <div className="flex items-center gap-1"><Zap className="size-3 text-muted-foreground" /><span className={t.lastIgnition ? 'text-emerald-600 dark:text-emerald-400 font-medium' : 'text-muted-foreground'}>{t.lastIgnition ? 'Зажигание' : 'Выключено'}</span></div>}
+                    {t.lastFuelLevel != null && <div className="flex items-center gap-1"><Fuel className="size-3 text-muted-foreground" /><span className="font-medium">{t.lastFuelLevel}%</span></div>}
+                    {t.lastAddress && <div className="col-span-2 flex items-start gap-1"><MapPin className="size-3 text-muted-foreground mt-0.5 shrink-0" /><span className="truncate">{t.lastAddress}</span></div>}
+                    {t.lastSeenAt && <div className="flex items-center gap-1"><Clock className="size-3 text-muted-foreground" /><span className="text-muted-foreground">{formatDateTime(t.lastSeenAt)}</span></div>}
+                  </div>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
   )
 }
