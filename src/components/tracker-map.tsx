@@ -41,6 +41,7 @@ interface TrackerInfo {
   equipmentName?: string
   registrationNum?: string | null
   equipmentType?: string | null
+  equipmentId?: string | null
   sensorData?: SensorData[]
 }
 
@@ -87,6 +88,7 @@ interface TrackerMapProps {
   trackPoints?: Array<{ lat: number; lng: number }>
   trackData?: TrackData | null
   onMarkerClick?: (trackerId: string) => void
+  onEquipmentClick?: (equipmentId: string) => void
 }
 
 function formatDateTime(d?: string | null): string {
@@ -145,7 +147,7 @@ function speedToColor(speed: number): string {
   return '#dc2626'                      // dark red
 }
 
-export default function TrackerMap({ trackers, trackPoints, trackData, onMarkerClick }: TrackerMapProps) {
+export default function TrackerMap({ trackers, trackPoints, trackData, onMarkerClick, onEquipmentClick }: TrackerMapProps) {
   const mapRef = useRef<HTMLDivElement>(null)
   const mapInstanceRef = useRef<L.Map | null>(null)
 
@@ -419,13 +421,14 @@ export default function TrackerMap({ trackers, trackPoints, trackData, onMarkerC
         popupAnchor: [0, -20],
       })
 
-      // Build sensor data HTML
+      // Build sensor data HTML — only show sensors with actual values
+      const sensorsWithValues = (tracker.sensorData || []).filter(s => s.value != null || (s.stringValue != null && s.stringValue !== ''))
       let sensorHtml = ''
-      if (tracker.sensorData && tracker.sensorData.length > 0) {
+      if (sensorsWithValues.length > 0) {
         sensorHtml = `
           <div style="margin-top: 8px; border-top: 1px solid #e5e7eb; padding-top: 6px;">
             <div style="font-size: 10px; font-weight: 600; color: #6b7280; margin-bottom: 4px; text-transform: uppercase;">ДАТЧИКИ</div>
-            ${tracker.sensorData.map(s => `
+            ${sensorsWithValues.map(s => `
               <div style="display: flex; align-items: center; gap: 6px; font-size: 11px; padding: 2px 0;">
                 <span style="font-size: 12px;">${getSensorIcon(s.sensorType)}</span>
                 <span style="color: #6b7280; min-width: 70px;">${s.sensorName || getSensorLabel(s.sensorType)}</span>
@@ -463,7 +466,7 @@ export default function TrackerMap({ trackers, trackPoints, trackData, onMarkerC
             ${tracker.lastCourse != null ? `<div style="display: flex; justify-content: space-between; padding: 2px 0;"><span style="color: #6b7280;">🧭 Курс</span><strong>${tracker.lastCourse}°</strong></div>` : ''}
             ${tracker.lastAltitude != null ? `<div style="display: flex; justify-content: space-between; padding: 2px 0;"><span style="color: #6b7280;">⛰️ Высота</span><strong>${tracker.lastAltitude} м</strong></div>` : ''}
             ${tracker.lastIgnition != null ? `<div style="display: flex; justify-content: space-between; padding: 2px 0;"><span style="color: #6b7280;">🔑 Зажигание</span><strong style="color: ${tracker.lastIgnition ? '#166534' : '#991b1b'};">${tracker.lastIgnition ? 'Вкл' : 'Выкл'}</strong></div>` : ''}
-            ${tracker.lastFuelLevel != null ? `<div style="display: flex; justify-content: space-between; padding: 2px 0;"><span style="color: #6b7280;">⛽ Топливо</span><strong>${tracker.lastFuelLevel}%</strong></div>` : ''}
+            ${tracker.lastFuelLevel != null ? `<div style="display: flex; justify-content: space-between; padding: 2px 0;"><span style="color: #6b7280;">⛽ Топливо</span><strong>${tracker.lastFuelLevel} л</strong></div>` : ''}
             ${tracker.lastMileage != null ? `<div style="display: flex; justify-content: space-between; padding: 2px 0;"><span style="color: #6b7280;">📊 Пробег</span><strong>${tracker.lastMileage} км</strong></div>` : ''}
             ${tracker.lastEngineTemp != null ? `<div style="display: flex; justify-content: space-between; padding: 2px 0;"><span style="color: #6b7280;">🌡️ Темп. двигателя</span><strong>${tracker.lastEngineTemp}°C</strong></div>` : ''}
             ${tracker.lastAddress ? `<div style="padding: 4px 0 0;"><span style="color: #6b7280;">📍</span> ${tracker.lastAddress}</div>` : ''}
@@ -472,6 +475,19 @@ export default function TrackerMap({ trackers, trackPoints, trackData, onMarkerC
           </div>
 
           ${sensorHtml}
+
+          ${tracker.equipmentId ? `
+          <div style="margin-top: 8px; border-top: 1px solid #e5e7eb; padding-top: 6px;">
+            <button data-equipment-id="${tracker.equipmentId}" style="
+              width: 100%; padding: 6px 12px; border-radius: 6px; border: 1px solid #e5e7eb;
+              background: #f9fafb; cursor: pointer; font-size: 11px; font-weight: 600;
+              color: #3b82f6; display: flex; align-items: center; justify-content: center; gap: 4px;
+              transition: background 0.15s;
+            " onmouseover="this.style.background='#eff6ff'" onmouseout="this.style.background='#f9fafb'">
+              📋 Открыть карточку
+            </button>
+          </div>
+          ` : ''}
         </div>
       `
 
@@ -487,6 +503,21 @@ export default function TrackerMap({ trackers, trackPoints, trackData, onMarkerC
       }
 
       markers.push(marker)
+    }
+
+    // Handle "Open equipment card" button clicks in popups via event delegation
+    if (onEquipmentClick) {
+      const handlePopupClick = (e: Event) => {
+        const target = e.target as HTMLElement
+        const btn = target.closest('[data-equipment-id]') as HTMLElement | null
+        if (btn) {
+          const equipmentId = btn.getAttribute('data-equipment-id')
+          if (equipmentId) {
+            onEquipmentClick(equipmentId)
+          }
+        }
+      }
+      map.getContainer().addEventListener('click', handlePopupClick)
     }
 
     // Fit bounds to markers if no track data

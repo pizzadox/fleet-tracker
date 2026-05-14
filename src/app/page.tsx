@@ -495,6 +495,11 @@ export default function Home() {
     fetchEquipmentDetail(eq.id)
   }
 
+  const openEquipmentDetailById = (equipmentId: string) => {
+    const eq = equipment.find(e => e.id === equipmentId)
+    if (eq) openEquipmentDetail(eq)
+  }
+
   const fetchRepairDetail = async (id: string) => {
     setRepairDetailLoading(true)
     try {
@@ -685,7 +690,7 @@ export default function Home() {
             <CompaniesTab companies={companies} onAdd={() => { setCompanyFormEdit(null); setCompanyFormOpen(true) }} onEdit={(c) => { setCompanyFormEdit(c); setCompanyFormOpen(true) }} onDelete={(c) => setDeleteDialog({ open: true, type: 'company', id: c.id, name: c.name })} />
           </TabsContent>
           <TabsContent value="map">
-            <MapTab equipment={equipment} onSync={async () => { try { const res = await fetch('/api/glonass/sync', { method: 'POST' }); const data = await res.json(); if (data.synced !== undefined) toast.success(`Синхронизация: ${data.synced} из ${data.totalTrackers}`); else toast.error(data.error || 'Ошибка'); fetchEquipment() } catch { toast.error('Ошибка синхронизации') } }} />
+            <MapTab equipment={equipment} onOpenDetail={openEquipmentDetailById} onSync={async () => { try { const res = await fetch('/api/glonass/sync', { method: 'POST' }); const data = await res.json(); if (data.synced !== undefined) toast.success(`Синхронизация: ${data.synced} из ${data.totalTrackers}`); else toast.error(data.error || 'Ошибка'); fetchEquipment() } catch { toast.error('Ошибка синхронизации') } }} />
           </TabsContent>
         </Tabs>
 
@@ -695,7 +700,7 @@ export default function Home() {
           {mainTab === 'repairs' && <RepairsTab repairs={repairs} equipment={equipment} onOpenDetail={openRepairDetail} onAdd={(eqId) => { setRepairFormEdit(null); setRepairFormEquipmentId(eqId || ''); setRepairFormOpen(true) }} onDelete={(r) => setDeleteDialog({ open: true, type: 'repair', id: r.id, name: r.description })} />}
           {mainTab === 'trips' && <TripsTab trips={trips} equipment={equipment} crews={crews} onOpenDetail={openTripDetail} onAdd={(eqId) => { setTripFormEdit(null); setTripFormEquipmentId(eqId || ''); setTripFormOpen(true) }} onDelete={(t) => setDeleteDialog({ open: true, type: 'trip', id: t.id, name: t.route })} onAddCrew={() => { setCrewFormEdit(null); setCrewFormOpen(true) }} onEditCrew={(c) => { setCrewFormEdit(c); setCrewFormOpen(true) }} onDeleteCrew={(c) => setDeleteDialog({ open: true, type: 'crew', id: c.id, name: c.name })} />}
           {mainTab === 'companies' && <CompaniesTab companies={companies} onAdd={() => { setCompanyFormEdit(null); setCompanyFormOpen(true) }} onEdit={(c) => { setCompanyFormEdit(c); setCompanyFormOpen(true) }} onDelete={(c) => setDeleteDialog({ open: true, type: 'company', id: c.id, name: c.name })} />}
-          {mainTab === 'map' && <MapTab equipment={equipment} onSync={async () => { try { const res = await fetch('/api/glonass/sync', { method: 'POST' }); const data = await res.json(); if (data.synced !== undefined) toast.success(`Синхронизация: ${data.synced} из ${data.totalTrackers}`); else toast.error(data.error || 'Ошибка'); fetchEquipment() } catch { toast.error('Ошибка синхронизации') } }} />}
+          {mainTab === 'map' && <MapTab equipment={equipment} onOpenDetail={openEquipmentDetailById} onSync={async () => { try { const res = await fetch('/api/glonass/sync', { method: 'POST' }); const data = await res.json(); if (data.synced !== undefined) toast.success(`Синхронизация: ${data.synced} из ${data.totalTrackers}`); else toast.error(data.error || 'Ошибка'); fetchEquipment() } catch { toast.error('Ошибка синхронизации') } }} />}
         </div>
       </main>
 
@@ -1281,8 +1286,8 @@ function EquipmentDetailSheet({ open, onOpenChange, equipment, loading, detailTa
                               <div className="h-[300px] rounded-lg overflow-hidden border">
                                 <TrackerMap
                                   trackers={showAllTrackersMap
-                                    ? allEquipment.flatMap(e => (e.trackers || []).filter(t => t.lastLatitude != null && t.lastLongitude != null).map(t => ({ ...t, equipmentName: e.name, registrationNum: e.registrationNum })))
-                                    : eq.trackers!.filter(t => t.lastLatitude != null && t.lastLongitude != null).map(t => ({ ...t, equipmentName: eq.name, registrationNum: eq.registrationNum }))
+                                    ? allEquipment.flatMap(e => (e.trackers || []).filter(t => t.lastLatitude != null && t.lastLongitude != null).map(t => ({ ...t, equipmentName: e.name, registrationNum: e.registrationNum, equipmentId: e.id })))
+                                    : eq.trackers!.filter(t => t.lastLatitude != null && t.lastLongitude != null).map(t => ({ ...t, equipmentName: eq.name, registrationNum: eq.registrationNum, equipmentId: eq.id }))
                                   }
                                   trackPoints={mapTrackData}
                                 />
@@ -1320,19 +1325,19 @@ function EquipmentDetailSheet({ open, onOpenChange, equipment, loading, detailTa
                               </DetailSection>
                               <DetailSection title="Датчики" icon={<Gauge className="size-3.5" />}>
                                 <DetailRow label="Зажигание" value={tracker.lastIgnition != null ? (tracker.lastIgnition ? 'Вкл' : 'Выкл') : undefined} />
-                                <DetailRow label="Топливо" value={tracker.lastFuelLevel != null ? `${tracker.lastFuelLevel}%` : undefined} />
+                                <DetailRow label="Топливо" value={tracker.lastFuelLevel != null ? `${tracker.lastFuelLevel} л` : undefined} />
                                 <DetailRow label="Пробег" value={tracker.lastMileage != null ? `${tracker.lastMileage?.toLocaleString('ru-RU')} км` : undefined} />
-                                {tracker.sensorData && tracker.sensorData.length > 0 && (
+                                {tracker.sensorData && getUniqueSensors(tracker.sensorData.filter(s => s.value != null || (s.stringValue != null && s.stringValue !== ''))).length > 0 && (
                                   <>
                                     <div className="col-span-2 mt-1 pt-1 border-t border-dashed border-border/40">
                                       <p className="text-[10px] font-medium text-muted-foreground mb-1">Данные датчиков Axenta</p>
                                     </div>
-                                    {getUniqueSensors(tracker.sensorData).map((s, i) => (
+                                    {getUniqueSensors(tracker.sensorData.filter(s => s.value != null || (s.stringValue != null && s.stringValue !== ''))).map((s, i) => (
                                       <DetailRow key={i} label={s.sensorName || s.sensorType} value={`${(s.value ?? s.stringValue) || '—'}${s.unit ? ` ${s.unit}` : ''}`} />
                                     ))}
                                   </>
                                 )}
-                                {(!tracker.sensorData || tracker.sensorData.length === 0) && tracker.lastEngineTemp == null && (
+                                {(!tracker.sensorData || getUniqueSensors(tracker.sensorData.filter(s => s.value != null || (s.stringValue != null && s.stringValue !== ''))).length === 0) && tracker.lastEngineTemp == null && (
                                   <p className="text-[10px] text-muted-foreground col-span-2">Нет данных датчиков</p>
                                 )}
                               </DetailSection>
@@ -2803,9 +2808,10 @@ function CrewFormDialog({ open, onOpenChange, editData, saving, setSaving, onSav
 // MAP TAB — Карта всей техники
 // ═══════════════════════════════════════════════════════════════
 
-function MapTab({ equipment, onSync }: {
+function MapTab({ equipment, onSync, onOpenDetail }: {
   equipment: Equipment[]
   onSync: () => void
+  onOpenDetail?: (equipmentId: string) => void
 }) {
   const [syncing, setSyncing] = useState(false)
   const [filter, setFilter] = useState<'all' | 'online' | 'offline' | 'notracker'>('all')
@@ -3098,7 +3104,8 @@ function MapTab({ equipment, onSync }: {
           registrationNum: eq.registrationNum,
           equipmentType: eq.type,
           equipmentStatus: eq.status,
-          sensorData: t.sensorData || [],
+          equipmentId: eq.id,
+          sensorData: (t.sensorData || []).filter(s => s.value != null || (s.stringValue != null && s.stringValue !== '')),
         }))
     )
   }, [equipment])
@@ -3310,7 +3317,7 @@ function MapTab({ equipment, onSync }: {
                       <p className="text-xs mt-1">Подключите ГЛОНАСС трекеры к технике для отображения на карте</p>
                     </div>
                   ) : (
-                    <TrackerMap trackers={filteredTrackers} trackPoints={trackPoints} trackData={trackData} />
+                    <TrackerMap trackers={filteredTrackers} trackPoints={trackPoints} trackData={trackData} onEquipmentClick={onOpenDetail} />
                   )}
                 </div>
               </CardContent>
@@ -3330,14 +3337,14 @@ function MapTab({ equipment, onSync }: {
                           {t.isActive ? <Wifi className="size-4 text-emerald-600 dark:text-emerald-400" /> : <WifiOff className="size-4 text-red-600 dark:text-red-400" />}
                         </div>
                         <div className="flex-1 min-w-0">
-                          <p className="text-xs font-medium truncate">{t.equipmentName}</p>
+                          <p className="text-xs font-medium truncate cursor-pointer hover:text-primary hover:underline transition-colors" onClick={() => onOpenDetail?.(t.equipmentId!)}>{t.equipmentName}</p>
                           <p className="text-[10px] text-muted-foreground">{t.registrationNum || '—'} • {t.equipmentType}</p>
                         </div>
                       </div>
                       <div className="grid grid-cols-2 gap-x-3 gap-y-1 text-[10px]">
                         {t.lastSpeed != null && <div className="flex items-center gap-1"><Gauge className="size-3 text-muted-foreground" /><span className="font-medium">{t.lastSpeed} км/ч</span></div>}
                         {t.lastIgnition != null && <div className="flex items-center gap-1"><Zap className="size-3 text-muted-foreground" /><span className={t.lastIgnition ? 'text-emerald-600 dark:text-emerald-400 font-medium' : 'text-muted-foreground'}>{t.lastIgnition ? 'Зажигание' : 'Выключено'}</span></div>}
-                        {t.lastFuelLevel != null && <div className="flex items-center gap-1"><Fuel className="size-3 text-muted-foreground" /><span className="font-medium">{t.lastFuelLevel}%</span></div>}
+                        {t.lastFuelLevel != null && <div className="flex items-center gap-1"><Fuel className="size-3 text-muted-foreground" /><span className="font-medium">{t.lastFuelLevel} л</span></div>}
                         {t.lastMileage != null && <div className="flex items-center gap-1"><Navigation className="size-3 text-muted-foreground" /><span className="font-medium">{t.lastMileage} км</span></div>}
                         {t.lastAddress && <div className="col-span-2 flex items-start gap-1"><MapPin className="size-3 text-muted-foreground mt-0.5 shrink-0" /><span className="truncate">{t.lastAddress}</span></div>}
                         {t.lastSeenAt && <div className="flex items-center gap-1"><Clock className="size-3 text-muted-foreground" /><span className="text-muted-foreground">{formatDateTime(t.lastSeenAt)}</span></div>}
