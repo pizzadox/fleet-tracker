@@ -233,3 +233,25 @@ Work Log:
 Stage Summary:
 - Equipment editing now has Save button on every step, not just the last
 - Map popup simplified — "Открыть карточку" button removed, equipment name remains clickable
+
+---
+Task ID: 11
+Agent: Main
+Task: Equipment without tracker clickable, trip segment selection, hide other vehicles during track view
+
+Work Log:
+- Made equipment cards in "Без трекера" filter view clickable — clicking opens equipment detail card via onOpenDetail
+- Added hover effects (shadow, underline) to indicate clickability
+- Added selectedTripIndex state to MapTab for selecting individual trip segments
+- Trip rows (🟢 A → 🔴 B) are now clickable — click to show only that trip, click again to deselect
+- Added mapTrackers useMemo: when viewing a track, only the tracked vehicle is shown on the map
+- Added mapTrackData useMemo: when a specific trip is selected, only that trip's polyline/markers are rendered
+- Updated TrackerMap call to use mapTrackers and mapTrackData instead of filteredTrackers and trackData
+- Updated equipment list below map to also use mapTrackers
+- Reset selectedTripIndex on clearTrack and on new track fetch
+- Build verified successful
+
+Stage Summary:
+- Equipment without GLONASS tracker: name is clickable → opens detail card
+- Trip segment selection: click 🟢A→🔴B row → map shows only that trip segment
+- Track viewing mode: only the selected vehicle appears on map, all others hidden

@@ -3038,6 +3038,7 @@ function MapTab({ equipment, onSync, onOpenDetail }: {
     parkings?: Array<{ startDate: string; endDate: string; lat: number; lng: number; duration: number; ignitionTime?: number }>;
     stops?: Array<{ startDate: string; endDate: string; lat: number; lng: number; duration: number }>;
   } | null>(null)
+  const [selectedTripIndex, setSelectedTripIndex] = useState<number | null>(null)
 
   // Equipment that has trackers for track selection
   const trackedEquipment = useMemo(() =>
@@ -3080,6 +3081,7 @@ function MapTab({ equipment, onSync, onOpenDetail }: {
     setTrackPoints([])
     setTrackStats(null)
     setTrackData(null)
+    setSelectedTripIndex(null)
 
     try {
       // Fetch track + stats in parallel
@@ -3207,6 +3209,7 @@ function MapTab({ equipment, onSync, onOpenDetail }: {
     setTrackEqId('')
     setTrackDateFrom('')
     setTrackDateTo('')
+    setSelectedTripIndex(null)
   }
 
   function formatDuration(seconds: number): string {
@@ -3314,6 +3317,31 @@ function MapTab({ equipment, onSync, onOpenDetail }: {
       default: return trackersForMap
     }
   }, [filter, trackersForMap])
+
+  // When viewing a track, only show the tracked vehicle on the map
+  const mapTrackers = useMemo(() => {
+    if ((trackPoints.length > 0 || trackData) && trackEqId) {
+      return filteredTrackers.filter(t => t.equipmentId === trackEqId)
+    }
+    return filteredTrackers
+  }, [filteredTrackers, trackPoints, trackData, trackEqId])
+
+  // When a specific trip is selected, only show that trip's data on the map
+  const mapTrackData = useMemo(() => {
+    if (!trackData) return null
+    if (selectedTripIndex != null && trackData.trips) {
+      const selectedTrip = trackData.trips[selectedTripIndex]
+      if (selectedTrip) {
+        return {
+          track: trackData.track,
+          trips: [selectedTrip],
+          parkings: [],  // hide parkings when viewing specific trip
+          stops: [],     // hide stops when viewing specific trip
+        }
+      }
+    }
+    return trackData
+  }, [trackData, selectedTripIndex])
 
   return (
     <div className="space-y-4">
@@ -3446,13 +3474,14 @@ function MapTab({ equipment, onSync, onOpenDetail }: {
                     {trackData.trips && trackData.trips.length > 0 && (
                       <div className="space-y-1">
                         {trackData.trips.map((trip, i) => (
-                          <div key={i} className="flex items-center gap-2 text-[10px] bg-muted/50 rounded px-2 py-1">
+                          <div key={i} className={`flex items-center gap-2 text-[10px] rounded px-2 py-1.5 cursor-pointer transition-colors ${selectedTripIndex === i ? 'bg-primary/15 ring-1 ring-primary/40' : 'bg-muted/50 hover:bg-muted'}`} onClick={() => setSelectedTripIndex(selectedTripIndex === i ? null : i)}>
                             <span className="font-semibold text-emerald-600">🟢 A</span>
                             <span>{formatTime(trip.startDate)}</span>
                             <span className="text-muted-foreground">→</span>
                             <span className="font-semibold text-red-500">🔴 B</span>
                             <span>{formatTime(trip.endDate)}</span>
                             <span className="text-muted-foreground ml-auto">{trip.distance.toFixed(1)} км • {trip.points.length} т.</span>
+                            {selectedTripIndex === i && <X className="size-3 text-muted-foreground shrink-0" />}
                           </div>
                         ))}
                       </div>
@@ -3479,14 +3508,14 @@ function MapTab({ equipment, onSync, onOpenDetail }: {
                   ) : (
                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
                       {equipment.filter(e => !e.trackers || e.trackers.length === 0).map(eq => (
-                        <Card key={eq.id} className="border-l-4 border-l-amber-400">
+                        <Card key={eq.id} className="border-l-4 border-l-amber-400 cursor-pointer hover:shadow-md transition-shadow" onClick={() => onOpenDetail?.(eq.id)}>
                           <CardContent className="p-3">
                             <div className="flex items-center gap-2">
                               <div className="size-8 rounded-md bg-amber-100 dark:bg-amber-900/40 flex items-center justify-center">
                                 <Truck className="size-4 text-amber-600 dark:text-amber-400" />
                               </div>
                               <div className="flex-1 min-w-0">
-                                <p className="text-xs font-medium truncate">{eq.name}</p>
+                                <p className="text-xs font-medium truncate hover:text-primary hover:underline transition-colors">{eq.name}</p>
                                 <p className="text-[10px] text-muted-foreground">{eq.type} • {eq.registrationNum || '—'}</p>
                               </div>
                               {statusBadge(eq.status, EQUIPMENT_STATUS_MAP)}
@@ -3510,7 +3539,7 @@ function MapTab({ equipment, onSync, onOpenDetail }: {
                       <p className="text-xs mt-1">Подключите ГЛОНАСС трекеры к технике для отображения на карте</p>
                     </div>
                   ) : (
-                    <TrackerMap trackers={filteredTrackers} trackPoints={trackPoints} trackData={trackData} onEquipmentClick={onOpenDetail} />
+                    <TrackerMap trackers={mapTrackers} trackPoints={trackPoints} trackData={mapTrackData} onEquipmentClick={onOpenDetail} />
                   )}
                 </div>
               </CardContent>
@@ -3518,11 +3547,11 @@ function MapTab({ equipment, onSync, onOpenDetail }: {
           )}
 
           {/* Equipment list below map */}
-          {filter !== 'notracker' && filteredTrackers.length > 0 && (
+          {filter !== 'notracker' && mapTrackers.length > 0 && (
             <div className="space-y-2">
-              <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Техника на карте ({filteredTrackers.length})</h3>
+              <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Техника на карте ({mapTrackers.length})</h3>
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
-                {filteredTrackers.map(t => (
+                {mapTrackers.map(t => (
                   <Card key={t.id} className={`border-l-4 ${t.isActive ? 'border-l-emerald-500' : 'border-l-red-400'}`}>
                     <CardContent className="p-3">
                       <div className="flex items-center gap-2 mb-2">
