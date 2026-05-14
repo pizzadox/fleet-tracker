@@ -95,7 +95,7 @@ export default function TrackerMap({ trackers, trackPoints, onMarkerClick }: Tra
       })
 
       L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-        attribution: '&copy; OpenStreetMap contributors',
+        attribution: '',
         maxZoom: 19,
       }).addTo(mapInstanceRef.current)
     }
