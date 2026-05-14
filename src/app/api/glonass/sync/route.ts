@@ -1,21 +1,98 @@
 import { db } from '@/lib/db'
 import { NextResponse } from 'next/server'
 
+// Get a valid token — re-login if needed
+async function getValidToken(settings: {
+  id: string
+  apiUrl: string
+  apiKey: string
+  username: string | null
+  password: string | null
+}): Promise<string | null> {
+  // First try the existing token
+  try {
+    const testUrl = `${settings.apiUrl}/api/objects/`
+    const testResponse = await fetch(testUrl, {
+      headers: {
+        'Authorization': `Token ${settings.apiKey}`,
+        'Content-Type': 'application/json',
+      },
+      signal: AbortSignal.timeout(10000),
+    })
+
+    if (testResponse.ok) {
+      return settings.apiKey
+    }
+
+    // If token is invalid, try to re-login
+    if ((testResponse.status === 401 || testResponse.status === 403) && settings.username && settings.password) {
+      console.log('[GLONASS Sync] Token expired, re-logging in...')
+      const loginUrl = `${settings.apiUrl}/api/auth/login/`
+      const loginResponse = await fetch(loginUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          username: settings.username,
+          password: settings.password,
+        }),
+        signal: AbortSignal.timeout(10000),
+      })
+
+      if (loginResponse.ok) {
+        const loginData = await loginResponse.json()
+        const newToken = loginData.token || loginData.key || loginData.auth_token || loginData.access || ''
+
+        if (newToken) {
+          await db.axentaSettings.update({
+            where: { id: settings.id },
+            data: { apiKey: newToken }
+          })
+          console.log('[GLONASS Sync] Token refreshed successfully')
+          return newToken
+        }
+      }
+    }
+
+    return null
+  } catch (error) {
+    console.error('[GLONASS Sync] Token validation error:', error)
+    return null
+  }
+}
+
 // Sync data from Axenta.cloud API
 export async function POST() {
   try {
     const settings = await db.axentaSettings.findFirst()
     if (!settings || !settings.isActive) {
-      return NextResponse.json({ error: 'Axenta.cloud integration not configured or inactive' }, { status: 400 })
+      return NextResponse.json({ error: 'Интеграция с Axenta.cloud не настроена или неактивна' }, { status: 400 })
     }
 
-    if (!settings.apiUrl || !settings.apiKey) {
-      return NextResponse.json({ error: 'API URL and API Key are required' }, { status: 400 })
+    if (!settings.apiUrl) {
+      return NextResponse.json({ error: 'API URL не задан' }, { status: 400 })
+    }
+
+    // Get a valid token (will re-login if expired)
+    const token = await getValidToken(settings)
+    if (!token) {
+      return NextResponse.json({ error: 'Не удалось получить токен авторизации. Проверьте логин и пароль.' }, { status: 401 })
     }
 
     const trackers = await db.glonassTracker.findMany({
       where: { isActive: true },
     })
+
+    if (trackers.length === 0) {
+      return NextResponse.json({
+        success: true,
+        synced: 0,
+        errors: 0,
+        errorDetails: [],
+        totalTrackers: 0,
+        message: 'Нет активных трекеров для синхронизации',
+        syncedAt: new Date().toISOString(),
+      })
+    }
 
     let syncedCount = 0
     let errorCount = 0
@@ -24,43 +101,22 @@ export async function POST() {
     // Fetch data from Axenta.cloud API for each tracker
     for (const tracker of trackers) {
       try {
+        const objectId = tracker.axentaCloudId || tracker.trackerId
+
         // Axenta.cloud API: Get object state
-        // Documentation: https://axenta.cloud/api/docs
-        const objectUrl = `${settings.apiUrl}/objects/${tracker.axentaCloudId || tracker.trackerId}`
+        // Using Token auth format as per Axenta documentation
+        const objectUrl = `${settings.apiUrl}/api/objects/${objectId}/`
         const response = await fetch(objectUrl, {
           headers: {
-            'Authorization': `Bearer ${settings.apiKey}`,
+            'Authorization': `Token ${token}`,
             'Content-Type': 'application/json',
           },
           signal: AbortSignal.timeout(10000),
         })
 
         if (!response.ok) {
-          // Try alternative auth method (basic auth)
-          if (settings.username && settings.password) {
-            const basicAuth = Buffer.from(`${settings.username}:${settings.password}`).toString('base64')
-            const retryResponse = await fetch(objectUrl, {
-              headers: {
-                'Authorization': `Basic ${basicAuth}`,
-                'Content-Type': 'application/json',
-              },
-              signal: AbortSignal.timeout(10000),
-            })
-
-            if (!retryResponse.ok) {
-              errorCount++
-              errors.push(`Tracker ${tracker.trackerId}: HTTP ${retryResponse.status}`)
-              continue
-            }
-
-            const data = await retryResponse.json()
-            await updateTrackerFromAxenta(tracker.id, data)
-            syncedCount++
-            continue
-          }
-
           errorCount++
-          errors.push(`Tracker ${tracker.trackerId}: HTTP ${response.status}`)
+          errors.push(`Трекер ${tracker.trackerId}: HTTP ${response.status}`)
           continue
         }
 
@@ -72,17 +128,15 @@ export async function POST() {
       } catch (err) {
         errorCount++
         const msg = err instanceof Error ? err.message : 'Unknown error'
-        errors.push(`Tracker ${tracker.trackerId}: ${msg}`)
+        errors.push(`Трекер ${tracker.trackerId}: ${msg}`)
       }
     }
 
     // Update last sync time
-    if (settings) {
-      await db.axentaSettings.update({
-        where: { id: settings.id },
-        data: { lastSyncAt: new Date() }
-      })
-    }
+    await db.axentaSettings.update({
+      where: { id: settings.id },
+      data: { lastSyncAt: new Date() }
+    })
 
     return NextResponse.json({
       success: true,
@@ -94,19 +148,16 @@ export async function POST() {
     })
   } catch (error) {
     console.error('Error syncing with Axenta.cloud:', error)
-    return NextResponse.json({ error: 'Failed to sync with Axenta.cloud' }, { status: 500 })
+    return NextResponse.json({ error: 'Ошибка синхронизации с Axenta.cloud' }, { status: 500 })
   }
 }
 
 // Helper to update tracker data from Axenta response
 async function updateTrackerFromAxenta(trackerDbId: string, data: Record<string, unknown>) {
-  // Axenta.cloud API typically returns data in various formats
-  // We try to extract the most common fields
   const state = (data as Record<string, unknown>).state || (data as Record<string, unknown>).last_state || data
   const position = (state as Record<string, unknown>).position || (data as Record<string, unknown>).position
   const sensors = (state as Record<string, unknown>).sensors || (data as Record<string, unknown>).sensors || []
 
-  // Update tracker position
   const updateData: Record<string, unknown> = {}
 
   if (position && typeof position === 'object') {
@@ -119,7 +170,6 @@ async function updateTrackerFromAxenta(trackerDbId: string, data: Record<string,
     if (pos.timestamp) updateData.lastPositionAt = new Date(pos.timestamp as string)
   }
 
-  // Process sensor data
   if (Array.isArray(sensors)) {
     for (const sensor of sensors) {
       const s = sensor as Record<string, unknown>
@@ -135,7 +185,6 @@ async function updateTrackerFromAxenta(trackerDbId: string, data: Record<string,
         updateData.lastMileage = s.value != null ? Number(s.value) : undefined
       }
 
-      // Save individual sensor data
       await db.glonassSensorData.create({
         data: {
           trackerId: trackerDbId,
@@ -150,7 +199,6 @@ async function updateTrackerFromAxenta(trackerDbId: string, data: Record<string,
     }
   }
 
-  // Handle last_seen
   if (state && typeof state === 'object') {
     const st = state as Record<string, unknown>
     if (st.last_seen || st.lastSeen || st.last_online) {
@@ -158,7 +206,6 @@ async function updateTrackerFromAxenta(trackerDbId: string, data: Record<string,
     }
   }
 
-  // Only update if we have new data
   if (Object.keys(updateData).length > 0) {
     await db.glonassTracker.update({
       where: { id: trackerDbId },

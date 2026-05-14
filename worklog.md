@@ -124,3 +124,26 @@ Stage Summary:
 - Critical React Hooks error fixed — EquipmentDetailSheet now works correctly
 - All 4 tabs working: Техника, Ремонты, Рейсы, Компании
 - Equipment detail sheet shows all 6 sub-tabs: Информация, Фото, Ремонты, ГЛОНАСС, Рейсы, История
+
+---
+Task ID: 6
+Agent: Main
+Task: Fix Axenta.cloud GLONASS token authentication
+
+Work Log:
+- Analyzed user's screenshots: Axenta.cloud platform (empty accounts page) and API auth documentation
+- Found that current code used `Bearer` format, but Axenta requires `Token` format
+- Current code stored static API key instead of obtaining token via login
+- Created new API endpoint: /api/glonass/auth (POST=login, GET=check status, DELETE=logout)
+- Updated /api/glonass/sync to use `Token <token>` auth format and auto-refresh expired tokens
+- Updated settings dialog UI with step-by-step instructions on how to get a token
+- Added automatic token retrieval: user enters username/password → app calls POST /api/auth/login/ → receives and stores token
+- Added green "Токен получен" indicator when token is successfully stored
+- Changed save button to "Войти и сохранить" with Satellite icon
+- Tested all endpoints — app running correctly (200 status)
+
+Stage Summary:
+- Axenta.cloud now uses proper auth flow: POST /api/auth/login/ → Token response → Authorization: Token <token>
+- Auto-refresh token on 401/403 during sync
+- UI updated with clear instructions on how to get a token
+- App confirmed running and all endpoints working

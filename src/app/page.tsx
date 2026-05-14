@@ -627,15 +627,29 @@ export default function Home() {
         <DialogContent className="sm:max-w-lg">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2"><Cog className="size-4" />Настройки Axenta.cloud</DialogTitle>
-            <DialogDescription>Подключение к API для данных ГЛОНАСС</DialogDescription>
+            <DialogDescription>Авторизация и подключение к API ГЛОНАСС</DialogDescription>
           </DialogHeader>
           <div className="space-y-3 px-4 sm:px-5 overflow-y-auto flex-1 min-h-0">
-            <div><Label className="text-xs">API URL *</Label><Input placeholder="https://axenta.cloud/api" value={axentaSettings.apiUrl} onChange={e => setAxentaSettings(s => ({ ...s, apiUrl: e.target.value }))} /></div>
-            <div><Label className="text-xs">API Key *</Label><Input type="password" placeholder="Ваш API-ключ" value={axentaSettings.apiKey} onChange={e => setAxentaSettings(s => ({ ...s, apiKey: e.target.value }))} /></div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <div><Label className="text-xs">Логин</Label><Input placeholder="Логин" value={axentaSettings.username || ''} onChange={e => setAxentaSettings(s => ({ ...s, username: e.target.value }))} /></div>
-              <div><Label className="text-xs">Пароль</Label><Input type="password" placeholder="Пароль" value={axentaSettings.password || ''} onChange={e => setAxentaSettings(s => ({ ...s, password: e.target.value }))} /></div>
+            <div className="rounded-md bg-muted/50 border p-3 space-y-1.5">
+              <p className="text-xs font-medium flex items-center gap-1.5"><Info className="size-3.5" />Как получить токен</p>
+              <ol className="text-[11px] text-muted-foreground list-decimal list-inside space-y-0.5">
+                <li>Зарегистрируйтесь на <span className="font-medium text-foreground">axenta.cloud</span></li>
+                <li>Создайте учётную запись в разделе «Учетные записи»</li>
+                <li>Введите логин и пароль ниже — токен будет получен автоматически</li>
+              </ol>
+              <p className="text-[10px] text-muted-foreground">API: <code className="text-[10px] bg-muted px-1 py-0.5 rounded">POST /api/auth/login/</code> → <code className="text-[10px] bg-muted px-1 py-0.5 rounded">Authorization: Token &lt;ваш_токен&gt;</code></p>
             </div>
+            <div><Label className="text-xs">API URL *</Label><Input placeholder="https://monitoring.axenta.cloud" value={axentaSettings.apiUrl} onChange={e => setAxentaSettings(s => ({ ...s, apiUrl: e.target.value }))} /></div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div><Label className="text-xs">Логин *</Label><Input placeholder="Логин Axenta" value={axentaSettings.username || ''} onChange={e => setAxentaSettings(s => ({ ...s, username: e.target.value }))} /></div>
+              <div><Label className="text-xs">Пароль *</Label><Input type="password" placeholder="Пароль Axenta" value={axentaSettings.password || ''} onChange={e => setAxentaSettings(s => ({ ...s, password: e.target.value }))} /></div>
+            </div>
+            {axentaSettings.apiKey && (
+              <div className="rounded-md bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-800 p-2.5">
+                <p className="text-[11px] font-medium text-emerald-700 dark:text-emerald-400 flex items-center gap-1.5"><CheckCircle2 className="size-3.5" />Токен получен</p>
+                <p className="text-[10px] text-emerald-600 dark:text-emerald-500 mt-0.5">Ключ: {axentaSettings.apiKey.substring(0, 10)}...{axentaSettings.apiKey.slice(-4)}</p>
+              </div>
+            )}
             <div><Label className="text-xs">Интервал синхронизации (сек)</Label><Input type="number" value={axentaSettings.syncInterval} onChange={e => setAxentaSettings(s => ({ ...s, syncInterval: parseInt(e.target.value) || 300 }))} /></div>
             <div className="flex items-center justify-between">
               <Label className="text-xs">Интеграция активна</Label>
@@ -647,8 +661,40 @@ export default function Home() {
             <Button variant="outline" size="sm" onClick={async () => { setSyncing(true); try { const res = await fetch('/api/glonass/sync', { method: 'POST' }); const data = await res.json(); if (data.synced !== undefined) toast.success(`Синхронизация: ${data.synced} из ${data.totalTrackers}`); else toast.error(data.error || 'Ошибка') } catch { toast.error('Ошибка синхронизации') }; setSyncing(false) }} disabled={syncing}>
               {syncing ? <Loader2 className="size-3.5 animate-spin" /> : <RefreshCw className="size-3.5" />}Синхронизировать
             </Button>
-            <Button size="sm" onClick={async () => { setSettingsSaving(true); try { const res = await fetch('/api/glonass/settings', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(axentaSettings) }); if (!res.ok) throw new Error(); const data = await res.json(); setAxentaSettings(data); toast.success('Настройки сохранены') } catch { toast.error('Ошибка сохранения') }; setSettingsSaving(false) }} disabled={settingsSaving}>
-              {settingsSaving ? <Loader2 className="size-3.5 animate-spin" /> : <CheckCircle2 className="size-3.5" />}Сохранить
+            <Button size="sm" onClick={async () => {
+              setSettingsSaving(true);
+              try {
+                // Авторизация через API — автоматически получает токен
+                if (axentaSettings.username && axentaSettings.password && axentaSettings.apiUrl) {
+                  const authRes = await fetch('/api/glonass/auth', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(axentaSettings)
+                  });
+                  const authData = await authRes.json();
+                  if (authRes.ok && authData.success) {
+                    toast.success(authData.message || 'Авторизация успешна');
+                    // Обновим настройки из БД
+                    const settingsRes = await fetch('/api/glonass/settings');
+                    if (settingsRes.ok) {
+                      const settingsData = await settingsRes.json();
+                      if (settingsData.apiUrl) setAxentaSettings(settingsData);
+                    }
+                  } else {
+                    toast.error(authData.error || 'Ошибка авторизации');
+                  }
+                } else {
+                  // Если нет логина/пароля — сохраняем как есть (ручной ввод ключа)
+                  const res = await fetch('/api/glonass/settings', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(axentaSettings) });
+                  if (!res.ok) throw new Error();
+                  const data = await res.json();
+                  setAxentaSettings(data);
+                  toast.success('Настройки сохранены');
+                }
+              } catch { toast.error('Ошибка сохранения') }
+              setSettingsSaving(false);
+            }} disabled={settingsSaving}>
+              {settingsSaving ? <Loader2 className="size-3.5 animate-spin" /> : <Satellite className="size-3.5" />}Войти и сохранить
             </Button>
           </DialogFooter>
         </DialogContent>
