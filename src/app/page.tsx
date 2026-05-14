@@ -2993,9 +2993,9 @@ function MapTab({ equipment, onSync }: {
               </Card>
             </div>
           ) : (
-            <Card>
+            <Card className="sticky top-0 z-10">
               <CardContent className="p-0">
-                <div className="h-[calc(100vh-320px)] min-h-[400px] rounded-lg overflow-hidden">
+                <div className="h-[calc(100vh-220px)] min-h-[400px] rounded-lg overflow-hidden">
                   {trackersForMap.length === 0 ? (
                     <div className="flex flex-col items-center justify-center h-full text-muted-foreground">
                       <Satellite className="size-12 mb-3 opacity-30" />
