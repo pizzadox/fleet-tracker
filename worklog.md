@@ -255,3 +255,20 @@ Stage Summary:
 - Equipment without GLONASS tracker: name is clickable → opens detail card
 - Trip segment selection: click 🟢A→🔴B row → map shows only that trip segment
 - Track viewing mode: only the selected vehicle appears on map, all others hidden
+
+---
+Task ID: 12
+Agent: Main
+Task: Fix duplicate СКОРОСТЬ legend on map, fix Card CSS (remove py-6, sticky)
+
+Work Log:
+- Added legendRef to tracker-map.tsx to track the L.Control legend instance
+- Before adding a new СКОРОСТЬ legend, now removes the previous one via map.removeControl()
+- When no track data or simple track, also removes the legend
+- This prevents duplicate СКОРОСТЬ blocks from accumulating on the map
+- Removed py-6 from Card component default class in card.tsx
+- Removed sticky from map Card className in page.tsx (kept top-0 z-10)
+
+Stage Summary:
+- СКОРОСТЬ legend no longer duplicates on map re-renders
+- Card CSS: removed py-6 padding, removed sticky from map card

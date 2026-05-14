@@ -166,6 +166,7 @@ function speedToColor(speed: number): string {
 export default function TrackerMap({ trackers, trackPoints, trackData, onMarkerClick, onEquipmentClick }: TrackerMapProps) {
   const mapRef = useRef<HTMLDivElement>(null)
   const mapInstanceRef = useRef<L.Map | null>(null)
+  const legendRef = useRef<L.Control | null>(null)
 
   useEffect(() => {
     if (!mapRef.current) return
@@ -366,7 +367,10 @@ export default function TrackerMap({ trackers, trackPoints, trackData, onMarkerC
         map.fitBounds(combined, { padding: [40, 40] })
       }
 
-      // Add speed legend to map
+      // Add speed legend to map (remove previous if exists)
+      if (legendRef.current) {
+        map.removeControl(legendRef.current)
+      }
       const legend = L.control({ position: 'bottomright' })
       legend.onAdd = () => {
         const div = L.DomUtil.create('div', '')
@@ -384,14 +388,26 @@ export default function TrackerMap({ trackers, trackPoints, trackData, onMarkerC
         return div
       }
       legend.addTo(map)
+      legendRef.current = legend
 
     } else if (trackPoints && trackPoints.length > 1) {
+      // Remove legend if no rich track data
+      if (legendRef.current && mapInstanceRef.current) {
+        mapInstanceRef.current.removeControl(legendRef.current)
+        legendRef.current = null
+      }
       // ── SIMPLE TRACK FALLBACK ──────────────────────────────────────
       const polyline = L.polyline(
         trackPoints.map(p => [p.lat, p.lng]),
         { color: '#3b82f6', weight: 4, opacity: 0.8 }
       ).addTo(map)
       map.fitBounds(polyline.getBounds(), { padding: [30, 30] })
+    } else {
+      // No track data — remove legend if it exists
+      if (legendRef.current && mapInstanceRef.current) {
+        mapInstanceRef.current.removeControl(legendRef.current)
+        legendRef.current = null
+      }
     }
 
     // ── VEHICLE MARKERS ──────────────────────────────────────────
