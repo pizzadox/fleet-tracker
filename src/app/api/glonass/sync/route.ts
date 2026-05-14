@@ -182,16 +182,40 @@ async function reverseGeocode(apiUrl: string, token: string, lat: number, lng: n
   }
 }
 
+// Threshold in minutes — if lastMessage time is within this, consider tracker online
+const ONLINE_THRESHOLD_MINUTES = 30
+
 // Update tracker data from Axenta monitoring/web response
+// Uses fetchObjectDetails (full=true) to get sensor values from lastMessage.sensors
 async function updateTrackerFromAxenta(trackerDbId: string, axentaObject: Record<string, unknown>, token: string, apiUrl: string) {
   const updateData: Record<string, unknown> = {}
 
-  // According to API docs, the monitoring endpoint returns MonitoringWebObject:
-  // lastMessage.pos — position data
-  // lastMessage.t — message time
-  // lastMessage.tpos — position time
-  // connectedStatus — online status
-  const lastMessage = axentaObject.lastMessage as Record<string, unknown> | undefined
+  const axentaId = axentaObject.id as number
+
+  // ── Step 1: Fetch FULL object details to get sensor values ──
+  // The monitoring API only has position data, but /api/objects/{id}/?full=true
+  // includes lastMessage.sensors with actual sensor values like:
+  // { "sensor_2287338": 486.06, "sensor_2287340": 28.07 }
+  let fullObjectData: Record<string, unknown> | null = null
+  let sensorValuesMap: Record<string, number | null> = {}
+
+  if (axentaId != null) {
+    try {
+      fullObjectData = await fetchObjectDetails(apiUrl, token, axentaId)
+      const fullLastMsg = fullObjectData?.lastMessage as Record<string, unknown> | undefined
+      if (fullLastMsg?.sensors && typeof fullLastMsg.sensors === 'object') {
+        sensorValuesMap = fullLastMsg.sensors as Record<string, number | null>
+      }
+    } catch (err) {
+      console.error(`[GLONASS Sync] Error fetching full details for object ${axentaId}:`, err)
+    }
+  }
+
+  // Use full object data if available (has sensor values), otherwise fall back to monitoring data
+  const dataSource = fullObjectData || axentaObject
+
+  // ── Step 2: Parse position and time data ──
+  const lastMessage = dataSource.lastMessage as Record<string, unknown> | undefined
   const pos = lastMessage?.pos as Record<string, unknown> | undefined
 
   // Position: pos.x = longitude, pos.y = latitude (Axenta convention)
@@ -201,11 +225,6 @@ async function updateTrackerFromAxenta(trackerDbId: string, axentaObject: Record
     if (pos.z != null) updateData.lastAltitude = Number(pos.z)
     if (pos.s != null) updateData.lastSpeed = Number(pos.s)  // speed in km/h
     if (pos.c != null) updateData.lastCourse = Number(pos.c)  // course in degrees
-
-    // Satellites
-    if (pos.sat != null) {
-      updateData.lastSeenAt = new Date()
-    }
   }
 
   // Time fields from lastMessage
@@ -214,14 +233,31 @@ async function updateTrackerFromAxenta(trackerDbId: string, axentaObject: Record
     if (lastMessage.tpos) updateData.lastSeenAt = new Date(lastMessage.tpos as string)
   }
 
-  // Connected status
-  if (axentaObject.connectedStatus != null) {
-    // We can use this for online/offline tracking
-    updateData.isActive = Boolean(axentaObject.connectedStatus)
+  // ── Step 3: Determine online/offline status ──
+  // Use time-based logic: if the tracker sent data within the threshold, it's online.
+  // connectedStatus only reflects real-time TCP connection, which is often false
+  // even for actively moving vehicles (GSM trackers don't maintain persistent connections).
+  const lastPositionTime = lastMessage?.tpos ? new Date(lastMessage.tpos as string) : null
+  const lastMessageTime = lastMessage?.t ? new Date(lastMessage.t as string) : null
+  const mostRecentTime = lastPositionTime && lastMessageTime
+    ? new Date(Math.max(lastPositionTime.getTime(), lastMessageTime.getTime()))
+    : lastPositionTime || lastMessageTime
+
+  if (mostRecentTime) {
+    const minutesSinceLastSeen = (Date.now() - mostRecentTime.getTime()) / 60000
+    updateData.isActive = minutesSinceLastSeen < ONLINE_THRESHOLD_MINUTES
+  } else if (dataSource.connectedStatus != null) {
+    // Fallback: use connectedStatus if no time data available
+    updateData.isActive = Boolean(dataSource.connectedStatus)
   }
 
-  // Fetch sensors separately for this object
-  const axentaId = axentaObject.id as number
+  // ── Step 4: Parse isIgnition / isMotion from monitoring data ──
+  // These fields come from the monitoring API, not from full details
+  if (axentaObject.isIgnition != null) {
+    updateData.lastIgnition = Boolean(axentaObject.isIgnition)
+  }
+
+  // ── Step 5: Fetch sensor metadata and map values ──
   if (axentaId != null) {
     try {
       const sensors = await fetchObjectSensors(apiUrl, token, axentaId)
@@ -231,35 +267,70 @@ async function updateTrackerFromAxenta(trackerDbId: string, axentaObject: Record
           where: { trackerId: trackerDbId }
         })
 
+        let totalFuel = 0
+        let hasFuelSensor = false
+
         for (const sensor of sensors) {
           const s = sensor as Record<string, unknown>
           const sensorType = String(s.type || '').toLowerCase()
           const sensorName = String(s.name || '')
+          const sensorApiId = s.id as number | undefined
 
-          // Map Axenta sensor types to our tracker fields
-          // Common Axenta sensor types: fuel, ignition, temperature, odometer, speed, etc.
-          if (sensorType.includes('fuel') || sensorName.toLowerCase().includes('топлив')) {
-            // Fuel level — value needs to be fetched from messages/stats
-          } else if (sensorType.includes('ignition') || sensorName.toLowerCase().includes('зажиган')) {
-            updateData.lastIgnition = true // If present, likely active
-          } else if (sensorType.includes('temperature') || sensorType.includes('temp') || sensorName.toLowerCase().includes('темпер')) {
-            // Temperature sensor detected
-          } else if (sensorType.includes('odometer') || sensorType.includes('mileage') || sensorName.toLowerCase().includes('пробег')) {
-            // Mileage sensor detected
+          // Look up the actual value from sensorValuesMap
+          // The map uses keys like "sensor_2287338" where 2287338 is the sensor ID
+          let sensorValue: number | null = null
+          if (sensorApiId != null && sensorValuesMap[`sensor_${sensorApiId}`] != null) {
+            sensorValue = sensorValuesMap[`sensor_${sensorApiId}`]
           }
 
-          // Save sensor metadata
+          // Build display string
+          let sensorStringValue: string | null = null
+          if (sensorValue != null) {
+            const unit = s.unit ? String(s.unit) : ''
+            sensorStringValue = unit ? `${sensorValue} ${unit}` : String(sensorValue)
+          }
+
+          // Map Axenta sensor types to our tracker fields
+          if (sensorType.includes('fuel') || sensorName.toLowerCase().includes('топлив') || (sensorType === 'custom_sensor' && sensorName.toLowerCase().includes('бак'))) {
+            // Fuel level sensor
+            if (sensorValue != null) {
+              totalFuel += sensorValue
+              hasFuelSensor = true
+            }
+          } else if (sensorType.includes('ignition') || sensorName.toLowerCase().includes('зажиган')) {
+            // Ignition sensor — use value to determine state
+            if (sensorValue != null) {
+              updateData.lastIgnition = sensorValue > 0
+            }
+          } else if (sensorType.includes('temperature') || sensorType.includes('temp') || sensorName.toLowerCase().includes('темпер')) {
+            if (sensorValue != null) {
+              updateData.lastEngineTemp = sensorValue
+            }
+          } else if (sensorType.includes('odometer') || sensorType.includes('mileage') || sensorName.toLowerCase().includes('пробег')) {
+            if (sensorValue != null) {
+              updateData.lastMileage = sensorValue
+            }
+          } else if (sensorType.includes('voltage') || sensorName.toLowerCase().includes('напряжен')) {
+            // Voltage sensor — just save as sensor data, no special tracker field
+          }
+
+          // Save sensor data with actual values
           await db.glonassSensorData.create({
             data: {
               trackerId: trackerDbId,
               sensorType: String(s.type || 'custom'),
               sensorName: s.name ? String(s.name) : null,
-              value: s.value != null ? Number(s.value) : null,
-              stringValue: s.value != null ? String(s.value) : null,
+              value: sensorValue,
+              stringValue: sensorStringValue,
               unit: s.unit ? String(s.unit) : null,
               timestamp: new Date(),
             }
           }).catch(() => { /* ignore duplicate errors */ })
+        }
+
+        // Set total fuel level if any fuel sensors reported values
+        if (hasFuelSensor) {
+          updateData.lastFuelLevel = totalFuel
         }
       }
     } catch (err) {
@@ -267,23 +338,24 @@ async function updateTrackerFromAxenta(trackerDbId: string, axentaObject: Record
     }
   }
 
-  // Try to get object stats for today
+  // ── Step 6: Try to get object stats for today ──
   if (axentaId != null) {
     try {
       const now = new Date()
       const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate()).toISOString()
       const stats = await fetchObjectStats(apiUrl, token, axentaId, startOfDay, now.toISOString())
       if (stats) {
-        if (stats.mileage != null) updateData.lastMileage = Number(stats.mileage)
-        if (stats.avgSpeed != null) updateData.lastSpeed = Number(stats.avgSpeed)
-        if (stats.fuelConsumption != null) updateData.lastFuelLevel = Number(stats.fuelConsumption)
+        // Only use stats if we don't already have values from sensors
+        if (stats.mileage != null && updateData.lastMileage == null) updateData.lastMileage = Number(stats.mileage)
+        if (stats.avgSpeed != null && updateData.lastSpeed == null) updateData.lastSpeed = Number(stats.avgSpeed)
+        if (stats.fuelConsumption != null && updateData.lastFuelLevel == null) updateData.lastFuelLevel = Number(stats.fuelConsumption)
       }
     } catch {
       // Stats are optional, continue
     }
   }
 
-  // Try reverse geocoding for current position
+  // ── Step 7: Try reverse geocoding for current position ──
   if (updateData.lastLatitude != null && updateData.lastLongitude != null) {
     const address = await reverseGeocode(
       apiUrl, token,
@@ -295,18 +367,18 @@ async function updateTrackerFromAxenta(trackerDbId: string, axentaObject: Record
     }
   }
 
-  // Also update axentaCloudId and trackerName if the object has them
-  if (axentaObject.id != null) {
-    updateData.axentaCloudId = String(axentaObject.id)
+  // ── Step 8: Update metadata fields ──
+  if (dataSource.id != null) {
+    updateData.axentaCloudId = String(dataSource.id)
   }
-  if (axentaObject.name && typeof axentaObject.name === 'string') {
-    updateData.trackerName = axentaObject.name
+  if (dataSource.name && typeof dataSource.name === 'string') {
+    updateData.trackerName = dataSource.name
   }
-  if (axentaObject.uniqueId) {
-    updateData.imei = String(axentaObject.uniqueId)
+  if (dataSource.uniqueId) {
+    updateData.imei = String(dataSource.uniqueId)
   }
-  if (axentaObject.phoneNumber) {
-    updateData.phoneNumber = String(axentaObject.phoneNumber)
+  if (dataSource.phoneNumber) {
+    updateData.phoneNumber = String(dataSource.phoneNumber)
   }
 
   // Only update if we have new data
