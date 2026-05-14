@@ -1572,9 +1572,14 @@ function EquipmentFormDialog({ open, onOpenChange, editData, companies, step, se
   onSaved: () => void;
 }) {
   const [form, setForm] = useState<Record<string, string>>({})
+  const [createMode, setCreateMode] = useState<'manual' | 'axenta'>('manual')
+  const [axentaObjects, setAxentaObjects] = useState<Array<{ id: number; name: string; uniqueId: string; connectedStatus: boolean; isLinked: boolean; lastMessage: { time: string; posTime: string; position: { x: number; y: number; s: number; c: number } } | null }>>([])
+  const [axentaLoading, setAxentaLoading] = useState(false)
+  const [selectedAxentaId, setSelectedAxentaId] = useState<string>('')
 
   useEffect(() => {
     if (editData) {
+      setCreateMode('manual')
       setForm({
         name: editData.name || '', type: editData.type || 'автомобиль',
         brand: editData.brand || '', model: editData.model || '',
@@ -1596,10 +1601,48 @@ function EquipmentFormDialog({ open, onOpenChange, editData, companies, step, se
         ownerId: editData.ownerId || '', renterId: editData.renterId || '',
       })
     } else {
+      setCreateMode('manual')
+      setSelectedAxentaId('')
       setForm({ type: 'автомобиль', status: 'active' })
     }
     setStep(0)
   }, [editData, open, setStep])
+
+  // Load Axenta objects when switching to axenta mode
+  const loadAxentaObjects = useCallback(async () => {
+    setAxentaLoading(true)
+    try {
+      const res = await fetch('/api/glonass/objects')
+      if (res.ok) {
+        const data = await res.json()
+        setAxentaObjects(data.objects || [])
+      } else {
+        toast.error('Ошибка получения объектов Axenta')
+      }
+    } catch {
+      toast.error('Ошибка подключения к Axenta')
+    }
+    setAxentaLoading(false)
+  }, [])
+
+  useEffect(() => {
+    if (createMode === 'axenta' && axentaObjects.length === 0) {
+      loadAxentaObjects()
+    }
+  }, [createMode, axentaObjects.length, loadAxentaObjects])
+
+  // When selecting an Axenta object, fill form fields
+  const handleSelectAxentaObject = (objId: string) => {
+    setSelectedAxentaId(objId)
+    const obj = axentaObjects.find(o => String(o.id) === objId)
+    if (obj) {
+      setForm(prev => ({
+        ...prev,
+        name: obj.name || prev.name,
+        serialNumber: obj.uniqueId || prev.serialNumber,
+      }))
+    }
+  }
 
   const f = (key: string) => form[key] || ''
   const setF = (key: string, value: string) => setForm(prev => ({ ...prev, [key]: value }))
@@ -1620,11 +1663,36 @@ function EquipmentFormDialog({ open, onOpenChange, editData, companies, step, se
       const method = editData ? 'PUT' : 'POST'
       const res = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(form) })
       if (!res.ok) throw new Error()
+      const savedEquipment = await res.json()
+
+      // If creating from Axenta object, also link the tracker
+      if (!editData && createMode === 'axenta' && selectedAxentaId) {
+        const obj = axentaObjects.find(o => String(o.id) === selectedAxentaId)
+        if (obj) {
+          try {
+            await fetch('/api/glonass', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                equipmentId: savedEquipment.id,
+                trackerId: String(obj.uniqueId || obj.id),
+                trackerName: obj.name,
+                axentaCloudId: String(obj.id),
+              }),
+            })
+          } catch {
+            toast.warning('Техника добавлена, но не удалось подключить трекер')
+          }
+        }
+      }
+
       toast.success(editData ? 'Техника обновлена' : 'Техника добавлена')
       onSaved()
     } catch { toast.error('Ошибка сохранения') }
     setSaving(false)
   }
+
+  const unlinkedAxentaObjects = axentaObjects.filter(o => !o.isLinked)
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -1634,8 +1702,20 @@ function EquipmentFormDialog({ open, onOpenChange, editData, companies, step, se
             {editData ? <Edit className="size-4" /> : <Plus className="size-4" />}
             {editData ? 'Редактирование техники' : 'Добавление техники'}
           </DialogTitle>
-          <DialogDescription>Шаг {step + 1} из {steps.length}: {steps[step].title}</DialogDescription>
+          <DialogDescription>{editData ? `Шаг ${step + 1} из ${steps.length}: ${steps[step].title}` : createMode === 'axenta' ? 'Выберите объект из Axenta для автоматического добавления' : `Шаг ${step + 1} из ${steps.length}: ${steps[step].title}`}</DialogDescription>
         </DialogHeader>
+
+        {/* Mode selector — only when creating new */}
+        {!editData && (
+          <div className="flex gap-2 px-4 sm:px-5">
+            <Button size="sm" variant={createMode === 'manual' ? 'default' : 'outline'} className="h-7 text-[11px] gap-1.5" onClick={() => setCreateMode('manual')}>
+              <Plus className="size-3" />Создать новую
+            </Button>
+            <Button size="sm" variant={createMode === 'axenta' ? 'default' : 'outline'} className="h-7 text-[11px] gap-1.5" onClick={() => setCreateMode('axenta')}>
+              <Satellite className="size-3" />Из Axenta
+            </Button>
+          </div>
+        )}
 
         {/* Step indicator — compact */}
         <div className="flex items-center gap-0.5 px-4 sm:px-5 overflow-x-auto shrink-0">
@@ -1646,6 +1726,66 @@ function EquipmentFormDialog({ open, onOpenChange, editData, companies, step, se
           ))}
         </div>
 
+        {/* Axenta object selection */}
+        {!editData && createMode === 'axenta' ? (
+          <div className="space-y-3 px-4 sm:px-5 overflow-y-auto flex-1 min-h-0 py-2">
+            {axentaLoading ? (
+              <div className="flex items-center justify-center py-12"><Loader2 className="size-6 animate-spin text-muted-foreground" /><span className="ml-2 text-sm text-muted-foreground">Загрузка объектов...</span></div>
+            ) : unlinkedAxentaObjects.length === 0 ? (
+              <div className="text-center py-12">
+                <Satellite className="size-10 mx-auto mb-2 text-muted-foreground/40" />
+                <p className="text-sm text-muted-foreground">{axentaObjects.length === 0 ? 'Нет объектов в Axenta. Проверьте настройки интеграции.' : 'Все объекты Axenta уже привязаны к технике'}</p>
+              </div>
+            ) : (
+              <div className="space-y-2">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  {unlinkedAxentaObjects.map(obj => {
+                    const isSelected = String(obj.id) === selectedAxentaId
+                    const lastTime = obj.lastMessage?.posTime || obj.lastMessage?.time
+                    return (
+                      <Card key={obj.id} className={`cursor-pointer transition-all ${isSelected ? 'ring-2 ring-primary border-primary' : 'hover:shadow-sm'}`} onClick={() => handleSelectAxentaObject(String(obj.id))}>
+                        <CardContent className="p-3">
+                          <div className="flex items-center gap-2 mb-1">
+                            <div className={`size-6 rounded flex items-center justify-center ${obj.connectedStatus ? 'bg-emerald-100 dark:bg-emerald-900/40' : 'bg-gray-100 dark:bg-gray-800'}`}>
+                              <Satellite className={`size-3 ${obj.connectedStatus ? 'text-emerald-600 dark:text-emerald-400' : 'text-gray-400'}`} />
+                            </div>
+                            <p className="text-xs font-medium truncate flex-1">{obj.name}</p>
+                            {isSelected && <CheckCircle2 className="size-4 text-primary shrink-0" />}
+                          </div>
+                          <div className="text-[10px] text-muted-foreground space-y-0.5">
+                            <p>IMEI: {obj.uniqueId}</p>
+                            {obj.lastMessage?.position && (
+                              <p>Скорость: {obj.lastMessage.position.s || 0} км/ч</p>
+                            )}
+                            {lastTime && (
+                              <p>Последняя связь: {formatDateTime(lastTime)}</p>
+                            )}
+                          </div>
+                        </CardContent>
+                      </Card>
+                    )
+                  })}
+                </div>
+
+                {selectedAxentaId && (
+                  <div className="space-y-3 pt-2 border-t">
+                    <p className="text-[11px] font-medium text-muted-foreground">Данные техники (можно отредактировать)</p>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <div className="sm:col-span-2"><Label className="text-xs">Наименование *</Label><Input value={f('name')} onChange={e => setF('name', e.target.value)} /></div>
+                      <div><Label className="text-xs">Тип</Label><Select value={f('type')} onValueChange={v => setF('type', v)}><SelectTrigger className="h-9 text-sm"><SelectValue /></SelectTrigger><SelectContent>{EQUIPMENT_TYPES.map(t => <SelectItem key={t} value={t}>{t}</SelectItem>)}</SelectContent></Select></div>
+                      <div><Label className="text-xs">Гос. номер</Label><Input value={f('registrationNum')} onChange={e => setF('registrationNum', e.target.value)} placeholder="А000АА 00" /></div>
+                      <div><Label className="text-xs">Марка</Label><Input value={f('brand')} onChange={e => setF('brand', e.target.value)} /></div>
+                      <div><Label className="text-xs">Модель</Label><Input value={f('model')} onChange={e => setF('model', e.target.value)} /></div>
+                      <div className="sm:col-span-2"><Label className="text-xs">VIN номер</Label><Input value={f('vin')} onChange={e => setF('vin', e.target.value)} placeholder="17 символов" /></div>
+                      <div><Label className="text-xs">Статус</Label><Select value={f('status')} onValueChange={v => setF('status', v)}><SelectTrigger className="h-9 text-sm"><SelectValue /></SelectTrigger><SelectContent>{Object.entries(EQUIPMENT_STATUS_MAP).map(([k, v]) => <SelectItem key={k} value={k}>{v.label}</SelectItem>)}</SelectContent></Select></div>
+                      <div><Label className="text-xs">Компания-владелец</Label><Select value={f('ownerId') || '_none'} onValueChange={v => setF('ownerId', v === '_none' ? '' : v)}><SelectTrigger className="h-9 text-sm"><SelectValue placeholder="Не указан" /></SelectTrigger><SelectContent><SelectItem value="_none">Не указан</SelectItem>{companies.filter(c => c.type === 'owner' || c.type === 'both').map(c => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}</SelectContent></Select></div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        ) : (
         <div className="space-y-3 px-4 sm:px-5 overflow-y-auto flex-1 min-h-0 py-2">
           {step === 0 && (
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -1698,13 +1838,23 @@ function EquipmentFormDialog({ open, onOpenChange, editData, companies, step, se
             </div>
           )}
         </div>
+        )}
 
         <DialogFooter className="gap-2 sm:gap-0">
-          <Button variant="outline" size="sm" onClick={() => setStep(Math.max(0, step - 1))} disabled={step === 0}><ChevronLeft className="size-3.5" />Назад</Button>
-          {step < steps.length - 1 ? (
-            <Button size="sm" onClick={() => setStep(step + 1)}>Далее<ChevronRight className="size-3.5" /></Button>
+          {!editData && createMode === 'axenta' ? (
+            <>
+              <Button variant="outline" size="sm" onClick={() => { setCreateMode('manual'); setSelectedAxentaId('') }}><ChevronLeft className="size-3.5" />Назад</Button>
+              <Button size="sm" onClick={handleSave} disabled={saving || !selectedAxentaId || !f('name').trim()}>{saving ? <Loader2 className="size-3.5 animate-spin" /> : <CheckCircle2 className="size-3.5" />}Добавить с трекером</Button>
+            </>
           ) : (
-            <Button size="sm" onClick={handleSave} disabled={saving}>{saving ? <Loader2 className="size-3.5 animate-spin" /> : <CheckCircle2 className="size-3.5" />}{editData ? 'Сохранить' : 'Добавить'}</Button>
+            <>
+              <Button variant="outline" size="sm" onClick={() => setStep(Math.max(0, step - 1))} disabled={step === 0}><ChevronLeft className="size-3.5" />Назад</Button>
+              {step < steps.length - 1 ? (
+                <Button size="sm" onClick={() => setStep(step + 1)}>Далее<ChevronRight className="size-3.5" /></Button>
+              ) : (
+                <Button size="sm" onClick={handleSave} disabled={saving}>{saving ? <Loader2 className="size-3.5 animate-spin" /> : <CheckCircle2 className="size-3.5" />}{editData ? 'Сохранить' : 'Добавить'}</Button>
+              )}
+            </>
           )}
         </DialogFooter>
       </DialogContent>
