@@ -69,6 +69,7 @@ model Equipment {
   history         EquipmentHistory[]
   documents       EquipmentDocument[]
   trackers        GlonassTracker[]
+  trips           Trip[]
 }
 
 model EquipmentPhoto {
@@ -199,6 +200,63 @@ model GlonassSensorData {
   createdAt    DateTime @default(now())
 
   tracker      GlonassTracker @relation(fields: [trackerId], references: [id], onDelete: Cascade)
+}
+
+model Crew {
+  id          String   @id @default(cuid())
+  name        String   // Название экипажа / бригады
+  description String?  // Описание
+  type        String   @default("driver") // driver | mechanic | mixed | other
+  status      String   @default("active") // active | inactive
+  notes       String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  members     CrewMember[]
+  trips       Trip[]
+}
+
+model CrewMember {
+  id          String   @id @default(cuid())
+  crewId      String
+  fullName    String   // ФИО члена экипажа
+  role        String   // driver | mechanic | assistant | loader | other
+  phone       String?  // Телефон
+  licenseNum  String?  // Номер водительского удостоверения
+  licenseCat  String?  // Категория ВУ (B, C, D, CE...)
+  notes       String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  crew        Crew     @relation(fields: [crewId], references: [id], onDelete: Cascade)
+}
+
+model Trip {
+  id              String   @id @default(cuid())
+  equipmentId     String   // Привязка к технике
+  crewId          String?  // Привязка к экипажу
+  route           String   // Маршрут (откуда — куда)
+  startPoint      String?  // Пункт отправления
+  endPoint        String?  // Пункт назначения
+  cargo           String?  // Груз
+  cargoWeight     Float?   // Вес груза (т)
+  distance        Float?   // Расстояние (км)
+  startDate       DateTime // Дата/время начала рейса
+  endDate         DateTime? // Дата/время окончания рейса
+  plannedEndDate  DateTime? // Планируемое время прибытия
+  status          String   @default("planned") // planned | in_progress | completed | cancelled
+  fuelStart       Float?   // Топливо на старте (л)
+  fuelEnd         Float?   // Топливо на финише (л)
+  mileageStart    Int?     // Пробег на старте
+  mileageEnd      Int?     // Пробег на финише
+  cost            Float?   // Стоимость рейса
+  revenue         Float?   // Доход от рейса
+  notes           String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  equipment       Equipment @relation(fields: [equipmentId], references: [id], onDelete: Cascade)
+  crew            Crew?     @relation(fields: [crewId], references: [id], onDelete: SetNull)
 }
 
 model AxentaSettings {

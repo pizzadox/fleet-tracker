@@ -43,7 +43,8 @@ import {
   Settings2, Info, DollarSign, Shield, User, Users, ArrowRight,
   CheckCircle2, Clock, XCircle, AlertTriangle, Activity, Gauge,
   Navigation, Fuel, Thermometer, Zap, Cog, RefreshCw, Wifi, WifiOff,
-  Satellite, ArrowLeft, ChevronDown, ChevronUp, Filter, ListFilter
+  Satellite, ArrowLeft, ChevronDown, ChevronUp, Filter, ListFilter,
+  Route, Package, Weight, UserCircle, IdCard, ClipboardCheck
 } from 'lucide-react'
 
 // ═══════════════════════════════════════════════════════════════
@@ -144,6 +145,31 @@ interface AxentaSettings {
   isActive: boolean;
 }
 
+interface CrewMember {
+  id: string; crewId: string; fullName: string; role: string;
+  phone?: string | null; licenseNum?: string | null; licenseCat?: string | null;
+  notes?: string | null; createdAt: string; updatedAt: string;
+}
+
+interface Crew {
+  id: string; name: string; description?: string | null; type: string;
+  status: string; notes?: string | null; createdAt: string; updatedAt: string;
+  members?: CrewMember[]; _count?: { trips: number };
+}
+
+interface Trip {
+  id: string; equipmentId: string; crewId?: string | null;
+  route: string; startPoint?: string | null; endPoint?: string | null;
+  cargo?: string | null; cargoWeight?: number | null; distance?: number | null;
+  startDate: string; endDate?: string | null; plannedEndDate?: string | null;
+  status: string; fuelStart?: number | null; fuelEnd?: number | null;
+  mileageStart?: number | null; mileageEnd?: number | null;
+  cost?: number | null; revenue?: number | null; notes?: string | null;
+  createdAt: string; updatedAt: string;
+  equipment?: { id: string; name: string; registrationNum?: string | null; brand?: string | null; model?: string | null };
+  crew?: { id: string; name: string; members?: { fullName: string; role: string }[] } | null;
+}
+
 // ═══════════════════════════════════════════════════════════════
 // CONSTANTS
 // ═══════════════════════════════════════════════════════════════
@@ -178,6 +204,21 @@ const PHOTO_CATEGORIES: Record<string, string> = {
 
 const COMPANY_TYPES: Record<string, string> = {
   owner: 'Владелец', renter: 'Арендатор', both: 'Владелец и арендатор'
+}
+
+const TRIP_STATUS_MAP: Record<string, { label: string; color: string; border: string }> = {
+  planned: { label: 'Запланирован', color: 'bg-sky-100 text-sky-800 dark:bg-sky-900/40 dark:text-sky-400', border: 'border-l-sky-500' },
+  in_progress: { label: 'В пути', color: 'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-400', border: 'border-l-amber-500' },
+  completed: { label: 'Завершён', color: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-400', border: 'border-l-emerald-500' },
+  cancelled: { label: 'Отменён', color: 'bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-400', border: 'border-l-red-500' },
+}
+
+const CREW_TYPE_MAP: Record<string, string> = {
+  driver: 'Водители', mechanic: 'Механики', mixed: 'Смешанный', other: 'Другой'
+}
+
+const MEMBER_ROLE_MAP: Record<string, string> = {
+  driver: 'Водитель', mechanic: 'Механик', assistant: 'Помощник', loader: 'Грузчик', other: 'Другой'
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -272,7 +313,7 @@ export default function Home() {
   const [companyFormOpen, setCompanyFormOpen] = useState(false)
   const [companyFormEdit, setCompanyFormEdit] = useState<Company | null>(null)
   const [companyFormSaving, setCompanyFormSaving] = useState(false)
-  const [deleteDialog, setDeleteDialog] = useState<{ open: boolean; type: 'equipment' | 'repair' | 'company'; id: string; name: string }>({
+  const [deleteDialog, setDeleteDialog] = useState<{ open: boolean; type: 'equipment' | 'repair' | 'company' | 'trip' | 'crew'; id: string; name: string }>({
     open: false, type: 'equipment', id: '', name: ''
   })
   const [photoUploadEq, setPhotoUploadEq] = useState<string | null>(null)
@@ -287,6 +328,18 @@ export default function Home() {
   const [axentaSettings, setAxentaSettings] = useState<AxentaSettings>({ apiUrl: '', apiKey: '', username: '', password: '', syncInterval: 300, isActive: false })
   const [settingsSaving, setSettingsSaving] = useState(false)
   const [syncing, setSyncing] = useState(false)
+  const [trips, setTrips] = useState<Trip[]>([])
+  const [crews, setCrews] = useState<Crew[]>([])
+  const [tripFormOpen, setTripFormOpen] = useState(false)
+  const [tripFormEdit, setTripFormEdit] = useState<Trip | null>(null)
+  const [tripFormSaving, setTripFormSaving] = useState(false)
+  const [tripFormEquipmentId, setTripFormEquipmentId] = useState('')
+  const [tripDetailOpen, setTripDetailOpen] = useState(false)
+  const [selectedTrip, setSelectedTrip] = useState<Trip | null>(null)
+  const [tripDetailLoading, setTripDetailLoading] = useState(false)
+  const [crewFormOpen, setCrewFormOpen] = useState(false)
+  const [crewFormEdit, setCrewFormEdit] = useState<Crew | null>(null)
+  const [crewFormSaving, setCrewFormSaving] = useState(false)
 
   // ═══════════════════════════════════════════════════════════════
   // DATA FETCHING
@@ -323,11 +376,29 @@ export default function Home() {
     } catch { toast.error('Ошибка загрузки ремонтов') }
   }, [])
 
+  const fetchTrips = useCallback(async () => {
+    try {
+      const res = await fetch('/api/trips')
+      if (!res.ok) throw new Error()
+      const data = await res.json()
+      setTrips(data)
+    } catch { toast.error('Ошибка загрузки рейсов') }
+  }, [])
+
+  const fetchCrews = useCallback(async () => {
+    try {
+      const res = await fetch('/api/crews')
+      if (!res.ok) throw new Error()
+      const data = await res.json()
+      setCrews(data)
+    } catch { toast.error('Ошибка загрузки экипажей') }
+  }, [])
+
   const fetchAll = useCallback(async () => {
     setLoading(true)
-    await Promise.all([fetchEquipment(), fetchCompanies(), fetchRepairs()])
+    await Promise.all([fetchEquipment(), fetchCompanies(), fetchRepairs(), fetchTrips(), fetchCrews()])
     setLoading(false)
-  }, [fetchEquipment, fetchCompanies, fetchRepairs])
+  }, [fetchEquipment, fetchCompanies, fetchRepairs, fetchTrips, fetchCrews])
 
   useEffect(() => { fetchAll() }, [fetchAll])
 
@@ -374,22 +445,44 @@ export default function Home() {
     fetchRepairDetail(r.id)
   }
 
+  const fetchTripDetail = async (id: string) => {
+    setTripDetailLoading(true)
+    try {
+      const res = await fetch(`/api/trips/${id}`)
+      if (!res.ok) throw new Error()
+      const data = await res.json()
+      setSelectedTrip(data)
+    } catch { toast.error('Ошибка загрузки данных рейса') }
+    setTripDetailLoading(false)
+  }
+
+  const openTripDetail = (t: Trip) => {
+    setTripDetailOpen(true)
+    fetchTripDetail(t.id)
+  }
+
   // ─── Stats with memo ─────────────────────────────────────────
   const stats = useMemo(() => ({
     total: equipment.length,
     active: equipment.filter(e => e.status === 'active').length,
     repair: equipment.filter(e => e.status === 'repair').length,
     rented: equipment.filter(e => e.status === 'rented').length,
-  }), [equipment])
+    tripsActive: trips.filter(t => t.status === 'in_progress').length,
+    tripsTotal: trips.length,
+  }), [equipment, trips])
 
   const handleDelete = async () => {
     const { type, id } = deleteDialog
     try {
-      const res = await fetch(`/api/${type}s/${id}`, { method: 'DELETE' })
+      let apiUrl = `/api/${type}s/${id}`
+      if (type === 'crew') apiUrl = `/api/crews/${id}`
+      if (type === 'trip') apiUrl = `/api/trips/${id}`
+      const res = await fetch(apiUrl, { method: 'DELETE' })
       if (!res.ok) throw new Error()
       toast.success('Удалено успешно')
       if (type === 'equipment') { setEqDetailOpen(false); setSelectedEq(null) }
       if (type === 'repair') { setRepairDetailOpen(false); setSelectedRepair(null) }
+      if (type === 'trip') { setTripDetailOpen(false); setSelectedTrip(null) }
       fetchAll()
     } catch { toast.error('Ошибка удаления') }
     setDeleteDialog({ open: false, type: 'equipment', id: '', name: '' })
@@ -465,6 +558,7 @@ export default function Home() {
           <TabsList className="mb-4">
             <TabsTrigger value="equipment" className="gap-1.5"><Truck className="size-4" />Техника</TabsTrigger>
             <TabsTrigger value="repairs" className="gap-1.5"><Wrench className="size-4" />Ремонты</TabsTrigger>
+            <TabsTrigger value="trips" className="gap-1.5"><Route className="size-4" />Рейсы</TabsTrigger>
             <TabsTrigger value="companies" className="gap-1.5"><Building2 className="size-4" />Компании</TabsTrigger>
           </TabsList>
           <TabsContent value="equipment">
@@ -472,6 +566,9 @@ export default function Home() {
           </TabsContent>
           <TabsContent value="repairs">
             <RepairsTab repairs={repairs} equipment={equipment} onOpenDetail={openRepairDetail} onAdd={(eqId) => { setRepairFormEdit(null); setRepairFormEquipmentId(eqId || ''); setRepairFormOpen(true) }} onDelete={(r) => setDeleteDialog({ open: true, type: 'repair', id: r.id, name: r.description })} />
+          </TabsContent>
+          <TabsContent value="trips">
+            <TripsTab trips={trips} equipment={equipment} crews={crews} onOpenDetail={openTripDetail} onAdd={(eqId) => { setTripFormEdit(null); setTripFormEquipmentId(eqId || ''); setTripFormOpen(true) }} onDelete={(t) => setDeleteDialog({ open: true, type: 'trip', id: t.id, name: t.route })} onAddCrew={() => { setCrewFormEdit(null); setCrewFormOpen(true) }} onEditCrew={(c) => { setCrewFormEdit(c); setCrewFormOpen(true) }} onDeleteCrew={(c) => setDeleteDialog({ open: true, type: 'crew', id: c.id, name: c.name })} />
           </TabsContent>
           <TabsContent value="companies">
             <CompaniesTab companies={companies} onAdd={() => { setCompanyFormEdit(null); setCompanyFormOpen(true) }} onEdit={(c) => { setCompanyFormEdit(c); setCompanyFormOpen(true) }} onDelete={(c) => setDeleteDialog({ open: true, type: 'company', id: c.id, name: c.name })} />
@@ -482,16 +579,18 @@ export default function Home() {
         <div className="md:hidden">
           {mainTab === 'equipment' && <EquipmentTab equipment={equipment} companies={companies} eqSearch={eqSearch} setEqSearch={setEqSearch} eqStatusFilter={eqStatusFilter} setEqStatusFilter={setEqStatusFilter} eqTypeFilter={eqTypeFilter} setEqTypeFilter={setEqTypeFilter} onOpenDetail={openEquipmentDetail} onAdd={() => { setEqFormEdit(null); setEqFormStep(0); setEqFormOpen(true) }} onEdit={(eq) => { setEqFormEdit(eq); setEqFormStep(0); setEqFormOpen(true) }} onDelete={(eq) => setDeleteDialog({ open: true, type: 'equipment', id: eq.id, name: eq.name })} />}
           {mainTab === 'repairs' && <RepairsTab repairs={repairs} equipment={equipment} onOpenDetail={openRepairDetail} onAdd={(eqId) => { setRepairFormEdit(null); setRepairFormEquipmentId(eqId || ''); setRepairFormOpen(true) }} onDelete={(r) => setDeleteDialog({ open: true, type: 'repair', id: r.id, name: r.description })} />}
+          {mainTab === 'trips' && <TripsTab trips={trips} equipment={equipment} crews={crews} onOpenDetail={openTripDetail} onAdd={(eqId) => { setTripFormEdit(null); setTripFormEquipmentId(eqId || ''); setTripFormOpen(true) }} onDelete={(t) => setDeleteDialog({ open: true, type: 'trip', id: t.id, name: t.route })} onAddCrew={() => { setCrewFormEdit(null); setCrewFormOpen(true) }} onEditCrew={(c) => { setCrewFormEdit(c); setCrewFormOpen(true) }} onDeleteCrew={(c) => setDeleteDialog({ open: true, type: 'crew', id: c.id, name: c.name })} />}
           {mainTab === 'companies' && <CompaniesTab companies={companies} onAdd={() => { setCompanyFormEdit(null); setCompanyFormOpen(true) }} onEdit={(c) => { setCompanyFormEdit(c); setCompanyFormOpen(true) }} onDelete={(c) => setDeleteDialog({ open: true, type: 'company', id: c.id, name: c.name })} />}
         </div>
       </main>
 
       {/* ─── MOBILE BOTTOM NAV ────────────────────────────────── */}
       <nav className="md:hidden fixed bottom-0 left-0 right-0 z-40 border-t bg-card/95 backdrop-blur-sm">
-        <div className="grid grid-cols-3 h-14">
+        <div className="grid grid-cols-4 h-14">
           {[
             { value: 'equipment', icon: <Truck className="size-5" />, label: 'Техника' },
             { value: 'repairs', icon: <Wrench className="size-5" />, label: 'Ремонты' },
+            { value: 'trips', icon: <Route className="size-5" />, label: 'Рейсы' },
             { value: 'companies', icon: <Building2 className="size-5" />, label: 'Компании' },
           ].map(tab => (
             <button key={tab.value} onClick={() => setMainTab(tab.value)}
@@ -504,7 +603,7 @@ export default function Home() {
       </nav>
 
       {/* ─── DIALOGS ──────────────────────────────────────────── */}
-      <EquipmentDetailSheet open={eqDetailOpen} onOpenChange={setEqDetailOpen} equipment={selectedEq} loading={eqDetailLoading} detailTab={eqDetailTab} setDetailTab={setEqDetailTab} companies={companies} photoCategoryFilter={photoCategoryFilter} setPhotoCategoryFilter={setPhotoCategoryFilter} fullPhoto={fullPhoto} setFullPhoto={setFullPhoto} onEdit={(eq) => { setEqDetailOpen(false); setEqFormEdit(eq); setEqFormStep(0); setEqFormOpen(true) }} onDelete={(eq) => { setEqDetailOpen(false); setDeleteDialog({ open: true, type: 'equipment', id: eq.id, name: eq.name }) }} onAddRepair={(eqId) => { setRepairFormEdit(null); setRepairFormEquipmentId(eqId); setRepairFormOpen(true) }} onUploadPhoto={(eqId) => setPhotoUploadEq(eqId)} onRefresh={() => selectedEq && fetchEquipmentDetail(selectedEq.id)} onOpenRepairDetail={(r) => openRepairDetail(r)} />
+      <EquipmentDetailSheet open={eqDetailOpen} onOpenChange={setEqDetailOpen} equipment={selectedEq} loading={eqDetailLoading} detailTab={eqDetailTab} setDetailTab={setEqDetailTab} companies={companies} photoCategoryFilter={photoCategoryFilter} setPhotoCategoryFilter={setPhotoCategoryFilter} fullPhoto={fullPhoto} setFullPhoto={setFullPhoto} onEdit={(eq) => { setEqDetailOpen(false); setEqFormEdit(eq); setEqFormStep(0); setEqFormOpen(true) }} onDelete={(eq) => { setEqDetailOpen(false); setDeleteDialog({ open: true, type: 'equipment', id: eq.id, name: eq.name }) }} onAddRepair={(eqId) => { setRepairFormEdit(null); setRepairFormEquipmentId(eqId); setRepairFormOpen(true) }} onUploadPhoto={(eqId) => setPhotoUploadEq(eqId)} onRefresh={() => selectedEq && fetchEquipmentDetail(selectedEq.id)} onOpenRepairDetail={(r) => openRepairDetail(r)} onAddTrip={(eqId) => { setTripFormEdit(null); setTripFormEquipmentId(eqId); setTripFormOpen(true) }} onOpenTripDetail={openTripDetail} />
       <EquipmentFormDialog open={eqFormOpen} onOpenChange={setEqFormOpen} editData={eqFormEdit} companies={companies} step={eqFormStep} setStep={setEqFormStep} saving={eqFormSaving} setSaving={setEqFormSaving} onSaved={() => { setEqFormOpen(false); fetchAll() }} />
       <RepairDetailDialog open={repairDetailOpen} onOpenChange={setRepairDetailOpen} repair={selectedRepair} loading={repairDetailLoading} fullPhoto={fullPhoto} setFullPhoto={setFullPhoto} onEdit={(r) => { setRepairDetailOpen(false); setRepairFormEdit(r); setRepairFormEquipmentId(r.equipmentId); setRepairFormOpen(true) }} onDelete={(r) => { setRepairDetailOpen(false); setDeleteDialog({ open: true, type: 'repair', id: r.id, name: r.description }) }} onComplete={async (r) => { try { const res = await fetch(`/api/repairs/${r.id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...r, status: 'completed', endDate: new Date().toISOString() }) }); if (!res.ok) throw new Error(); toast.success('Ремонт завершён'); fetchRepairDetail(r.id); fetchAll() } catch { toast.error('Ошибка завершения ремонта') } }} onAddStage={(repairId) => { setStageFormRepairId(repairId); setStageFormEdit(null); setStageFormOpen(true) }} onEditStage={(stage, repairId) => { setStageFormRepairId(repairId); setStageFormEdit(stage); setStageFormOpen(true) }} onDeleteStage={async (stageId, repairId) => { try { const res = await fetch(`/api/repairs/${repairId}/stages?stageId=${stageId}`, { method: 'DELETE' }); if (!res.ok) throw new Error(); toast.success('Этап удалён'); fetchRepairDetail(repairId) } catch { toast.error('Ошибка удаления этапа') } }} onUploadPhoto={(repairId) => setPhotoUploadRepair(repairId)} onRefresh={() => selectedRepair && fetchRepairDetail(selectedRepair.id)} />
       <RepairFormDialog open={repairFormOpen} onOpenChange={setRepairFormOpen} editData={repairFormEdit} equipmentId={repairFormEquipmentId} equipmentList={equipment} saving={repairFormSaving} setSaving={setRepairFormSaving} onSaved={() => { setRepairFormOpen(false); fetchAll() }} />
@@ -512,6 +611,9 @@ export default function Home() {
       <StageFormDialog open={stageFormOpen} onOpenChange={setStageFormOpen} repairId={stageFormRepairId} editData={stageFormEdit} saving={stageFormSaving} setSaving={setStageFormSaving} onSaved={() => { setStageFormOpen(false); if (selectedRepair) fetchRepairDetail(selectedRepair.id) }} />
       <PhotoUploadDialog open={!!photoUploadEq} onOpenChange={(v) => { if (!v) setPhotoUploadEq(null) }} targetId={photoUploadEq || ''} targetType="equipment" onUploaded={() => { setPhotoUploadEq(null); if (selectedEq) fetchEquipmentDetail(selectedEq.id); fetchAll() }} />
       <RepairPhotoUploadDialog open={!!photoUploadRepair} onOpenChange={(v) => { if (!v) setPhotoUploadRepair(null) }} targetId={photoUploadRepair || ''} stages={selectedRepair?.stages || []} onUploaded={() => { setPhotoUploadRepair(null); if (selectedRepair) fetchRepairDetail(selectedRepair.id) }} />
+      <TripDetailDialog open={tripDetailOpen} onOpenChange={setTripDetailOpen} trip={selectedTrip} loading={tripDetailLoading} crews={crews} onEdit={(t) => { setTripDetailOpen(false); setTripFormEdit(t); setTripFormEquipmentId(t.equipmentId); setTripFormOpen(true) }} onDelete={(t) => { setTripDetailOpen(false); setDeleteDialog({ open: true, type: 'trip', id: t.id, name: t.route }) }} onStart={async (t) => { try { const res = await fetch(`/api/trips/${t.id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status: 'in_progress' }) }); if (!res.ok) throw new Error(); toast.success('Рейс начат'); fetchTripDetail(t.id); fetchAll() } catch { toast.error('Ошибка') } }} onComplete={async (t) => { try { const res = await fetch(`/api/trips/${t.id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status: 'completed', endDate: new Date().toISOString() }) }); if (!res.ok) throw new Error(); toast.success('Рейс завершён'); fetchTripDetail(t.id); fetchAll() } catch { toast.error('Ошибка завершения рейса') } }} onRefresh={() => selectedTrip && fetchTripDetail(selectedTrip.id)} />
+      <TripFormDialog open={tripFormOpen} onOpenChange={setTripFormOpen} editData={tripFormEdit} equipmentId={tripFormEquipmentId} equipmentList={equipment} crews={crews} saving={tripFormSaving} setSaving={setTripFormSaving} onSaved={() => { setTripFormOpen(false); fetchAll() }} />
+      <CrewFormDialog open={crewFormOpen} onOpenChange={setCrewFormOpen} editData={crewFormEdit} saving={crewFormSaving} setSaving={setCrewFormSaving} onSaved={() => { setCrewFormOpen(false); fetchAll() }} />
 
       {/* Full photo view */}
       <Dialog open={!!fullPhoto} onOpenChange={() => setFullPhoto(null)}>
@@ -679,7 +781,7 @@ function EquipmentTab({ equipment, companies, eqSearch, setEqSearch, eqStatusFil
 // EQUIPMENT DETAIL SHEET
 // ═══════════════════════════════════════════════════════════════
 
-function EquipmentDetailSheet({ open, onOpenChange, equipment, loading, detailTab, setDetailTab, companies, photoCategoryFilter, setPhotoCategoryFilter, fullPhoto, setFullPhoto, onEdit, onDelete, onAddRepair, onUploadPhoto, onRefresh, onOpenRepairDetail }: {
+function EquipmentDetailSheet({ open, onOpenChange, equipment, loading, detailTab, setDetailTab, companies, photoCategoryFilter, setPhotoCategoryFilter, fullPhoto, setFullPhoto, onEdit, onDelete, onAddRepair, onUploadPhoto, onRefresh, onOpenRepairDetail, onAddTrip, onOpenTripDetail }: {
   open: boolean; onOpenChange: (v: boolean) => void;
   equipment: Equipment | null; loading: boolean;
   detailTab: string; setDetailTab: (v: string) => void;
@@ -689,11 +791,19 @@ function EquipmentDetailSheet({ open, onOpenChange, equipment, loading, detailTa
   onEdit: (eq: Equipment) => void; onDelete: (eq: Equipment) => void;
   onAddRepair: (eqId: string) => void; onUploadPhoto: (eqId: string) => void;
   onRefresh: () => void; onOpenRepairDetail: (r: Repair) => void;
+  onAddTrip: (eqId: string) => void; onOpenTripDetail: (t: Trip) => void;
 }) {
   const contentRef = useRef<HTMLDivElement>(null)
+  const [localTrips, setLocalTrips] = useState<Trip[]>([])
   if (!equipment) return null
   const eq = equipment
   const filteredPhotos = eq.photos?.filter(p => photoCategoryFilter === 'all' || p.category === photoCategoryFilter) || []
+
+  useEffect(() => {
+    if (open && eq && detailTab === 'trips') {
+      fetch(`/api/trips?equipmentId=${eq.id}`).then(r => r.json()).then(setLocalTrips).catch(() => {})
+    }
+  }, [open, eq, detailTab])
 
   const handleTabChange = (v: string) => {
     setDetailTab(v)
@@ -722,6 +832,7 @@ function EquipmentDetailSheet({ open, onOpenChange, equipment, loading, detailTa
               <TabsTrigger value="photos" className="gap-1 text-xs"><Camera className="size-3" /><span className="hidden sm:inline">Фото</span></TabsTrigger>
               <TabsTrigger value="repairs" className="gap-1 text-xs"><Wrench className="size-3" /><span className="hidden sm:inline">Ремонты</span></TabsTrigger>
               <TabsTrigger value="glonass" className="gap-1 text-xs"><MapPin className="size-3" /><span className="hidden sm:inline">ГЛОНАСС</span></TabsTrigger>
+              <TabsTrigger value="trips" className="gap-1 text-xs"><Route className="size-3" /><span className="hidden sm:inline">Рейсы</span></TabsTrigger>
               <TabsTrigger value="history" className="gap-1 text-xs"><History className="size-3" /><span className="hidden sm:inline">История</span></TabsTrigger>
             </TabsList>
           </div>
@@ -890,6 +1001,28 @@ function EquipmentDetailSheet({ open, onOpenChange, equipment, loading, detailTa
                             <div className="flex-1" />
                             <Button size="sm" variant="destructive" className="h-7 text-[11px] gap-1" onClick={async () => { try { await fetch(`/api/glonass/${tracker.id}`, { method: 'DELETE' }); toast.success('Трекер отключён'); onRefresh() } catch { toast.error('Ошибка') } }}><Trash2 className="size-3" />Отключить</Button>
                           </div>
+                        </CardContent>
+                      </Card>
+                    ))}
+                  </div>
+                )}
+
+                {detailTab === 'trips' && (
+                  <div className="px-4 sm:px-5 py-3 space-y-2">
+                    <Button size="sm" className="h-8 gap-1 text-xs mb-1" onClick={() => onAddTrip(eq.id)}><Plus className="size-3" />Новый рейс</Button>
+                    {localTrips.length === 0 ? (
+                      <div className="text-center py-8 text-muted-foreground"><Route className="size-8 mx-auto mb-2 opacity-40" /><p className="text-xs">Нет рейсов</p></div>
+                    ) : localTrips.map(t => (
+                      <Card key={t.id} className="cursor-pointer hover:shadow-sm transition-shadow" onClick={() => onOpenTripDetail(t)}>
+                        <CardContent className="p-3 space-y-1">
+                          <div className="flex items-start justify-between gap-2">
+                            <p className="text-xs font-medium">{t.route}</p>
+                            {statusBadge(t.status, TRIP_STATUS_MAP)}
+                          </div>
+                          <div className="text-[10px] text-muted-foreground">
+                            <span>{formatDate(t.startDate)}</span>{t.cargo && <span> • {t.cargo}</span>}{t.distance != null && <span> • {t.distance} км</span>}
+                          </div>
+                          {t.crew && <p className="text-[10px] text-muted-foreground">Экипаж: {t.crew.name}</p>}
                         </CardContent>
                       </Card>
                     ))}
@@ -1789,6 +1922,413 @@ function RepairPhotoUploadDialog({ open, onOpenChange, targetId, stages, onUploa
         </div>
         <DialogFooter>
           <Button size="sm" onClick={handleUpload} disabled={uploading || !file}>{uploading ? <Loader2 className="size-3.5 animate-spin" /> : <Upload className="size-3.5" />}Загрузить</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+// ═══════════════════════════════════════════════════════════════
+// TRIPS TAB
+// ═══════════════════════════════════════════════════════════════
+
+function TripsTab({ trips, equipment, crews, onOpenDetail, onAdd, onDelete, onAddCrew, onEditCrew, onDeleteCrew }: {
+  trips: Trip[]; equipment: Equipment[]; crews: Crew[];
+  onOpenDetail: (t: Trip) => void; onAdd: (eqId?: string) => void;
+  onDelete: (t: Trip) => void;
+  onAddCrew: () => void; onEditCrew: (c: Crew) => void; onDeleteCrew: (c: Crew) => void;
+}) {
+  const [statusFilter, setStatusFilter] = useState('all')
+  const [eqFilter, setEqFilter] = useState('all')
+  const [search, setSearch] = useState('')
+  const debouncedSearch = useDebounce(search, 300)
+  const [showCrews, setShowCrews] = useState(false)
+
+  const filtered = useMemo(() => trips.filter(t => {
+    if (statusFilter !== 'all' && t.status !== statusFilter) return false
+    if (eqFilter !== 'all' && t.equipmentId !== eqFilter) return false
+    if (debouncedSearch && !t.route.toLowerCase().includes(debouncedSearch.toLowerCase()) && !(t.cargo || '').toLowerCase().includes(debouncedSearch.toLowerCase())) return false
+    return true
+  }), [trips, statusFilter, eqFilter, debouncedSearch])
+
+  return (
+    <div className="space-y-3">
+      <div className="flex flex-col sm:flex-row gap-2">
+        <div className="relative flex-1">
+          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 size-3.5 text-muted-foreground" />
+          <Input placeholder="Поиск по маршруту, грузу..." value={search} onChange={e => setSearch(e.target.value)} className="pl-8 h-9 text-sm" />
+        </div>
+        <Select value={statusFilter} onValueChange={setStatusFilter}>
+          <SelectTrigger className="w-full sm:w-[140px] h-9 text-sm"><SelectValue placeholder="Статус" /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">Все статусы</SelectItem>
+            {Object.entries(TRIP_STATUS_MAP).map(([k, v]) => <SelectItem key={k} value={k}>{v.label}</SelectItem>)}
+          </SelectContent>
+        </Select>
+        <Select value={eqFilter} onValueChange={setEqFilter}>
+          <SelectTrigger className="w-full sm:w-[160px] h-9 text-sm"><SelectValue placeholder="Техника" /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">Вся техника</SelectItem>
+            {equipment.map(e => <SelectItem key={e.id} value={e.id}>{e.name}</SelectItem>)}
+          </SelectContent>
+        </Select>
+        <Button onClick={() => onAdd()} size="sm" className="h-9 gap-1.5"><Plus className="size-3.5" />Рейс</Button>
+        <Button onClick={onAddCrew} variant="outline" size="sm" className="h-9 gap-1.5"><Users className="size-3.5" />Экипаж</Button>
+      </div>
+
+      <div className="flex items-center gap-2">
+        <p className="text-xs text-muted-foreground">Рейсов: {filtered.length}</p>
+        <div className="flex-1" />
+        <Button variant="ghost" size="sm" className="h-7 text-[11px] gap-1" onClick={() => setShowCrews(!showCrews)}>
+          <Users className="size-3" />{showCrews ? 'Скрыть экипажи' : 'Показать экипажи'}
+          {showCrews ? <ChevronUp className="size-3" /> : <ChevronDown className="size-3" />}
+        </Button>
+      </div>
+
+      {/* Crews section (toggleable) */}
+      {showCrews && (
+        <div className="space-y-2">
+          <Separator />
+          <div className="flex items-center justify-between">
+            <h3 className="text-xs font-semibold flex items-center gap-1.5"><Users className="size-3.5" />Экипажи ({crews.length})</h3>
+            <Button size="sm" variant="outline" className="h-7 text-[11px] gap-1" onClick={onAddCrew}><Plus className="size-3" />Добавить</Button>
+          </div>
+          {crews.length === 0 ? (
+            <p className="text-xs text-muted-foreground py-2">Экипажи не созданы</p>
+          ) : (
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+              {crews.map(c => (
+                <Card key={c.id}>
+                  <CardContent className="p-3 space-y-1.5">
+                    <div className="flex items-center gap-2">
+                      <div className="size-7 rounded-md bg-muted flex items-center justify-center shrink-0"><Users className="size-3.5 text-muted-foreground" /></div>
+                      <div className="min-w-0 flex-1">
+                        <p className="text-xs font-medium truncate">{c.name}</p>
+                        <p className="text-[10px] text-muted-foreground">{CREW_TYPE_MAP[c.type] || c.type} • {c.members?.length || 0} чел.</p>
+                      </div>
+                      <span className={`inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-medium ${c.status === 'active' ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-400' : 'bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-400'}`}>{c.status === 'active' ? 'Активен' : 'Неактивен'}</span>
+                    </div>
+                    {c.members && c.members.length > 0 && (
+                      <div className="space-y-0.5 pl-2">
+                        {c.members.map(m => (
+                          <div key={m.id} className="flex items-center gap-1 text-[10px]">
+                            <UserCircle className="size-3 text-muted-foreground" />
+                            <span>{m.fullName}</span>
+                            <span className="text-muted-foreground">({MEMBER_ROLE_MAP[m.role] || m.role})</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    <div className="flex gap-1 pt-0.5">
+                      <Button size="sm" variant="ghost" className="h-6 text-[10px] gap-0.5" onClick={() => onEditCrew(c)}><Edit className="size-3" />Изменить</Button>
+                      <Button size="sm" variant="ghost" className="h-6 text-[10px] gap-0.5 text-destructive hover:text-destructive" onClick={() => onDeleteCrew(c)}><Trash2 className="size-3" />Удалить</Button>
+                    </div>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          )}
+          <Separator />
+        </div>
+      )}
+
+      {/* Trips list */}
+      {filtered.length === 0 ? (
+        <Card className="py-8">
+          <CardContent className="flex flex-col items-center text-center p-4 pt-0">
+            <Route className="size-10 text-muted-foreground/40 mb-2" />
+            <p className="text-sm text-muted-foreground">Рейсы не найдены</p>
+          </CardContent>
+        </Card>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          {filtered.map(t => (
+            <Card key={t.id} className={`cursor-pointer hover:shadow-md transition-shadow border-l-3 ${TRIP_STATUS_MAP[t.status]?.border || ''}`} onClick={() => onOpenDetail(t)}>
+              <CardHeader className="pb-1.5 pt-3 px-3">
+                <div className="flex items-start justify-between gap-1.5">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <div className="flex items-center justify-center size-8 rounded-lg bg-sky-100 dark:bg-sky-900/30 shrink-0"><Route className="size-3.5 text-sky-600 dark:text-sky-400" /></div>
+                    <div className="min-w-0">
+                      <CardTitle className="text-sm font-semibold truncate">{t.route}</CardTitle>
+                      <p className="text-[11px] text-muted-foreground truncate">{t.equipment?.name} {t.equipment?.registrationNum ? `• ${t.equipment.registrationNum}` : ''}</p>
+                    </div>
+                  </div>
+                  {statusBadge(t.status, TRIP_STATUS_MAP)}
+                </div>
+              </CardHeader>
+              <CardContent className="px-3 pb-3 pt-0 space-y-1.5">
+                <Separator />
+                <div className="grid grid-cols-2 gap-x-4 gap-y-0.5 text-[11px]">
+                  <div><span className="text-muted-foreground">Начало:</span> <span className="font-medium">{formatDate(t.startDate)}</span></div>
+                  <div><span className="text-muted-foreground">Груз:</span> <span className="font-medium truncate">{t.cargo || '—'}</span></div>
+                  <div><span className="text-muted-foreground">Расстояние:</span> <span className="font-medium">{t.distance != null ? `${t.distance} км` : '—'}</span></div>
+                  <div><span className="text-muted-foreground">Экипаж:</span> <span className="font-medium truncate">{t.crew?.name || '—'}</span></div>
+                </div>
+                {t.cost != null && <p className="text-[10px] text-muted-foreground">Стоимость: {formatPrice(t.cost)} {t.revenue != null ? `• Доход: ${formatPrice(t.revenue)}` : ''}</p>}
+                <div className="flex gap-1 pt-1" onClick={e => e.stopPropagation()}>
+                  <Button size="sm" variant="ghost" className="h-7 text-[11px] gap-1 text-destructive hover:text-destructive" onClick={() => onDelete(t)}><Trash2 className="size-3" />Удалить</Button>
+                </div>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ═══════════════════════════════════════════════════════════════
+// TRIP DETAIL DIALOG
+// ═══════════════════════════════════════════════════════════════
+
+function TripDetailDialog({ open, onOpenChange, trip, loading, crews, onEdit, onDelete, onStart, onComplete, onRefresh }: {
+  open: boolean; onOpenChange: (v: boolean) => void;
+  trip: Trip | null; loading: boolean; crews: Crew[];
+  onEdit: (t: Trip) => void; onDelete: (t: Trip) => void;
+  onStart: (t: Trip) => void; onComplete: (t: Trip) => void;
+  onRefresh: () => void;
+}) {
+  if (!trip) return null
+  const t = trip
+  const crew = crews.find(c => c.id === t.crewId)
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-2xl">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2"><Route className="size-4" />{t.route}</DialogTitle>
+          <DialogDescription className="flex items-center gap-2 flex-wrap">
+            {t.equipment?.name} {t.equipment?.registrationNum ? `• ${t.equipment.registrationNum}` : ''}
+            <span className="ml-1">{statusBadge(t.status, TRIP_STATUS_MAP)}</span>
+          </DialogDescription>
+        </DialogHeader>
+        <div className="overflow-y-auto flex-1 min-h-0 px-4 sm:px-5">
+          {loading ? (
+            <div className="flex items-center justify-center h-24"><Loader2 className="size-5 animate-spin text-muted-foreground" /></div>
+          ) : (
+            <div className="space-y-4 py-2">
+              <DetailSection title="Маршрут" icon={<Route className="size-3.5" />}>
+                <DetailRow label="Маршрут" value={t.route} />
+                <DetailRow label="Пункт отправления" value={t.startPoint} />
+                <DetailRow label="Пункт назначения" value={t.endPoint} />
+                <DetailRow label="Расстояние" value={t.distance != null ? `${t.distance} км` : undefined} />
+              </DetailSection>
+              <DetailSection title="Груз" icon={<Package className="size-3.5" />}>
+                <DetailRow label="Груз" value={t.cargo} />
+                <DetailRow label="Вес (т)" value={t.cargoWeight?.toString()} />
+              </DetailSection>
+              <DetailSection title="Время" icon={<Calendar className="size-3.5" />}>
+                <DetailRow label="Дата начала" value={formatDate(t.startDate)} />
+                <DetailRow label="Планируемое окончание" value={formatDate(t.plannedEndDate)} />
+                <DetailRow label="Дата окончания" value={formatDate(t.endDate)} />
+              </DetailSection>
+              <DetailSection title="Экипаж" icon={<Users className="size-3.5" />}>
+                <DetailRow label="Экипаж" value={crew?.name || t.crew?.name} />
+                {crew?.members && crew.members.length > 0 && (
+                  <div className="col-span-2 space-y-0.5 pl-2">
+                    {crew.members.map(m => (
+                      <div key={m.id} className="flex items-center gap-1 text-[10px]">
+                        <UserCircle className="size-3 text-muted-foreground" />
+                        <span>{m.fullName}</span>
+                        <span className="text-muted-foreground">({MEMBER_ROLE_MAP[m.role] || m.role})</span>
+                        {m.phone && <span className="text-muted-foreground">• {m.phone}</span>}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </DetailSection>
+              <DetailSection title="Топливо и пробег" icon={<Fuel className="size-3.5" />}>
+                <DetailRow label="Топливо на старте (л)" value={t.fuelStart?.toString()} />
+                <DetailRow label="Топливо на финише (л)" value={t.fuelEnd?.toString()} />
+                <DetailRow label="Пробег на старте" value={t.mileageStart?.toLocaleString('ru-RU')} />
+                <DetailRow label="Пробег на финише" value={t.mileageEnd?.toLocaleString('ru-RU')} />
+              </DetailSection>
+              <DetailSection title="Финансы" icon={<DollarSign className="size-3.5" />}>
+                <DetailRow label="Стоимость" value={formatPrice(t.cost)} />
+                <DetailRow label="Доход" value={formatPrice(t.revenue)} />
+              </DetailSection>
+              {t.notes && <DetailSection title="Заметки" icon={<ClipboardList className="size-3.5" />}><p className="text-xs whitespace-pre-wrap">{t.notes}</p></DetailSection>}
+            </div>
+          )}
+        </div>
+        <DialogFooter className="gap-1.5 sm:gap-0 flex-wrap">
+          {t.status === 'planned' && (
+            <Button variant="outline" size="sm" className="h-8 gap-1 text-xs" onClick={() => onStart(t)}><Navigation className="size-3.5" />Начать</Button>
+          )}
+          {t.status === 'in_progress' && (
+            <Button variant="outline" size="sm" className="h-8 gap-1 text-xs" onClick={() => onComplete(t)}><CheckCircle2 className="size-3.5" />Завершить</Button>
+          )}
+          <Button variant="outline" size="sm" className="h-8 gap-1 text-xs" onClick={() => onEdit(t)}><Edit className="size-3.5" />Редактировать</Button>
+          <Button variant="outline" size="sm" className="h-8 gap-1 text-xs" onClick={onRefresh}><Activity className="size-3.5" />Обновить</Button>
+          <Button variant="destructive" size="sm" className="h-8 gap-1 text-xs" onClick={() => onDelete(t)}><Trash2 className="size-3.5" />Удалить</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+// ═══════════════════════════════════════════════════════════════
+// TRIP FORM DIALOG
+// ═══════════════════════════════════════════════════════════════
+
+function TripFormDialog({ open, onOpenChange, editData, equipmentId, equipmentList, crews, saving, setSaving, onSaved }: {
+  open: boolean; onOpenChange: (v: boolean) => void;
+  editData: Trip | null; equipmentId: string; equipmentList: Equipment[];
+  crews: Crew[]; saving: boolean; setSaving: (v: boolean) => void;
+  onSaved: () => void;
+}) {
+  const [form, setForm] = useState<Record<string, string>>({})
+
+  useEffect(() => {
+    if (editData) {
+      setForm({
+        equipmentId: editData.equipmentId, route: editData.route || '', startPoint: editData.startPoint || '', endPoint: editData.endPoint || '',
+        cargo: editData.cargo || '', cargoWeight: editData.cargoWeight?.toString() || '', distance: editData.distance?.toString() || '',
+        startDate: editData.startDate ? new Date(editData.startDate).toISOString().split('T')[0] : new Date().toISOString().split('T')[0],
+        endDate: editData.endDate ? new Date(editData.endDate).toISOString().split('T')[0] : '',
+        plannedEndDate: editData.plannedEndDate ? new Date(editData.plannedEndDate).toISOString().split('T')[0] : '',
+        status: editData.status || 'planned', crewId: editData.crewId || '',
+        fuelStart: editData.fuelStart?.toString() || '', fuelEnd: editData.fuelEnd?.toString() || '',
+        mileageStart: editData.mileageStart?.toString() || '', mileageEnd: editData.mileageEnd?.toString() || '',
+        cost: editData.cost?.toString() || '', revenue: editData.revenue?.toString() || '', notes: editData.notes || '',
+      })
+    } else {
+      setForm({ equipmentId: equipmentId || '', startDate: new Date().toISOString().split('T')[0], status: 'planned' })
+    }
+  }, [editData, equipmentId, open])
+
+  const f = (key: string) => form[key] || ''
+  const setF = (key: string, value: string) => setForm(prev => ({ ...prev, [key]: value }))
+
+  const handleSave = async () => {
+    if (!f('equipmentId')) { toast.error('Выберите технику'); return }
+    if (!f('route').trim()) { toast.error('Укажите маршрут'); return }
+    setSaving(true)
+    try {
+      const url = editData ? `/api/trips/${editData.id}` : '/api/trips'
+      const method = editData ? 'PUT' : 'POST'
+      const res = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(form) })
+      if (!res.ok) throw new Error()
+      toast.success(editData ? 'Рейс обновлён' : 'Рейс добавлен')
+      onSaved()
+    } catch { toast.error('Ошибка сохранения') }
+    setSaving(false)
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-2xl">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">{editData ? <Edit className="size-4" /> : <Plus className="size-4" />}{editData ? 'Редактирование рейса' : 'Новый рейс'}</DialogTitle>
+        </DialogHeader>
+        <div className="space-y-3 px-4 sm:px-5 overflow-y-auto flex-1 min-h-0">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div className="sm:col-span-2"><Label className="text-xs">Техника *</Label><Select value={f('equipmentId')} onValueChange={v => setF('equipmentId', v)} disabled={!!editData}><SelectTrigger className="h-9 text-sm"><SelectValue placeholder="Выберите технику" /></SelectTrigger><SelectContent>{equipmentList.map(e => <SelectItem key={e.id} value={e.id}>{e.name} {e.registrationNum ? `(${e.registrationNum})` : ''}</SelectItem>)}</SelectContent></Select></div>
+            <div className="sm:col-span-2"><Label className="text-xs">Маршрут *</Label><Input value={f('route')} onChange={e => setF('route', e.target.value)} placeholder="Москва — Санкт-Петербург" autoFocus /></div>
+            <div><Label className="text-xs">Пункт отправления</Label><Input value={f('startPoint')} onChange={e => setF('startPoint', e.target.value)} /></div>
+            <div><Label className="text-xs">Пункт назначения</Label><Input value={f('endPoint')} onChange={e => setF('endPoint', e.target.value)} /></div>
+            <div><Label className="text-xs">Экипаж</Label><Select value={f('crewId') || '_none'} onValueChange={v => setF('crewId', v === '_none' ? '' : v)}><SelectTrigger className="h-9 text-sm"><SelectValue placeholder="Без экипажа" /></SelectTrigger><SelectContent><SelectItem value="_none">Без экипажа</SelectItem>{crews.map(c => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}</SelectContent></Select></div>
+            <div><Label className="text-xs">Статус</Label><Select value={f('status')} onValueChange={v => setF('status', v)}><SelectTrigger className="h-9 text-sm"><SelectValue /></SelectTrigger><SelectContent>{Object.entries(TRIP_STATUS_MAP).map(([k, v]) => <SelectItem key={k} value={k}>{v.label}</SelectItem>)}</SelectContent></Select></div>
+            <div><Label className="text-xs">Груз</Label><Input value={f('cargo')} onChange={e => setF('cargo', e.target.value)} /></div>
+            <div><Label className="text-xs">Вес груза (т)</Label><Input type="number" value={f('cargoWeight')} onChange={e => setF('cargoWeight', e.target.value)} /></div>
+            <div><Label className="text-xs">Расстояние (км)</Label><Input type="number" value={f('distance')} onChange={e => setF('distance', e.target.value)} /></div>
+            <div><Label className="text-xs">Дата начала</Label><Input type="date" value={f('startDate')} onChange={e => setF('startDate', e.target.value)} /></div>
+            <div><Label className="text-xs">Планируемое окончание</Label><Input type="date" value={f('plannedEndDate')} onChange={e => setF('plannedEndDate', e.target.value)} /></div>
+            <div><Label className="text-xs">Дата окончания</Label><Input type="date" value={f('endDate')} onChange={e => setF('endDate', e.target.value)} /></div>
+            <div><Label className="text-xs">Топливо на старте (л)</Label><Input type="number" value={f('fuelStart')} onChange={e => setF('fuelStart', e.target.value)} /></div>
+            <div><Label className="text-xs">Топливо на финише (л)</Label><Input type="number" value={f('fuelEnd')} onChange={e => setF('fuelEnd', e.target.value)} /></div>
+            <div><Label className="text-xs">Пробег на старте</Label><Input type="number" value={f('mileageStart')} onChange={e => setF('mileageStart', e.target.value)} /></div>
+            <div><Label className="text-xs">Пробег на финише</Label><Input type="number" value={f('mileageEnd')} onChange={e => setF('mileageEnd', e.target.value)} /></div>
+            <div><Label className="text-xs">Стоимость (₽)</Label><Input type="number" value={f('cost')} onChange={e => setF('cost', e.target.value)} /></div>
+            <div><Label className="text-xs">Доход (₽)</Label><Input type="number" value={f('revenue')} onChange={e => setF('revenue', e.target.value)} /></div>
+            <div className="sm:col-span-2"><Label className="text-xs">Заметки</Label><Textarea value={f('notes')} onChange={e => setF('notes', e.target.value)} rows={2} /></div>
+          </div>
+        </div>
+        <DialogFooter>
+          <Button size="sm" onClick={handleSave} disabled={saving}>{saving ? <Loader2 className="size-3.5 animate-spin" /> : <CheckCircle2 className="size-3.5" />}{editData ? 'Сохранить' : 'Добавить'}</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+// ═══════════════════════════════════════════════════════════════
+// CREW FORM DIALOG
+// ═══════════════════════════════════════════════════════════════
+
+function CrewFormDialog({ open, onOpenChange, editData, saving, setSaving, onSaved }: {
+  open: boolean; onOpenChange: (v: boolean) => void;
+  editData: Crew | null; saving: boolean; setSaving: (v: boolean) => void;
+  onSaved: () => void;
+}) {
+  const [form, setForm] = useState<Record<string, string>>({})
+  const [members, setMembers] = useState<{ fullName: string; role: string; phone: string; licenseNum: string; licenseCat: string }[]>([])
+
+  useEffect(() => {
+    if (editData) {
+      setForm({ name: editData.name || '', description: editData.description || '', type: editData.type || 'driver', status: editData.status || 'active', notes: editData.notes || '' })
+      setMembers(editData.members?.map(m => ({ fullName: m.fullName, role: m.role, phone: m.phone || '', licenseNum: m.licenseNum || '', licenseCat: m.licenseCat || '' })) || [])
+    } else {
+      setForm({ type: 'driver', status: 'active' })
+      setMembers([])
+    }
+  }, [editData, open])
+
+  const f = (key: string) => form[key] || ''
+  const setF = (key: string, value: string) => setForm(prev => ({ ...prev, [key]: value }))
+
+  const handleSave = async () => {
+    if (!f('name').trim()) { toast.error('Укажите название экипажа'); return }
+    setSaving(true)
+    try {
+      const url = editData ? `/api/crews/${editData.id}` : '/api/crews'
+      const method = editData ? 'PUT' : 'POST'
+      const res = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...form, members }) })
+      if (!res.ok) throw new Error()
+      toast.success(editData ? 'Экипаж обновлён' : 'Экипаж добавлен')
+      onSaved()
+    } catch { toast.error('Ошибка сохранения') }
+    setSaving(false)
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-2xl">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">{editData ? <Edit className="size-4" /> : <Plus className="size-4" />}{editData ? 'Редактирование экипажа' : 'Новый экипаж'}</DialogTitle>
+        </DialogHeader>
+        <div className="space-y-3 px-4 sm:px-5 overflow-y-auto flex-1 min-h-0">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div className="sm:col-span-2"><Label className="text-xs">Название *</Label><Input value={f('name')} onChange={e => setF('name', e.target.value)} placeholder="Экипаж №1" autoFocus /></div>
+            <div><Label className="text-xs">Тип</Label><Select value={f('type')} onValueChange={v => setF('type', v)}><SelectTrigger className="h-9 text-sm"><SelectValue /></SelectTrigger><SelectContent>{Object.entries(CREW_TYPE_MAP).map(([k, v]) => <SelectItem key={k} value={k}>{v}</SelectItem>)}</SelectContent></Select></div>
+            <div><Label className="text-xs">Статус</Label><Select value={f('status')} onValueChange={v => setF('status', v)}><SelectTrigger className="h-9 text-sm"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="active">Активен</SelectItem><SelectItem value="inactive">Неактивен</SelectItem></SelectContent></Select></div>
+            <div className="sm:col-span-2"><Label className="text-xs">Описание</Label><Input value={f('description')} onChange={e => setF('description', e.target.value)} /></div>
+            <div className="sm:col-span-2"><Label className="text-xs">Заметки</Label><Textarea value={f('notes')} onChange={e => setF('notes', e.target.value)} rows={2} /></div>
+          </div>
+          <Separator />
+          <div>
+            <div className="flex items-center justify-between mb-1.5">
+              <Label className="text-xs flex items-center gap-1"><Users className="size-3" />Члены экипажа ({members.length})</Label>
+              <Button size="sm" variant="outline" className="h-6 gap-1 text-[11px]" onClick={() => setMembers([...members, { fullName: '', role: 'driver', phone: '', licenseNum: '', licenseCat: '' }])}><Plus className="size-3" />Добавить</Button>
+            </div>
+            {members.map((m, i) => (
+              <div key={i} className="grid grid-cols-1 sm:grid-cols-5 gap-1.5 mb-1.5">
+                <Input placeholder="ФИО *" value={m.fullName} onChange={e => { const n = [...members]; n[i] = { ...n[i], fullName: e.target.value }; setMembers(n) }} className="sm:col-span-2 h-8 text-sm" />
+                <Select value={m.role} onValueChange={v => { const n = [...members]; n[i] = { ...n[i], role: v }; setMembers(n) }}>
+                  <SelectTrigger className="h-8 text-sm"><SelectValue /></SelectTrigger>
+                  <SelectContent>{Object.entries(MEMBER_ROLE_MAP).map(([k, v]) => <SelectItem key={k} value={k}>{v}</SelectItem>)}</SelectContent>
+                </Select>
+                <Input placeholder="Телефон" value={m.phone} onChange={e => { const n = [...members]; n[i] = { ...n[i], phone: e.target.value }; setMembers(n) }} className="h-8 text-sm" />
+                <div className="flex gap-1">
+                  <Input placeholder="ВУ" value={m.licenseNum} onChange={e => { const n = [...members]; n[i] = { ...n[i], licenseNum: e.target.value }; setMembers(n) }} className="h-8 text-sm flex-1" />
+                  <Button size="sm" variant="ghost" className="size-8 p-0 text-destructive shrink-0" onClick={() => setMembers(members.filter((_, j) => j !== i))}><X className="size-3.5" /></Button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+        <DialogFooter>
+          <Button size="sm" onClick={handleSave} disabled={saving}>{saving ? <Loader2 className="size-3.5 animate-spin" /> : <CheckCircle2 className="size-3.5" />}{editData ? 'Сохранить' : 'Добавить'}</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

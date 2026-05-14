@@ -15,11 +15,14 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
 
     const bytes = await file.arrayBuffer()
     const buffer = Buffer.from(bytes)
-    const fileName = `${Date.now()}-${file.name.replace(/[^a-zA-Z0-9.-]/g, '_')}`
+    const fileName = `${Date.now()}-${file.name.replace(/[^a-zA-Z0-9а-яА-ЯёЁ.-]/g, '_')}`
     const filePath = `/uploads/${fileName}`
 
-    const { writeFileSync } = await import('fs')
-    writeFileSync(`./public${filePath}`, buffer)
+    const { writeFileSync, mkdirSync } = await import('fs')
+    const { join } = await import('path')
+    const uploadDir = join(process.cwd(), 'public', 'uploads')
+    mkdirSync(uploadDir, { recursive: true })
+    writeFileSync(join(uploadDir, fileName), buffer)
 
     const photo = await db.repairPhoto.create({
       data: {
