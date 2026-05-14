@@ -226,6 +226,11 @@ async function updateTrackerFromAxenta(trackerDbId: string, axentaObject: Record
     try {
       const sensors = await fetchObjectSensors(apiUrl, token, axentaId)
       if (Array.isArray(sensors)) {
+        // Delete old sensor data before saving new ones (avoid duplicates)
+        await db.glonassSensorData.deleteMany({
+          where: { trackerId: trackerDbId }
+        })
+
         for (const sensor of sensors) {
           const s = sensor as Record<string, unknown>
           const sensorType = String(s.type || '').toLowerCase()
@@ -290,6 +295,20 @@ async function updateTrackerFromAxenta(trackerDbId: string, axentaObject: Record
     }
   }
 
+  // Also update axentaCloudId and trackerName if the object has them
+  if (axentaObject.id != null) {
+    updateData.axentaCloudId = String(axentaObject.id)
+  }
+  if (axentaObject.name && typeof axentaObject.name === 'string') {
+    updateData.trackerName = axentaObject.name
+  }
+  if (axentaObject.uniqueId) {
+    updateData.imei = String(axentaObject.uniqueId)
+  }
+  if (axentaObject.phoneNumber) {
+    updateData.phoneNumber = String(axentaObject.phoneNumber)
+  }
+
   // Only update if we have new data
   if (Object.keys(updateData).length > 0) {
     await db.glonassTracker.update({
@@ -320,9 +339,7 @@ export async function POST() {
       return NextResponse.json({ error: 'Не удалось получить токен авторизации. Проверьте логин и пароль.' }, { status: 401 })
     }
 
-    const trackers = await db.glonassTracker.findMany({
-      where: { isActive: true },
-    })
+    const trackers = await db.glonassTracker.findMany()
 
     if (trackers.length === 0) {
       // Even with no linked trackers, try to fetch all objects from Axenta
@@ -356,63 +373,101 @@ export async function POST() {
     let errorCount = 0
     const errors: string[] = []
 
-    // Collect Axenta object IDs from trackers
-    const axentaObjectIds: number[] = []
-    const trackerIdMap = new Map<number, string>() // axentaId -> trackerDbId
+    // Build lookup maps for trackers:
+    // 1. By axentaCloudId (primary)
+    // 2. By trackerId matching Axenta object ID
+    // 3. By trackerName matching Axenta object name
+    const trackerByAxentaId = new Map<string, typeof trackers[0]>() // axentaCloudId -> tracker
+    const trackerByTrackerId = new Map<string, typeof trackers[0]>() // trackerId -> tracker
+    const trackerByName = new Map<string, typeof trackers[0]>() // trackerName -> tracker
 
     for (const tracker of trackers) {
-      const axentaId = tracker.axentaCloudId ? parseInt(tracker.axentaCloudId) : parseInt(tracker.trackerId)
-      if (!isNaN(axentaId)) {
-        axentaObjectIds.push(axentaId)
-        trackerIdMap.set(axentaId, tracker.id)
+      if (tracker.axentaCloudId) {
+        trackerByAxentaId.set(tracker.axentaCloudId, tracker)
+      }
+      trackerByTrackerId.set(tracker.trackerId, tracker)
+      if (tracker.trackerName) {
+        trackerByName.set(tracker.trackerName.toLowerCase(), tracker)
       }
     }
 
-    // Method 1: Fetch all monitoring data at once (efficient)
-    if (axentaObjectIds.length > 0) {
-      try {
-        const monitoringData = await fetchMonitoringData(settings.apiUrl, token, axentaObjectIds)
-        const objects = Array.isArray(monitoringData) ? monitoringData :
-          (monitoringData.results || [])
+    // Fetch ALL monitoring data from Axenta (not filtered by IDs)
+    // This ensures we can match trackers by name even without axentaCloudId
+    try {
+      const monitoringData = await fetchMonitoringData(settings.apiUrl, token)
+      const objects = Array.isArray(monitoringData) ? monitoringData :
+        (monitoringData.results || [])
 
-        for (const obj of objects) {
-          const axentaObj = obj as Record<string, unknown>
-          const axentaId = Number(axentaObj.id)
-          const trackerDbId = trackerIdMap.get(axentaId)
+      const matchedTrackerIds = new Set<string>()
 
-          if (trackerDbId) {
-            try {
-              await updateTrackerFromAxenta(trackerDbId, axentaObj, token, settings.apiUrl)
-              syncedCount++
-            } catch (err) {
-              errorCount++
-              const msg = err instanceof Error ? err.message : 'Unknown error'
-              errors.push(`Объект ${axentaId}: ${msg}`)
-            }
+      for (const obj of objects) {
+        const axentaObj = obj as Record<string, unknown>
+        const axentaId = String(axentaObj.id)
+        const axentaName = String(axentaObj.name || '')
+        const axentaUniqueId = String(axentaObj.uniqueId || '')
+
+        // Try to find matching tracker by:
+        // 1. axentaCloudId (exact match)
+        // 2. trackerId matching Axenta object ID
+        // 3. trackerId matching Axenta uniqueId
+        // 4. trackerName matching Axenta object name
+        let matchedTracker = trackerByAxentaId.get(axentaId) ||
+          trackerByTrackerId.get(axentaId) ||
+          trackerByTrackerId.get(axentaUniqueId)
+
+        if (!matchedTracker && axentaName) {
+          matchedTracker = trackerByName.get(axentaName.toLowerCase())
+        }
+
+        if (matchedTracker) {
+          // Update axentaCloudId if it was missing
+          if (!matchedTracker.axentaCloudId) {
+            await db.glonassTracker.update({
+              where: { id: matchedTracker.id },
+              data: { axentaCloudId: axentaId }
+            })
+            console.log(`[GLONASS Sync] Updated axentaCloudId for tracker ${matchedTracker.trackerId} -> ${axentaId}`)
+          }
+
+          try {
+            await updateTrackerFromAxenta(matchedTracker.id, axentaObj, token, settings.apiUrl)
+            syncedCount++
+            matchedTrackerIds.add(matchedTracker.id)
+          } catch (err) {
+            errorCount++
+            const msg = err instanceof Error ? err.message : 'Unknown error'
+            errors.push(`Объект ${axentaId}: ${msg}`)
           }
         }
-      } catch (err) {
-        // If bulk monitoring fetch fails, try individual requests
-        console.error('[GLONASS Sync] Bulk monitoring failed, trying individual:', err)
-        for (const tracker of trackers) {
-          try {
-            const axentaId = tracker.axentaCloudId || tracker.trackerId
-            const numericId = parseInt(axentaId)
+      }
 
-            if (isNaN(numericId)) {
-              errorCount++
-              errors.push(`Трекер ${tracker.trackerId}: ID не число`)
-              continue
-            }
+      // Report unmatched trackers
+      for (const tracker of trackers) {
+        if (!matchedTrackerIds.has(tracker.id)) {
+          errors.push(`Трекер ${tracker.trackerId} (${tracker.trackerName || 'без имени'}) не найден в Axenta`)
+        }
+      }
+    } catch (err) {
+      // If bulk monitoring fetch fails, try individual requests by ID
+      console.error('[GLONASS Sync] Bulk monitoring failed, trying individual:', err)
+      for (const tracker of trackers) {
+        try {
+          const axentaId = tracker.axentaCloudId || tracker.trackerId
+          const numericId = parseInt(axentaId)
 
-            const objectData = await fetchObjectDetails(settings.apiUrl, token, numericId)
-            await updateTrackerFromAxenta(tracker.id, objectData, token, settings.apiUrl)
-            syncedCount++
-          } catch (err2) {
+          if (isNaN(numericId)) {
             errorCount++
-            const msg = err2 instanceof Error ? err2.message : 'Unknown error'
-            errors.push(`Трекер ${tracker.trackerId}: ${msg}`)
+            errors.push(`Трекер ${tracker.trackerId}: ID не число и не найден в мониторинге`)
+            continue
           }
+
+          const objectData = await fetchObjectDetails(settings.apiUrl, token, numericId)
+          await updateTrackerFromAxenta(tracker.id, objectData, token, settings.apiUrl)
+          syncedCount++
+        } catch (err2) {
+          errorCount++
+          const msg = err2 instanceof Error ? err2.message : 'Unknown error'
+          errors.push(`Трекер ${tracker.trackerId}: ${msg}`)
         }
       }
     }

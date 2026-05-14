@@ -7,6 +7,9 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { toast } from 'sonner'
 import { useTheme } from 'next-themes'
+import dynamic from 'next/dynamic'
+
+const TrackerMap = dynamic(() => import('@/components/tracker-map'), { ssr: false })
 
 // ─── shadcn/ui ────────────────────────────────────────────────
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -603,7 +606,7 @@ export default function Home() {
       </nav>
 
       {/* ─── DIALOGS ──────────────────────────────────────────── */}
-      <EquipmentDetailSheet open={eqDetailOpen} onOpenChange={setEqDetailOpen} equipment={selectedEq} loading={eqDetailLoading} detailTab={eqDetailTab} setDetailTab={setEqDetailTab} companies={companies} photoCategoryFilter={photoCategoryFilter} setPhotoCategoryFilter={setPhotoCategoryFilter} fullPhoto={fullPhoto} setFullPhoto={setFullPhoto} onEdit={(eq) => { setEqDetailOpen(false); setEqFormEdit(eq); setEqFormStep(0); setEqFormOpen(true) }} onDelete={(eq) => { setEqDetailOpen(false); setDeleteDialog({ open: true, type: 'equipment', id: eq.id, name: eq.name }) }} onAddRepair={(eqId) => { setRepairFormEdit(null); setRepairFormEquipmentId(eqId); setRepairFormOpen(true) }} onUploadPhoto={(eqId) => setPhotoUploadEq(eqId)} onRefresh={() => selectedEq && fetchEquipmentDetail(selectedEq.id)} onOpenRepairDetail={(r) => openRepairDetail(r)} onAddTrip={(eqId) => { setTripFormEdit(null); setTripFormEquipmentId(eqId); setTripFormOpen(true) }} onOpenTripDetail={openTripDetail} />
+      <EquipmentDetailSheet open={eqDetailOpen} onOpenChange={setEqDetailOpen} equipment={selectedEq} loading={eqDetailLoading} detailTab={eqDetailTab} setDetailTab={setEqDetailTab} companies={companies} photoCategoryFilter={photoCategoryFilter} setPhotoCategoryFilter={setPhotoCategoryFilter} fullPhoto={fullPhoto} setFullPhoto={setFullPhoto} onEdit={(eq) => { setEqDetailOpen(false); setEqFormEdit(eq); setEqFormStep(0); setEqFormOpen(true) }} onDelete={(eq) => { setEqDetailOpen(false); setDeleteDialog({ open: true, type: 'equipment', id: eq.id, name: eq.name }) }} onAddRepair={(eqId) => { setRepairFormEdit(null); setRepairFormEquipmentId(eqId); setRepairFormOpen(true) }} onUploadPhoto={(eqId) => setPhotoUploadEq(eqId)} onRefresh={() => selectedEq && fetchEquipmentDetail(selectedEq.id)} onOpenRepairDetail={(r) => openRepairDetail(r)} onAddTrip={(eqId) => { setTripFormEdit(null); setTripFormEquipmentId(eqId); setTripFormOpen(true) }} onOpenTripDetail={openTripDetail} allEquipment={equipment} onRefreshAll={fetchEquipment} />
       <EquipmentFormDialog open={eqFormOpen} onOpenChange={setEqFormOpen} editData={eqFormEdit} companies={companies} step={eqFormStep} setStep={setEqFormStep} saving={eqFormSaving} setSaving={setEqFormSaving} onSaved={() => { setEqFormOpen(false); fetchAll() }} />
       <RepairDetailDialog open={repairDetailOpen} onOpenChange={setRepairDetailOpen} repair={selectedRepair} loading={repairDetailLoading} fullPhoto={fullPhoto} setFullPhoto={setFullPhoto} onEdit={(r) => { setRepairDetailOpen(false); setRepairFormEdit(r); setRepairFormEquipmentId(r.equipmentId); setRepairFormOpen(true) }} onDelete={(r) => { setRepairDetailOpen(false); setDeleteDialog({ open: true, type: 'repair', id: r.id, name: r.description }) }} onComplete={async (r) => { try { const res = await fetch(`/api/repairs/${r.id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...r, status: 'completed', endDate: new Date().toISOString() }) }); if (!res.ok) throw new Error(); toast.success('Ремонт завершён'); fetchRepairDetail(r.id); fetchAll() } catch { toast.error('Ошибка завершения ремонта') } }} onAddStage={(repairId) => { setStageFormRepairId(repairId); setStageFormEdit(null); setStageFormOpen(true) }} onEditStage={(stage, repairId) => { setStageFormRepairId(repairId); setStageFormEdit(stage); setStageFormOpen(true) }} onDeleteStage={async (stageId, repairId) => { try { const res = await fetch(`/api/repairs/${repairId}/stages?stageId=${stageId}`, { method: 'DELETE' }); if (!res.ok) throw new Error(); toast.success('Этап удалён'); fetchRepairDetail(repairId) } catch { toast.error('Ошибка удаления этапа') } }} onUploadPhoto={(repairId) => setPhotoUploadRepair(repairId)} onRefresh={() => selectedRepair && fetchRepairDetail(selectedRepair.id)} />
       <RepairFormDialog open={repairFormOpen} onOpenChange={setRepairFormOpen} editData={repairFormEdit} equipmentId={repairFormEquipmentId} equipmentList={equipment} saving={repairFormSaving} setSaving={setRepairFormSaving} onSaved={() => { setRepairFormOpen(false); fetchAll() }} />
@@ -827,7 +830,7 @@ function EquipmentTab({ equipment, companies, eqSearch, setEqSearch, eqStatusFil
 // EQUIPMENT DETAIL SHEET
 // ═══════════════════════════════════════════════════════════════
 
-function EquipmentDetailSheet({ open, onOpenChange, equipment, loading, detailTab, setDetailTab, companies, photoCategoryFilter, setPhotoCategoryFilter, fullPhoto, setFullPhoto, onEdit, onDelete, onAddRepair, onUploadPhoto, onRefresh, onOpenRepairDetail, onAddTrip, onOpenTripDetail }: {
+function EquipmentDetailSheet({ open, onOpenChange, equipment, loading, detailTab, setDetailTab, companies, photoCategoryFilter, setPhotoCategoryFilter, fullPhoto, setFullPhoto, onEdit, onDelete, onAddRepair, onUploadPhoto, onRefresh, onOpenRepairDetail, onAddTrip, onOpenTripDetail, allEquipment, onRefreshAll }: {
   open: boolean; onOpenChange: (v: boolean) => void;
   equipment: Equipment | null; loading: boolean;
   detailTab: string; setDetailTab: (v: string) => void;
@@ -838,11 +841,26 @@ function EquipmentDetailSheet({ open, onOpenChange, equipment, loading, detailTa
   onAddRepair: (eqId: string) => void; onUploadPhoto: (eqId: string) => void;
   onRefresh: () => void; onOpenRepairDetail: (r: Repair) => void;
   onAddTrip: (eqId: string) => void; onOpenTripDetail: (t: Trip) => void;
+  allEquipment: Equipment[]; onRefreshAll: () => void;
 }) {
   const contentRef = useRef<HTMLDivElement>(null)
   const [localTrips, setLocalTrips] = useState<Trip[]>([])
   const eq = equipment
   const filteredPhotos = eq?.photos?.filter(p => photoCategoryFilter === 'all' || p.category === photoCategoryFilter) || []
+
+  // Tracker connection dialog
+  const [trackerPickerOpen, setTrackerPickerOpen] = useState(false)
+  const [trackerPickerLoading, setTrackerPickerLoading] = useState(false)
+  const [availableObjects, setAvailableObjects] = useState<Array<{ id: number; name: string; uniqueId: string; connectedStatus: boolean; isLinked: boolean }>>([])
+  const [trackerPickerEqId, setTrackerPickerEqId] = useState('')
+
+  // Map & historical data
+  const [mapTrackData, setMapTrackData] = useState<Array<{ lat: number; lng: number }>>([])
+  const [trackerStats, setTrackerStats] = useState<Record<string, unknown> | null>(null)
+  const [historyDateFrom, setHistoryDateFrom] = useState('')
+  const [historyDateTo, setHistoryDateTo] = useState('')
+  const [historyLoading, setHistoryLoading] = useState(false)
+  const [showAllTrackersMap, setShowAllTrackersMap] = useState(false)
 
   useEffect(() => {
     if (open && eq && detailTab === 'trips') {
@@ -851,6 +869,120 @@ function EquipmentDetailSheet({ open, onOpenChange, equipment, loading, detailTa
   }, [open, eq, detailTab])
 
   if (!equipment) return null
+
+  // Get unique sensors (latest value per sensor name)
+  const getUniqueSensors = (sensors: GlonassSensorData[]) => {
+    const seen = new Set<string>()
+    return sensors.filter(s => {
+      const key = `${s.sensorType}-${s.sensorName || 'unnamed'}`
+      if (seen.has(key)) return false
+      seen.add(key)
+      return true
+    })
+  }
+
+  // Get course direction name
+  const getCourseDirection = (course: number) => {
+    const dirs = ['С', 'СВ', 'В', 'ЮВ', 'Ю', 'ЮЗ', 'З', 'СЗ']
+    const idx = Math.round(course / 45) % 8
+    return `${course}° ${dirs[idx]}`
+  }
+
+  // Format duration from seconds
+  const formatDuration = (seconds: number) => {
+    const h = Math.floor(seconds / 3600)
+    const m = Math.floor((seconds % 3600) / 60)
+    return h > 0 ? `${h}ч ${m}мин` : `${m}мин`
+  }
+
+  // Apply date preset
+  const applyDatePreset = (preset: string) => {
+    const now = new Date()
+    let from: Date
+    const to = new Date()
+    switch (preset) {
+      case 'Сегодня':
+        from = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+        break
+      case 'Вчера':
+        from = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1)
+        to.setDate(to.getDate() - 1)
+        to.setHours(23, 59, 59)
+        break
+      case 'Неделя':
+        from = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 7)
+        break
+      case 'Месяц':
+        from = new Date(now.getFullYear(), now.getMonth() - 1, now.getDate())
+        break
+      default:
+        return
+    }
+    setHistoryDateFrom(from.toISOString().slice(0, 16))
+    setHistoryDateTo(to.toISOString().slice(0, 16))
+  }
+
+  // Fetch historical data for a tracker
+  const fetchHistoricalData = async (tracker: GlonassTracker) => {
+    if (!historyDateFrom || !historyDateTo) return
+    setHistoryLoading(true)
+    setTrackerStats(null)
+    setMapTrackData([])
+
+    const axentaId = tracker.axentaCloudId || tracker.trackerId
+
+    try {
+      // Fetch stats
+      const statsRes = await fetch('/api/glonass/stats', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          objectId: axentaId,
+          startDate: new Date(historyDateFrom).toISOString(),
+          endDate: new Date(historyDateTo).toISOString(),
+        })
+      })
+      if (statsRes.ok) {
+        const statsData = await statsRes.json()
+        setTrackerStats(statsData)
+      }
+
+      // Fetch track
+      const tracksRes = await fetch('/api/glonass/tracks', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          objectId: axentaId,
+          startDate: new Date(historyDateFrom).toISOString(),
+          endDate: new Date(historyDateTo).toISOString(),
+        })
+      })
+      if (tracksRes.ok) {
+        const tracksData = await tracksRes.json()
+        // Parse track points from Axenta response
+        const points: Array<{ lat: number; lng: number }> = []
+        if (Array.isArray(tracksData)) {
+          for (const track of tracksData) {
+            if (track.points && Array.isArray(track.points)) {
+              for (const p of track.points) {
+                if (p.pos) {
+                  points.push({ lat: p.pos.y, lng: p.pos.x })
+                } else if (p.lat != null && p.lng != null) {
+                  points.push({ lat: p.lat, lng: p.lng })
+                }
+              }
+            }
+          }
+        }
+        setMapTrackData(points)
+      }
+
+      toast.success('Данные за период загружены')
+    } catch {
+      toast.error('Ошибка загрузки данных за период')
+    }
+    setHistoryLoading(false)
+  }
 
   const handleTabChange = (v: string) => {
     setDetailTab(v)
@@ -1004,53 +1136,225 @@ function EquipmentDetailSheet({ open, onOpenChange, equipment, loading, detailTa
                         <Satellite className="size-10 mx-auto mb-2 text-muted-foreground/40" />
                         <p className="text-sm text-muted-foreground mb-1">ГЛОНАСС трекер не подключён</p>
                         <Button size="sm" className="h-8 gap-1 text-xs mt-2" onClick={async () => {
-                          const tid = prompt('ID трекера:'); if (!tid) return
-                          const tname = prompt('Название:') || ''
-                          try { await fetch('/api/glonass', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ equipmentId: eq.id, trackerId: tid, trackerName: tname }) }); toast.success('Трекер подключён'); onRefresh() } catch { toast.error('Ошибка подключения') }
-                        }}><Plus className="size-3" />Подключить</Button>
+                          setTrackerPickerEqId(eq.id)
+                          setTrackerPickerLoading(true)
+                          setTrackerPickerOpen(true)
+                          try {
+                            const res = await fetch('/api/glonass/objects')
+                            if (res.ok) {
+                              const data = await res.json()
+                              setAvailableObjects(data.objects || [])
+                            } else {
+                              toast.error('Ошибка получения объектов Axenta')
+                            }
+                          } catch { toast.error('Ошибка подключения к Axenta') }
+                          setTrackerPickerLoading(false)
+                        }}><Plus className="size-3" />Подключить из Axenta</Button>
                       </div>
-                    ) : eq.trackers?.map(tracker => (
-                      <Card key={tracker.id}>
-                        <CardHeader className="pb-1.5 pt-3 px-3">
-                          <div className="flex items-center justify-between gap-2">
-                            <div className="flex items-center gap-2">
-                              <div className={`size-7 rounded-md flex items-center justify-center ${tracker.isActive ? 'bg-emerald-100 dark:bg-emerald-900/40' : 'bg-red-100 dark:bg-red-900/40'}`}>
-                                {tracker.isActive ? <Wifi className="size-3.5 text-emerald-600 dark:text-emerald-400" /> : <WifiOff className="size-3.5 text-red-600 dark:text-red-400" />}
+                    ) : (
+                      <>
+                        {/* MAP */}
+                        {eq.trackers.some(t => t.lastLatitude != null && t.lastLongitude != null) && (
+                          <Card>
+                            <CardHeader className="pb-1.5 pt-3 px-3">
+                              <div className="flex items-center justify-between">
+                                <CardTitle className="text-xs font-semibold flex items-center gap-1.5"><MapPin className="size-3.5" />Карта</CardTitle>
+                                <Button size="sm" variant="ghost" className="h-6 text-[10px] gap-1" onClick={() => setShowAllTrackersMap(!showAllTrackersMap)}>
+                                  {showAllTrackersMap ? 'Текущая техника' : 'Вся техника'}
+                                </Button>
                               </div>
-                              <div>
-                                <CardTitle className="text-xs font-semibold">{tracker.trackerName || `Трекер ${tracker.trackerId}`}</CardTitle>
-                                <p className="text-[10px] text-muted-foreground">ID: {tracker.trackerId}</p>
+                            </CardHeader>
+                            <CardContent className="px-3 pb-3 pt-0">
+                              <div className="h-[300px] rounded-lg overflow-hidden border">
+                                <TrackerMap
+                                  trackers={showAllTrackersMap
+                                    ? allEquipment.flatMap(e => (e.trackers || []).filter(t => t.lastLatitude != null && t.lastLongitude != null).map(t => ({ ...t, equipmentName: e.name, registrationNum: e.registrationNum })))
+                                    : eq.trackers!.filter(t => t.lastLatitude != null && t.lastLongitude != null).map(t => ({ ...t, equipmentName: eq.name, registrationNum: eq.registrationNum }))
+                                  }
+                                  trackPoints={mapTrackData}
+                                />
                               </div>
-                            </div>
-                            {statusBadge(tracker.isActive ? 'active' : 'repair', { active: { label: 'Активен', color: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-400' }, repair: { label: 'Неактивен', color: 'bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-400' } })}
+                            </CardContent>
+                          </Card>
+                        )}
+
+                        {/* Tracker cards */}
+                        {eq.trackers?.map(tracker => (
+                          <Card key={tracker.id}>
+                            <CardHeader className="pb-1.5 pt-3 px-3">
+                              <div className="flex items-center justify-between gap-2">
+                                <div className="flex items-center gap-2">
+                                  <div className={`size-7 rounded-md flex items-center justify-center ${tracker.isActive ? 'bg-emerald-100 dark:bg-emerald-900/40' : 'bg-red-100 dark:bg-red-900/40'}`}>
+                                    {tracker.isActive ? <Wifi className="size-3.5 text-emerald-600 dark:text-emerald-400" /> : <WifiOff className="size-3.5 text-red-600 dark:text-red-400" />}
+                                  </div>
+                                  <div>
+                                    <CardTitle className="text-xs font-semibold">{tracker.trackerName || `Трекер ${tracker.trackerId}`}</CardTitle>
+                                    <p className="text-[10px] text-muted-foreground">ID: {tracker.trackerId}{tracker.axentaCloudId ? ` • Axenta: ${tracker.axentaCloudId}` : ''}</p>
+                                  </div>
+                                </div>
+                                {statusBadge(tracker.isActive ? 'active' : 'repair', { active: { label: 'Активен', color: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-400' }, repair: { label: 'Неактивен', color: 'bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-400' } })}
+                              </div>
+                            </CardHeader>
+                            <CardContent className="px-3 pb-3 pt-0 space-y-2">
+                              <Separator />
+                              <DetailSection title="Местоположение" icon={<MapPin className="size-3.5" />}>
+                                <DetailRow label="Широта" value={tracker.lastLatitude?.toFixed(6)} />
+                                <DetailRow label="Долгота" value={tracker.lastLongitude?.toFixed(6)} />
+                                <DetailRow label="Скорость" value={tracker.lastSpeed != null ? `${tracker.lastSpeed} км/ч` : undefined} />
+                                <DetailRow label="Курс" value={tracker.lastCourse != null ? getCourseDirection(tracker.lastCourse) : undefined} />
+                                <DetailRow label="Высота" value={tracker.lastAltitude != null ? `${tracker.lastAltitude} м` : undefined} />
+                                {tracker.lastAddress && <DetailRow label="Адрес" value={tracker.lastAddress} />}
+                              </DetailSection>
+                              <DetailSection title="Датчики" icon={<Gauge className="size-3.5" />}>
+                                <DetailRow label="Зажигание" value={tracker.lastIgnition != null ? (tracker.lastIgnition ? 'Вкл' : 'Выкл') : undefined} />
+                                <DetailRow label="Топливо" value={tracker.lastFuelLevel != null ? `${tracker.lastFuelLevel}%` : undefined} />
+                                <DetailRow label="Пробег" value={tracker.lastMileage != null ? `${tracker.lastMileage?.toLocaleString('ru-RU')} км` : undefined} />
+                                {tracker.sensorData && tracker.sensorData.length > 0 && (
+                                  <>
+                                    <div className="col-span-2 mt-1 pt-1 border-t border-dashed border-border/40">
+                                      <p className="text-[10px] font-medium text-muted-foreground mb-1">Данные датчиков Axenta</p>
+                                    </div>
+                                    {getUniqueSensors(tracker.sensorData).map((s, i) => (
+                                      <DetailRow key={i} label={s.sensorName || s.sensorType} value={`${(s.value ?? s.stringValue) || '—'}${s.unit ? ` ${s.unit}` : ''}`} />
+                                    ))}
+                                  </>
+                                )}
+                                {(!tracker.sensorData || tracker.sensorData.length === 0) && tracker.lastEngineTemp == null && (
+                                  <p className="text-[10px] text-muted-foreground col-span-2">Нет данных датчиков</p>
+                                )}
+                              </DetailSection>
+                              <DetailSection title="Связь" icon={<Clock className="size-3.5" />}>
+                                <DetailRow label="Выход на связь" value={formatDateTime(tracker.lastSeenAt)} />
+                                <DetailRow label="Позиция" value={formatDateTime(tracker.lastPositionAt)} />
+                              </DetailSection>
+
+                              {/* Date range for historical data */}
+                              <DetailSection title="Запрос данных за период" icon={<Calendar className="size-3.5" />}>
+                                <div className="grid grid-cols-2 gap-2 col-span-2">
+                                  <div>
+                                    <Label className="text-[10px]">С</Label>
+                                    <Input type="datetime-local" className="h-7 text-[11px]" value={historyDateFrom} onChange={e => setHistoryDateFrom(e.target.value)} />
+                                  </div>
+                                  <div>
+                                    <Label className="text-[10px]">По</Label>
+                                    <Input type="datetime-local" className="h-7 text-[11px]" value={historyDateTo} onChange={e => setHistoryDateTo(e.target.value)} />
+                                  </div>
+                                </div>
+                                <div className="flex flex-wrap gap-1 col-span-2">
+                                  {['Сегодня', 'Вчера', 'Неделя', 'Месяц'].map(preset => (
+                                    <Button key={preset} variant="outline" size="sm" className="h-6 text-[10px]" onClick={() => applyDatePreset(preset)}>{preset}</Button>
+                                  ))}
+                                </div>
+                                <Button size="sm" className="h-7 text-[11px] w-full gap-1 col-span-2" disabled={!historyDateFrom || !historyDateTo || historyLoading} onClick={() => fetchHistoricalData(tracker)}>
+                                  {historyLoading ? <Loader2 className="size-3 animate-spin" /> : <Search className="size-3" />}
+                                  Запросить данные
+                                </Button>
+                              </DetailSection>
+
+                              {/* Stats display */}
+                              {trackerStats && (
+                                <DetailSection title="Статистика за период" icon={<Activity className="size-3.5" />}>
+                                  <DetailRow label="Пробег" value={trackerStats.mileage ? `${Number(trackerStats.mileage).toFixed(1)} км` : undefined} />
+                                  <DetailRow label="Ср. скорость" value={trackerStats.avgSpeed ? `${Number(trackerStats.avgSpeed).toFixed(1)} км/ч` : undefined} />
+                                  <DetailRow label="Макс. скорость" value={trackerStats.maxSpeed ? `${Number(trackerStats.maxSpeed).toFixed(1)} км/ч` : undefined} />
+                                  <DetailRow label="Расход топлива" value={trackerStats.fuelConsumption ? `${Number(trackerStats.fuelConsumption).toFixed(1)} л` : undefined} />
+                                  <DetailRow label="Ср. расход" value={trackerStats.avgFuelConsumption ? `${Number(trackerStats.avgFuelConsumption).toFixed(1)} л/100км` : undefined} />
+                                  <DetailRow label="Заправки" value={trackerStats.refuelVolume ? `${Number(trackerStats.refuelVolume).toFixed(1)} л` : undefined} />
+                                  <DetailRow label="Сливы" value={trackerStats.plumVolume ? `${Number(trackerStats.plumVolume).toFixed(1)} л` : undefined} />
+                                  <DetailRow label="Время поездок" value={trackerStats.tripsDuration ? formatDuration(Number(trackerStats.tripsDuration)) : undefined} />
+                                  <DetailRow label="Время стоянок" value={trackerStats.parkingsDuration ? formatDuration(Number(trackerStats.parkingsDuration)) : undefined} />
+                                  <DetailRow label="Моточасы" value={trackerStats.engineHours ? `${Number(trackerStats.engineHours).toFixed(1)} ч` : undefined} />
+                                </DetailSection>
+                              )}
+
+                              {/* Action buttons */}
+                              <div className="flex flex-wrap gap-1.5 pt-1">
+                                <Button size="sm" variant="outline" className="h-7 text-[11px] gap-1" onClick={async () => {
+                                  try {
+                                    const res = await fetch('/api/glonass/sync', { method: 'POST' })
+                                    const data = await res.json()
+                                    if (data.synced !== undefined) toast.success(`Синхронизация: ${data.synced} из ${data.totalTrackers}`)
+                                    else toast.error(data.error || 'Ошибка')
+                                    onRefresh()
+                                    onRefreshAll()
+                                  } catch { toast.error('Ошибка') }
+                                }}><RefreshCw className="size-3" />Синхронизировать</Button>
+                                <Button size="sm" variant="outline" className="h-7 text-[11px] gap-1" onClick={() => { onRefresh(); onRefreshAll() }}><Activity className="size-3" />Обновить</Button>
+                                <div className="flex-1" />
+                                <Button size="sm" variant="destructive" className="h-7 text-[11px] gap-1" onClick={async () => {
+                                  try {
+                                    await fetch(`/api/glonass/${tracker.id}`, { method: 'DELETE' })
+                                    toast.success('Трекер отключён')
+                                    onRefresh()
+                                    onRefreshAll()
+                                  } catch { toast.error('Ошибка') }
+                                }}><Trash2 className="size-3" />Отключить</Button>
+                              </div>
+                            </CardContent>
+                          </Card>
+                        ))}
+                      </>
+                    )}
+
+                    {/* Tracker picker dialog */}
+                    <Dialog open={trackerPickerOpen} onOpenChange={setTrackerPickerOpen}>
+                      <DialogContent className="max-w-md max-h-[70vh]">
+                        <DialogHeader>
+                          <DialogTitle className="flex items-center gap-2"><Satellite className="size-4" />Подключить трекер</DialogTitle>
+                          <DialogDescription>Выберите объект из Axenta.cloud для привязки</DialogDescription>
+                        </DialogHeader>
+                        {trackerPickerLoading ? (
+                          <div className="flex items-center justify-center py-8"><Loader2 className="size-6 animate-spin" /></div>
+                        ) : availableObjects.length === 0 ? (
+                          <div className="text-center py-8">
+                            <Satellite className="size-10 mx-auto mb-2 text-muted-foreground/40" />
+                            <p className="text-sm text-muted-foreground">Нет доступных объектов</p>
+                            <p className="text-xs text-muted-foreground mt-1">Проверьте настройки Axenta и выполните синхронизацию</p>
                           </div>
-                        </CardHeader>
-                        <CardContent className="px-3 pb-3 pt-0 space-y-2">
-                          <Separator />
-                          <DetailSection title="Местоположение" icon={<MapPin className="size-3.5" />}>
-                            <DetailRow label="Широта" value={tracker.lastLatitude?.toFixed(6)} />
-                            <DetailRow label="Долгота" value={tracker.lastLongitude?.toFixed(6)} />
-                            <DetailRow label="Скорость" value={tracker.lastSpeed != null ? `${tracker.lastSpeed} км/ч` : undefined} />
-                            <DetailRow label="Курс" value={tracker.lastCourse != null ? `${tracker.lastCourse}°` : undefined} />
-                          </DetailSection>
-                          <DetailSection title="Датчики" icon={<Gauge className="size-3.5" />}>
-                            <DetailRow label="Зажигание" value={tracker.lastIgnition != null ? (tracker.lastIgnition ? 'Вкл' : 'Выкл') : undefined} />
-                            <DetailRow label="Топливо" value={tracker.lastFuelLevel != null ? `${tracker.lastFuelLevel}%` : undefined} />
-                            <DetailRow label="Пробег" value={tracker.lastMileage != null ? `${tracker.lastMileage?.toLocaleString('ru-RU')} км` : undefined} />
-                          </DetailSection>
-                          <DetailSection title="Связь" icon={<Clock className="size-3.5" />}>
-                            <DetailRow label="Выход на связь" value={formatDateTime(tracker.lastSeenAt)} />
-                            <DetailRow label="Позиция" value={formatDateTime(tracker.lastPositionAt)} />
-                          </DetailSection>
-                          <div className="flex flex-wrap gap-1.5 pt-1">
-                            <Button size="sm" variant="outline" className="h-7 text-[11px] gap-1" onClick={async () => { try { const res = await fetch('/api/glonass/sync', { method: 'POST' }); const data = await res.json(); if (data.synced !== undefined) toast.success(`Синхронизация: ${data.synced} из ${data.totalTrackers}`); else toast.error(data.error || 'Ошибка'); onRefresh() } catch { toast.error('Ошибка') } }}><RefreshCw className="size-3" />Синхронизировать</Button>
-                            <Button size="sm" variant="outline" className="h-7 text-[11px] gap-1" onClick={onRefresh}><Activity className="size-3" />Обновить</Button>
-                            <div className="flex-1" />
-                            <Button size="sm" variant="destructive" className="h-7 text-[11px] gap-1" onClick={async () => { try { await fetch(`/api/glonass/${tracker.id}`, { method: 'DELETE' }); toast.success('Трекер отключён'); onRefresh() } catch { toast.error('Ошибка') } }}><Trash2 className="size-3" />Отключить</Button>
+                        ) : (
+                          <div className="space-y-1.5 overflow-y-auto max-h-[50vh]">
+                            {availableObjects.map(obj => (
+                              <div key={obj.id} className={`flex items-center justify-between p-2.5 rounded-lg border cursor-pointer transition-colors hover:bg-accent ${obj.isLinked ? 'opacity-50 cursor-not-allowed' : ''}`}
+                                onClick={async () => {
+                                  if (obj.isLinked) return
+                                  try {
+                                    const res = await fetch('/api/glonass', {
+                                      method: 'POST',
+                                      headers: { 'Content-Type': 'application/json' },
+                                      body: JSON.stringify({
+                                        equipmentId: trackerPickerEqId,
+                                        trackerId: String(obj.uniqueId || obj.id),
+                                        trackerName: obj.name,
+                                        axentaCloudId: String(obj.id),
+                                      })
+                                    })
+                                    if (res.ok) {
+                                      toast.success(`Трекер "${obj.name}" подключён`)
+                                      setTrackerPickerOpen(false)
+                                      onRefresh()
+                                      onRefreshAll()
+                                    } else {
+                                      toast.error('Ошибка подключения трекера')
+                                    }
+                                  } catch { toast.error('Ошибка подключения') }
+                                }}
+                              >
+                                <div className="flex items-center gap-2">
+                                  <div className={`size-6 rounded flex items-center justify-center ${obj.connectedStatus ? 'bg-emerald-100 dark:bg-emerald-900/40' : 'bg-gray-100 dark:bg-gray-800'}`}>
+                                    {obj.connectedStatus ? <Wifi className="size-3 text-emerald-600 dark:text-emerald-400" /> : <WifiOff className="size-3 text-gray-400" />}
+                                  </div>
+                                  <div>
+                                    <p className="text-xs font-medium">{obj.name}</p>
+                                    <p className="text-[10px] text-muted-foreground">ID: {obj.id} • {obj.uniqueId}</p>
+                                  </div>
+                                </div>
+                                {obj.isLinked ? <Badge variant="secondary" className="text-[10px]">Привязан</Badge> : <Plus className="size-4 text-muted-foreground" />}
+                              </div>
+                            ))}
                           </div>
-                        </CardContent>
-                      </Card>
-                    ))}
+                        )}
+                      </DialogContent>
+                    </Dialog>
                   </div>
                 )}
 

@@ -182,3 +182,37 @@ Stage Summary:
 - Position data correctly mapped: pos.x=longitude, pos.y=latitude (Axenta convention)
 - New features: object listing, track building, stats, reverse geocoding
 - Real data confirmed: 80 vehicles tracked with live GPS positions
+
+---
+Task ID: 8
+Agent: Main
+Task: Fix tracker unbinding, add map, sensors display, date range picker, historical data
+
+Work Log:
+- Diagnosed tracker unbinding issue: `axentaCloudId` was never saved when connecting trackers via prompt(), causing sync to fail matching
+- Replaced prompt()-based tracker connection with Axenta object picker dialog that fetches available objects from /api/glonass/objects
+- New dialog shows objects with connection status, ID, uniqueId; saves axentaCloudId properly
+- Installed Leaflet + react-leaflet + @types/leaflet packages
+- Created /src/components/tracker-map.tsx — Leaflet map component with SSR-safe dynamic import
+- Map features: colored markers (green=active, red=inactive), directional arrows based on course, popups with equipment info, track polyline for historical data
+- Added toggle between current equipment trackers and all equipment trackers on map
+- Enhanced GLONASS tab with dynamic sensor display — all Axenta sensor data shown, not just hardcoded fields
+- Added date/time range picker with presets (Сегодня, Вчера, Неделя, Месяц)
+- Implemented historical data fetching: stats via /api/glonass/stats and tracks via /api/glonass/tracks
+- Stats display: mileage, avg/max speed, fuel consumption, refuels, drains, trips/parkings duration, engine hours
+- Track data displayed as polyline on map
+- Fixed sync to fetch ALL monitoring data (not just by IDs) and match trackers by axentaCloudId, trackerId, or name
+- Sync now auto-updates axentaCloudId for trackers where it was missing
+- Sync now loads ALL trackers (not just active ones)
+- Sensor data deduplication: old sensor records deleted before saving new ones
+- Added helper functions: getUniqueSensors, getCourseDirection, formatDuration, applyDatePreset, fetchHistoricalData
+- After sync/refresh, detail view is immediately updated (fetchEquipmentDetail + fetchEquipment)
+- Build verified successful
+
+Stage Summary:
+- Tracker unbinding fixed: axentaCloudId properly saved, sync matches by multiple criteria
+- Interactive Leaflet map added with vehicle tracking, historical tracks, and toggle between single/all vehicles
+- All Axenta sensor data dynamically displayed
+- Date range picker with quick presets and on-demand historical data queries
+- Statistics card shows full period data (mileage, speed, fuel, time)
+- Track polyline rendered on map for selected period
