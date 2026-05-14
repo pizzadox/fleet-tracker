@@ -138,6 +138,11 @@ function formatSensorValue(s: SensorData): string {
   if (isIgnition && s.value != null) {
     return s.value > 0 ? 'On' : 'Off'
   }
+  // For fuel sensors: always show in liters
+  const isFuel = s.sensorType === 'fuel' || /топлив|бак/i.test(s.sensorName || '')
+  if (isFuel && s.value != null) {
+    return `${s.value} л`
+  }
   // Default formatting
   const val = s.value != null ? s.value : (s.stringValue || '—')
   return `${val}${s.unit ? ' ' + s.unit : ''}`
@@ -461,7 +466,7 @@ export default function TrackerMap({ trackers, trackPoints, trackData, onMarkerC
               <span style="font-size: 14px;">🚗</span>
             </div>
             <div>
-              <div style="font-weight: 700; font-size: 13px;">${tracker.equipmentName || tracker.trackerName || 'Трекер'}</div>
+              <div style="font-weight: 700; font-size: 13px; ${tracker.equipmentId ? 'color: #3b82f6; cursor: pointer; text-decoration: underline;' : ''}" ${tracker.equipmentId ? `data-equipment-id="${tracker.equipmentId}"` : ''}>${tracker.equipmentName || tracker.trackerName || 'Трекер'}</div>
               ${regNum ? `<div style="color: #6b7280; font-size: 11px;">${regNum}</div>` : ''}
             </div>
             <div style="margin-left: auto;">

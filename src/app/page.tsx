@@ -979,6 +979,7 @@ function EquipmentDetailSheet({ open, onOpenChange, equipment, loading, detailTa
   const [historyDateTo, setHistoryDateTo] = useState('')
   const [historyLoading, setHistoryLoading] = useState(false)
   const [showAllTrackersMap, setShowAllTrackersMap] = useState(false)
+  const [historyPanelOpen, setHistoryPanelOpen] = useState(false)
 
   useEffect(() => {
     if (open && eq && detailTab === 'trips') {
@@ -1327,19 +1328,46 @@ function EquipmentDetailSheet({ open, onOpenChange, equipment, loading, detailTa
                                 <DetailRow label="Зажигание" value={tracker.lastIgnition != null ? (tracker.lastIgnition ? 'Вкл' : 'Выкл') : undefined} />
                                 <DetailRow label="Топливо" value={tracker.lastFuelLevel != null ? `${tracker.lastFuelLevel} л` : undefined} />
                                 <DetailRow label="Пробег" value={tracker.lastMileage != null ? `${tracker.lastMileage?.toLocaleString('ru-RU')} км` : undefined} />
-                                {tracker.sensorData && getUniqueSensors(tracker.sensorData.filter(s => s.value != null || (s.stringValue != null && s.stringValue !== ''))).length > 0 && (
-                                  <>
-                                    <div className="col-span-2 mt-1 pt-1 border-t border-dashed border-border/40">
-                                      <p className="text-[10px] font-medium text-muted-foreground mb-1">Данные датчиков Axenta</p>
-                                    </div>
-                                    {getUniqueSensors(tracker.sensorData.filter(s => s.value != null || (s.stringValue != null && s.stringValue !== ''))).map((s, i) => {
-                                      const isIgnition = s.sensorType === 'ignition' || /зажиган/i.test(s.sensorName || '')
-                                      const displayVal = isIgnition && s.value != null ? (s.value > 0 ? 'On' : 'Off') : `${(s.value ?? s.stringValue) || '—'}${s.unit ? ` ${s.unit}` : ''}`
-                                      return <DetailRow key={i} label={s.sensorName || s.sensorType} value={displayVal} />
-                                    })}
-                                  </>
-                                )}
-                                {(!tracker.sensorData || getUniqueSensors(tracker.sensorData.filter(s => s.value != null || (s.stringValue != null && s.stringValue !== ''))).length === 0) && tracker.lastEngineTemp == null && (
+                                {tracker.lastEngineTemp != null && <DetailRow label="Темп. двигателя" value={`${tracker.lastEngineTemp}°C`} />}
+                                {tracker.sensorData && (() => {
+                                  // Filter: only sensors with values, exclude types already shown above (fuel, ignition, mileage, temperature)
+                                  const alreadyShownTypes = ['fuel', 'ignition', 'temperature', 'temp', 'odometer', 'mileage']
+                                  const alreadyShownNames = ['топлив', 'зажиган', 'пробег', 'темпер', 'бак']
+                                  const extraSensors = getUniqueSensors(
+                                    tracker.sensorData.filter(s => {
+                                      if (s.value == null && (s.stringValue == null || s.stringValue === '')) return false
+                                      const type = (s.sensorType || '').toLowerCase()
+                                      const name = (s.sensorName || '').toLowerCase()
+                                      if (alreadyShownTypes.some(t => type.includes(t))) return false
+                                      if (alreadyShownNames.some(n => name.includes(n))) return false
+                                      return true
+                                    })
+                                  )
+                                  if (extraSensors.length === 0) return null
+                                  return (
+                                    <>
+                                      <div className="col-span-2 mt-1 pt-1 border-t border-dashed border-border/40">
+                                        <p className="text-[10px] font-medium text-muted-foreground mb-1">Доп. датчики</p>
+                                      </div>
+                                      {extraSensors.map((s, i) => {
+                                        const isIgnition = s.sensorType === 'ignition' || /зажиган/i.test(s.sensorName || '')
+                                        const isFuel = s.sensorType === 'fuel' || /топлив|бак/i.test(s.sensorName || '')
+                                        let displayVal: string
+                                        if (isIgnition && s.value != null) {
+                                          displayVal = s.value > 0 ? 'On' : 'Off'
+                                        } else if (isFuel) {
+                                          displayVal = `${s.value ?? s.stringValue ?? '—'} л`
+                                        } else {
+                                          displayVal = `${(s.value ?? s.stringValue) || '—'}${s.unit ? ` ${s.unit}` : ''}`
+                                        }
+                                        return <DetailRow key={i} label={s.sensorName || s.sensorType} value={displayVal} />
+                                      })}
+                                    </>
+                                  )
+                                })()}
+                                {(!tracker.sensorData || getUniqueSensors(
+                                  tracker.sensorData.filter(s => s.value != null || (s.stringValue != null && s.stringValue !== ''))
+                                ).length === 0) && tracker.lastEngineTemp == null && (
                                   <p className="text-[10px] text-muted-foreground col-span-2">Нет данных датчиков</p>
                                 )}
                               </DetailSection>
@@ -1348,28 +1376,37 @@ function EquipmentDetailSheet({ open, onOpenChange, equipment, loading, detailTa
                                 <DetailRow label="Позиция" value={formatDateTime(tracker.lastPositionAt)} />
                               </DetailSection>
 
-                              {/* Date range for historical data */}
-                              <DetailSection title="Запрос данных за период" icon={<Calendar className="size-3.5" />}>
-                                <div className="grid grid-cols-2 gap-2 col-span-2">
-                                  <div>
-                                    <Label className="text-[10px]">С</Label>
-                                    <Input type="datetime-local" className="h-7 text-[11px]" value={historyDateFrom} onChange={e => setHistoryDateFrom(e.target.value)} />
+                              {/* Date range for historical data — collapsible */}
+                              <div>
+                                <button className="flex items-center gap-1.5 text-xs font-semibold w-full text-left" onClick={() => setHistoryPanelOpen(prev => !prev)}>
+                                  <Calendar className="size-3.5 text-muted-foreground" />
+                                  <span>Запрос данных за период</span>
+                                  <ChevronDown className={`size-3 text-muted-foreground transition-transform ${historyPanelOpen ? '' : '-rotate-90'}`} />
+                                </button>
+                                {historyPanelOpen && (
+                                  <div className="mt-2 space-y-2">
+                                    <div className="grid grid-cols-2 gap-2">
+                                      <div>
+                                        <Label className="text-[10px]">С</Label>
+                                        <Input type="datetime-local" className="h-7 text-[11px]" value={historyDateFrom} onChange={e => setHistoryDateFrom(e.target.value)} />
+                                      </div>
+                                      <div>
+                                        <Label className="text-[10px]">По</Label>
+                                        <Input type="datetime-local" className="h-7 text-[11px]" value={historyDateTo} onChange={e => setHistoryDateTo(e.target.value)} />
+                                      </div>
+                                    </div>
+                                    <div className="flex flex-wrap gap-1">
+                                      {['Сегодня', 'Вчера', 'Неделя', 'Месяц'].map(preset => (
+                                        <Button key={preset} variant="outline" size="sm" className="h-6 text-[10px]" onClick={() => applyDatePreset(preset)}>{preset}</Button>
+                                      ))}
+                                    </div>
+                                    <Button size="sm" className="h-7 text-[11px] w-full gap-1" disabled={!historyDateFrom || !historyDateTo || historyLoading} onClick={() => fetchHistoricalData(tracker)}>
+                                      {historyLoading ? <Loader2 className="size-3 animate-spin" /> : <Search className="size-3" />}
+                                      Запросить данные
+                                    </Button>
                                   </div>
-                                  <div>
-                                    <Label className="text-[10px]">По</Label>
-                                    <Input type="datetime-local" className="h-7 text-[11px]" value={historyDateTo} onChange={e => setHistoryDateTo(e.target.value)} />
-                                  </div>
-                                </div>
-                                <div className="flex flex-wrap gap-1 col-span-2">
-                                  {['Сегодня', 'Вчера', 'Неделя', 'Месяц'].map(preset => (
-                                    <Button key={preset} variant="outline" size="sm" className="h-6 text-[10px]" onClick={() => applyDatePreset(preset)}>{preset}</Button>
-                                  ))}
-                                </div>
-                                <Button size="sm" className="h-7 text-[11px] w-full gap-1 col-span-2" disabled={!historyDateFrom || !historyDateTo || historyLoading} onClick={() => fetchHistoricalData(tracker)}>
-                                  {historyLoading ? <Loader2 className="size-3 animate-spin" /> : <Search className="size-3" />}
-                                  Запросить данные
-                                </Button>
-                              </DetailSection>
+                                )}
+                              </div>
 
                               {/* Stats display */}
                               {trackerStats && (
@@ -1401,14 +1438,15 @@ function EquipmentDetailSheet({ open, onOpenChange, equipment, loading, detailTa
                                 }}><RefreshCw className="size-3" />Синхронизировать</Button>
                                 <Button size="sm" variant="outline" className="h-7 text-[11px] gap-1" onClick={() => { onRefresh(); onRefreshAll() }}><Activity className="size-3" />Обновить</Button>
                                 <div className="flex-1" />
-                                <Button size="sm" variant="destructive" className="h-7 text-[11px] gap-1" onClick={async () => {
-                                  try {
-                                    await fetch(`/api/glonass/${tracker.id}`, { method: 'DELETE' })
-                                    toast.success('Трекер отключён')
-                                    onRefresh()
-                                    onRefreshAll()
-                                  } catch { toast.error('Ошибка') }
-                                }}><Trash2 className="size-3" />Отключить</Button>
+                                <Button size="icon" variant="ghost" className="size-6 text-muted-foreground hover:text-destructive" onClick={() => {
+                                  if (confirm('Отключить трекер от этой техники?')) {
+                                    fetch(`/api/glonass/${tracker.id}`, { method: 'DELETE' }).then(() => {
+                                      toast.success('Трекер отключён')
+                                      onRefresh()
+                                      onRefreshAll()
+                                    }).catch(() => toast.error('Ошибка'))
+                                  }
+                                }}><Trash2 className="size-3" /></Button>
                               </div>
                             </CardContent>
                           </Card>
