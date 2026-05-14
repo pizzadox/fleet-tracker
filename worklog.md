@@ -216,3 +216,20 @@ Stage Summary:
 - Date range picker with quick presets and on-demand historical data queries
 - Statistics card shows full period data (mileage, speed, fuel, time)
 - Track polyline rendered on map for selected period
+
+---
+Task ID: 10
+Agent: Main
+Task: Add Save button to all edit steps, remove "Открыть карточку" from map popup
+
+Work Log:
+- Added "Save/Добавить" button to all steps in EquipmentFormDialog (previously only on last step)
+- The Save button appears alongside the "Далее" button on steps 0-3, styled as outline variant
+- Save button on last step (step 4) remains as primary
+- Removed "📋 Открыть карточку" button from map marker popup in tracker-map.tsx
+- Equipment name in popup is still clickable (blue underlined) to open the detail card
+- Build verified successful
+
+Stage Summary:
+- Equipment editing now has Save button on every step, not just the last
+- Map popup simplified — "Открыть карточку" button removed, equipment name remains clickable

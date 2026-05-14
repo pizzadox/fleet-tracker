@@ -1888,9 +1888,12 @@ function EquipmentFormDialog({ open, onOpenChange, editData, companies, step, se
             <>
               <Button variant="outline" size="sm" onClick={() => setStep(Math.max(0, step - 1))} disabled={step === 0}><ChevronLeft className="size-3.5" />Назад</Button>
               {step < steps.length - 1 ? (
-                <Button size="sm" onClick={() => setStep(step + 1)}>Далее<ChevronRight className="size-3.5" /></Button>
+                <div className="flex gap-2">
+                  <Button size="sm" variant="outline" onClick={handleSave} disabled={saving || !f('name').trim()}>{saving ? <Loader2 className="size-3.5 animate-spin" /> : <CheckCircle2 className="size-3.5" />}{editData ? 'Сохранить' : 'Добавить'}</Button>
+                  <Button size="sm" onClick={() => setStep(step + 1)}>Далее<ChevronRight className="size-3.5" /></Button>
+                </div>
               ) : (
-                <Button size="sm" onClick={handleSave} disabled={saving}>{saving ? <Loader2 className="size-3.5 animate-spin" /> : <CheckCircle2 className="size-3.5" />}{editData ? 'Сохранить' : 'Добавить'}</Button>
+                <Button size="sm" onClick={handleSave} disabled={saving || !f('name').trim()}>{saving ? <Loader2 className="size-3.5 animate-spin" /> : <CheckCircle2 className="size-3.5" />}{editData ? 'Сохранить' : 'Добавить'}</Button>
               )}
             </>
           )}

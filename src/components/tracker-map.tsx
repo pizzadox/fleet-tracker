@@ -492,18 +492,7 @@ export default function TrackerMap({ trackers, trackPoints, trackData, onMarkerC
 
           ${sensorHtml}
 
-          ${tracker.equipmentId ? `
-          <div style="margin-top: 8px; border-top: 1px solid #e5e7eb; padding-top: 6px;">
-            <button data-equipment-id="${tracker.equipmentId}" style="
-              width: 100%; padding: 6px 12px; border-radius: 6px; border: 1px solid #e5e7eb;
-              background: #f9fafb; cursor: pointer; font-size: 11px; font-weight: 600;
-              color: #3b82f6; display: flex; align-items: center; justify-content: center; gap: 4px;
-              transition: background 0.15s;
-            " onmouseover="this.style.background='#eff6ff'" onmouseout="this.style.background='#f9fafb'">
-              📋 Открыть карточку
-            </button>
-          </div>
-          ` : ''}
+
         </div>
       `
 
