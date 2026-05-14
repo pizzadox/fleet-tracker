@@ -1332,9 +1332,11 @@ function EquipmentDetailSheet({ open, onOpenChange, equipment, loading, detailTa
                                     <div className="col-span-2 mt-1 pt-1 border-t border-dashed border-border/40">
                                       <p className="text-[10px] font-medium text-muted-foreground mb-1">Данные датчиков Axenta</p>
                                     </div>
-                                    {getUniqueSensors(tracker.sensorData.filter(s => s.value != null || (s.stringValue != null && s.stringValue !== ''))).map((s, i) => (
-                                      <DetailRow key={i} label={s.sensorName || s.sensorType} value={`${(s.value ?? s.stringValue) || '—'}${s.unit ? ` ${s.unit}` : ''}`} />
-                                    ))}
+                                    {getUniqueSensors(tracker.sensorData.filter(s => s.value != null || (s.stringValue != null && s.stringValue !== ''))).map((s, i) => {
+                                      const isIgnition = s.sensorType === 'ignition' || /зажиган/i.test(s.sensorName || '')
+                                      const displayVal = isIgnition && s.value != null ? (s.value > 0 ? 'On' : 'Off') : `${(s.value ?? s.stringValue) || '—'}${s.unit ? ` ${s.unit}` : ''}`
+                                      return <DetailRow key={i} label={s.sensorName || s.sensorType} value={displayVal} />
+                                    })}
                                   </>
                                 )}
                                 {(!tracker.sensorData || getUniqueSensors(tracker.sensorData.filter(s => s.value != null || (s.stringValue != null && s.stringValue !== ''))).length === 0) && tracker.lastEngineTemp == null && (

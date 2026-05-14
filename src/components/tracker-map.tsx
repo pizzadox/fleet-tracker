@@ -132,6 +132,17 @@ function getSensorLabel(type: string): string {
   }
 }
 
+function formatSensorValue(s: SensorData): string {
+  // For ignition sensors: 1/0 → On/Off
+  const isIgnition = s.sensorType === 'ignition' || /зажиган/i.test(s.sensorName || '')
+  if (isIgnition && s.value != null) {
+    return s.value > 0 ? 'On' : 'Off'
+  }
+  // Default formatting
+  const val = s.value != null ? s.value : (s.stringValue || '—')
+  return `${val}${s.unit ? ' ' + s.unit : ''}`
+}
+
 function formatSpeedKmh(speed: number): string {
   return `${Math.round(speed)} км/ч`
 }
@@ -432,7 +443,7 @@ export default function TrackerMap({ trackers, trackPoints, trackData, onMarkerC
               <div style="display: flex; align-items: center; gap: 6px; font-size: 11px; padding: 2px 0;">
                 <span style="font-size: 12px;">${getSensorIcon(s.sensorType)}</span>
                 <span style="color: #6b7280; min-width: 70px;">${s.sensorName || getSensorLabel(s.sensorType)}</span>
-                <strong>${s.value != null ? s.value : (s.stringValue || '—')}${s.unit ? ' ' + s.unit : ''}</strong>
+                <strong>${formatSensorValue(s)}</strong>
               </div>
             `).join('')}
           </div>
