@@ -2830,6 +2830,15 @@ function MapTab({ equipment, onSync }: {
   const [trackLoading, setTrackLoading] = useState(false)
   const [trackStats, setTrackStats] = useState<Record<string, unknown> | null>(null)
   const [showTrackPanel, setShowTrackPanel] = useState(false)
+  const [trackData, setTrackData] = useState<{
+    track?: { distance: number; startDate: string; endDate: string; count: number };
+    trips?: Array<{
+      distance: number; startDate: string; endDate: string;
+      points: Array<{ lat: number; lng: number; speed: number; time: string }>;
+    }>;
+    parkings?: Array<{ startDate: string; endDate: string; lat: number; lng: number; duration: number; ignitionTime?: number }>;
+    stops?: Array<{ startDate: string; endDate: string; lat: number; lng: number; duration: number }>;
+  } | null>(null)
 
   // Equipment that has trackers for track selection
   const trackedEquipment = useMemo(() =>
@@ -2871,54 +2880,118 @@ function MapTab({ equipment, onSync }: {
     setTrackLoading(true)
     setTrackPoints([])
     setTrackStats(null)
+    setTrackData(null)
 
     try {
-      // Fetch track
-      const tracksRes = await fetch('/api/glonass/tracks', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          objectId: axentaId,
-          startDate: new Date(trackDateFrom).toISOString(),
-          endDate: new Date(trackDateTo).toISOString(),
+      // Fetch track + stats in parallel
+      const [tracksRes, statsRes] = await Promise.all([
+        fetch('/api/glonass/tracks', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            objectId: axentaId,
+            startDate: new Date(trackDateFrom).toISOString(),
+            endDate: new Date(trackDateTo).toISOString(),
+          })
+        }),
+        fetch('/api/glonass/stats', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            objectId: axentaId,
+            startDate: new Date(trackDateFrom).toISOString(),
+            endDate: new Date(trackDateTo).toISOString(),
+          })
         })
-      })
+      ])
+
+      // Parse stats
+      if (statsRes.ok) {
+        setTrackStats(await statsRes.json())
+      }
+
+      // Parse tracks
       if (tracksRes.ok) {
         const tracksData = await tracksRes.json()
-        const points: Array<{ lat: number; lng: number }> = []
-        if (Array.isArray(tracksData)) {
-          for (const track of tracksData) {
-            if (track.points && Array.isArray(track.points)) {
-              for (const p of track.points) {
-                if (p.pos) {
-                  points.push({ lat: p.pos.y, lng: p.pos.x })
-                } else if (p.lat != null && p.lng != null) {
-                  points.push({ lat: p.lat, lng: p.lng })
+
+        // Axenta returns: { track, trips, parkings, stops, ... }
+        // trips[].messagesCoordinates = [[lat, lng, speed, time], ...]
+        const parsedTrips: Array<{
+          distance: number; startDate: string; endDate: string;
+          points: Array<{ lat: number; lng: number; speed: number; time: string }>;
+        }> = []
+
+        if (tracksData.trips && Array.isArray(tracksData.trips)) {
+          for (const trip of tracksData.trips) {
+            const points: Array<{ lat: number; lng: number; speed: number; time: string }> = []
+            if (trip.messagesCoordinates && Array.isArray(trip.messagesCoordinates)) {
+              for (const mc of trip.messagesCoordinates) {
+                if (Array.isArray(mc) && mc.length >= 2) {
+                  points.push({
+                    lat: mc[0],
+                    lng: mc[1],
+                    speed: mc[2] || 0,
+                    time: mc[3] || '',
+                  })
                 }
               }
             }
+            if (points.length > 0) {
+              parsedTrips.push({
+                distance: trip.distance || 0,
+                startDate: trip.startDate,
+                endDate: trip.endDate,
+                points,
+              })
+            }
           }
         }
-        setTrackPoints(points)
-      }
 
-      // Fetch stats
-      const statsRes = await fetch('/api/glonass/stats', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          objectId: axentaId,
-          startDate: new Date(trackDateFrom).toISOString(),
-          endDate: new Date(trackDateTo).toISOString(),
+        // Parse parkings
+        const parsedParkings = (tracksData.parkings || []).map((p: Record<string, unknown>) => ({
+          startDate: p.startDate as string,
+          endDate: p.endDate as string,
+          lat: p.lat as number,
+          lng: p.lng as number,
+          duration: p.duration as number,
+          ignitionTime: p.ignitionTime as number | undefined,
+        }))
+
+        // Parse stops
+        const parsedStops = (tracksData.stops || []).map((s: Record<string, unknown>) => ({
+          startDate: s.startDate as string,
+          endDate: s.endDate as string,
+          lat: s.lat as number,
+          lng: s.lng as number,
+          duration: s.duration as number,
+        }))
+
+        // Also build simple trackPoints for backwards compat
+        const simplePoints: Array<{ lat: number; lng: number }> = []
+        for (const trip of parsedTrips) {
+          for (const p of trip.points) {
+            simplePoints.push({ lat: p.lat, lng: p.lng })
+          }
+        }
+        setTrackPoints(simplePoints)
+
+        // Store enriched data
+        setTrackData({
+          track: tracksData.track ? {
+            distance: tracksData.track.distance,
+            startDate: tracksData.track.startDate,
+            endDate: tracksData.track.endDate,
+            count: tracksData.track.count,
+          } : undefined,
+          trips: parsedTrips,
+          parkings: parsedParkings,
+          stops: parsedStops,
         })
-      })
-      if (statsRes.ok) {
-        const statsData = await statsRes.json()
-        setTrackStats(statsData)
-      }
 
-      if (tracksRes.ok) {
-        toast.success(`Трек загружен${trackPoints.length > 0 ? ` (${trackPoints.length} точек)` : ''}`)
+        const totalPoints = simplePoints.length
+        const tripCount = parsedTrips.length
+        const parkingCount = parsedParkings.length
+        toast.success(`Трек загружен: ${tripCount} поездок, ${totalPoints} точек, ${parkingCount} стоянок`)
       } else {
         toast.error('Ошибка загрузки трека')
       }
@@ -2931,6 +3004,7 @@ function MapTab({ equipment, onSync }: {
   const clearTrack = () => {
     setTrackPoints([])
     setTrackStats(null)
+    setTrackData(null)
     setTrackEqId('')
     setTrackDateFrom('')
     setTrackDateTo('')
@@ -2940,6 +3014,11 @@ function MapTab({ equipment, onSync }: {
     const h = Math.floor(seconds / 3600)
     const m = Math.floor((seconds % 3600) / 60)
     return h > 0 ? `${h} ч ${m} мин` : `${m} мин`
+  }
+
+  function formatTime(d?: string | null): string {
+    if (!d) return '—'
+    try { return new Date(d).toLocaleString('ru-RU', { hour: '2-digit', minute: '2-digit' }) } catch { return '—' }
   }
 
   const loadRules = useCallback(async () => {
@@ -3144,9 +3223,40 @@ function MapTab({ equipment, onSync }: {
                     {trackStats.engineHours != null && <div className="text-center"><p className="text-[9px] text-muted-foreground">Моточасы</p><p className="text-[11px] font-semibold">{Number(trackStats.engineHours).toFixed(1)} ч</p></div>}
                   </div>
                 )}
-                {trackPoints.length > 0 && (
-                  <div className="text-[10px] text-muted-foreground flex items-center gap-1">
-                    <div className="w-4 h-0.5 bg-blue-500 rounded" /> Трек: {trackPoints.length} точек
+                {trackPoints.length > 0 && trackData && (
+                  <div className="space-y-2 pt-1 border-t border-dashed">
+                    <div className="flex flex-wrap items-center gap-3 text-[10px] text-muted-foreground">
+                      <span className="flex items-center gap-1"><div className="w-4 h-0.5 bg-blue-500 rounded" />{trackPoints.length} точек</span>
+                      {trackData.trips && <span>🚗 {trackData.trips.length} поездок</span>}
+                      {trackData.parkings && <span>🅿️ {trackData.parkings.length} стоянок</span>}
+                      {trackData.stops && <span>⏸ {trackData.stops.length} остановок</span>}
+                      {trackData.track?.distance != null && <span>📏 {trackData.track.distance.toFixed(1)} км</span>}
+                    </div>
+                    {/* Speed legend */}
+                    <div className="flex flex-wrap items-center gap-2 text-[9px]">
+                      <span className="text-muted-foreground font-medium">Скорость:</span>
+                      <span className="flex items-center gap-1"><span className="w-3 h-1 rounded" style={{background:'#9ca3af'}} />0</span>
+                      <span className="flex items-center gap-1"><span className="w-3 h-1 rounded" style={{background:'#22c55e'}} />≤20</span>
+                      <span className="flex items-center gap-1"><span className="w-3 h-1 rounded" style={{background:'#eab308'}} />≤60</span>
+                      <span className="flex items-center gap-1"><span className="w-3 h-1 rounded" style={{background:'#f97316'}} />≤80</span>
+                      <span className="flex items-center gap-1"><span className="w-3 h-1 rounded" style={{background:'#ef4444'}} />&gt;80</span>
+                      <span className="text-muted-foreground">км/ч</span>
+                    </div>
+                    {/* Trips summary */}
+                    {trackData.trips && trackData.trips.length > 0 && (
+                      <div className="space-y-1">
+                        {trackData.trips.map((trip, i) => (
+                          <div key={i} className="flex items-center gap-2 text-[10px] bg-muted/50 rounded px-2 py-1">
+                            <span className="font-semibold text-emerald-600">🟢 A</span>
+                            <span>{formatTime(trip.startDate)}</span>
+                            <span className="text-muted-foreground">→</span>
+                            <span className="font-semibold text-red-500">🔴 B</span>
+                            <span>{formatTime(trip.endDate)}</span>
+                            <span className="text-muted-foreground ml-auto">{trip.distance.toFixed(1)} км • {trip.points.length} т.</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 )}
               </CardContent>
@@ -3200,7 +3310,7 @@ function MapTab({ equipment, onSync }: {
                       <p className="text-xs mt-1">Подключите ГЛОНАСС трекеры к технике для отображения на карте</p>
                     </div>
                   ) : (
-                    <TrackerMap trackers={filteredTrackers} trackPoints={trackPoints} />
+                    <TrackerMap trackers={filteredTrackers} trackPoints={trackPoints} trackData={trackData} />
                   )}
                 </div>
               </CardContent>
