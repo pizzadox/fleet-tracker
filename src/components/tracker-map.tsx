@@ -92,10 +92,10 @@ export default function TrackerMap({ trackers, trackPoints, onMarkerClick }: Tra
         center: [55.7558, 37.6173], // Moscow default
         zoom: 10,
         zoomControl: true,
+        attributionControl: false,
       })
 
       L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-        attribution: '',
         maxZoom: 19,
       }).addTo(mapInstanceRef.current)
     }
