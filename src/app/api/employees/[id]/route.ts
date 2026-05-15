@@ -9,6 +9,14 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
       include: {
         crew: { select: { id: true, name: true, type: true, status: true } },
         equipment: { select: { id: true, name: true, registrationNum: true, type: true } },
+        repairAssignments: {
+          include: {
+            repair: {
+              select: { id: true, description: true, status: true, equipment: { select: { id: true, name: true } } }
+            }
+          },
+          orderBy: { assignedAt: 'desc' }
+        },
       },
     })
     if (!employee) return NextResponse.json({ error: 'Employee not found' }, { status: 404 })

@@ -20,6 +20,14 @@ export async function GET(request: NextRequest) {
         },
         photos: true,
         stages: { orderBy: { sortOrder: 'asc' } },
+        masters: {
+          include: {
+            employee: {
+              select: { id: true, fullName: true, position: true, phone: true, status: true, licenseCat: true }
+            }
+          },
+          orderBy: { assignedAt: 'asc' }
+        },
       }
     })
     return NextResponse.json(repairs)
@@ -51,6 +59,13 @@ export async function POST(request: NextRequest) {
       include: {
         equipment: true,
         stages: true,
+        masters: {
+          include: {
+            employee: {
+              select: { id: true, fullName: true, position: true, phone: true, status: true, licenseCat: true }
+            }
+          }
+        },
       }
     })
 
@@ -86,7 +101,39 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    return NextResponse.json(repair, { status: 201 })
+    // Assign masters if provided
+    if (body.masters && Array.isArray(body.masters)) {
+      for (const master of body.masters) {
+        if (master.employeeId) {
+          await db.repairEmployee.create({
+            data: {
+              repairId: repair.id,
+              employeeId: master.employeeId,
+              role: master.role || 'master',
+              notes: master.notes || null,
+            }
+          })
+        }
+      }
+    }
+
+    // Re-fetch with all relations
+    const fullRepair = await db.repair.findUnique({
+      where: { id: repair.id },
+      include: {
+        equipment: true,
+        stages: { orderBy: { sortOrder: 'asc' } },
+        masters: {
+          include: {
+            employee: {
+              select: { id: true, fullName: true, position: true, phone: true, status: true, licenseCat: true }
+            }
+          }
+        },
+      }
+    })
+
+    return NextResponse.json(fullRepair || repair, { status: 201 })
   } catch (error) {
     console.error('Error creating repair:', error)
     return NextResponse.json({ error: 'Failed to create repair' }, { status: 500 })

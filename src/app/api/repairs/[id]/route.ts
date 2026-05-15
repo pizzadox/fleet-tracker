@@ -10,6 +10,14 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
         equipment: true,
         photos: true,
         stages: { orderBy: { sortOrder: 'asc' } },
+        masters: {
+          include: {
+            employee: {
+              select: { id: true, fullName: true, position: true, phone: true, status: true, licenseCat: true }
+            }
+          },
+          orderBy: { assignedAt: 'asc' }
+        },
       }
     })
     if (!repair) {
@@ -46,8 +54,36 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
       include: {
         equipment: true,
         stages: { orderBy: { sortOrder: 'asc' } },
+        masters: {
+          include: {
+            employee: {
+              select: { id: true, fullName: true, position: true, phone: true, status: true, licenseCat: true }
+            }
+          }
+        },
       }
     })
+
+    // Handle masters assignment if provided
+    if (body.masters !== undefined) {
+      // Remove existing masters
+      await db.repairEmployee.deleteMany({ where: { repairId: id } })
+      // Add new masters
+      if (Array.isArray(body.masters)) {
+        for (const master of body.masters) {
+          if (master.employeeId) {
+            await db.repairEmployee.create({
+              data: {
+                repairId: id,
+                employeeId: master.employeeId,
+                role: master.role || 'master',
+                notes: master.notes || null,
+              }
+            })
+          }
+        }
+      }
+    }
 
     // If repair is completed, update equipment status back to active
     if (body.status === 'completed' && repair.equipmentId) {
@@ -68,7 +104,24 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
       })
     }
 
-    return NextResponse.json(repair)
+    // Re-fetch with all relations
+    const fullRepair = await db.repair.findUnique({
+      where: { id },
+      include: {
+        equipment: true,
+        stages: { orderBy: { sortOrder: 'asc' } },
+        masters: {
+          include: {
+            employee: {
+              select: { id: true, fullName: true, position: true, phone: true, status: true, licenseCat: true }
+            }
+          },
+          orderBy: { assignedAt: 'asc' }
+        },
+      }
+    })
+
+    return NextResponse.json(fullRepair || repair)
   } catch (error) {
     console.error('Error updating repair:', error)
     return NextResponse.json({ error: 'Failed to update repair' }, { status: 500 })

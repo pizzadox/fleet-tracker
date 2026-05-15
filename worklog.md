@@ -393,3 +393,33 @@ Stage Summary:
 - UI: equipment cards show assigned employee names
 - UI: employee cards show assigned equipment name
 - Build passes without errors
+
+---
+Task ID: repair-masters
+Agent: Main
+Task: Add employee (master) assignment to repairs
+
+Work Log:
+- Added `RepairEmployee` model to Prisma schema (join table with role: master/assistant/supervisor)
+- Added `repairAssignments` relation to Employee model
+- Pushed schema changes and regenerated Prisma Client
+- Updated `/api/repairs` GET to include `masters` with employee details
+- Updated `/api/repairs` POST to accept `masters` array for initial assignment
+- Updated `/api/repairs/[id]` GET/PUT to include and handle masters
+- Created `/api/repairs/[id]/masters` API endpoint for POST (assign) and DELETE (unassign)
+- Updated `/api/employees/[id]` GET to include `repairAssignments` with repair details
+- Added `RepairEmployee` interface and `masters` field to `Repair` interface in page.tsx
+- Added `repairAssignments` field to `Employee` interface
+- Added `REPAIR_MASTER_ROLE_MAP` constant (master/assistant/supervisor roles)
+- Created `RepairMastersSection` component with add/remove master functionality
+- Updated `RepairDetailDialog` to show assigned masters section
+- Updated `RepairFormDialog` to allow selecting masters during create/edit
+- Updated `RepairsTab` cards to show assigned masters as badges
+- Updated `EmployeeDetailSheet` to show repair assignments
+- Added demo data: 3 masters assigned to 2 repairs
+
+Stage Summary:
+- RepairEmployee model with roles: master, assistant, supervisor
+- Full CRUD for master assignment via dedicated API endpoint
+- UI: masters shown in repair detail, repair form, repair list cards, and employee detail
+- Build successful, API tested and working

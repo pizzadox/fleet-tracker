@@ -82,6 +82,12 @@ interface RepairPhoto {
   description?: string | null; stageId?: string | null;
 }
 
+interface RepairEmployee {
+  id: string; repairId: string; employeeId: string; role: string;
+  assignedAt: string; notes?: string | null;
+  employee: { id: string; fullName: string; position: string; phone?: string | null; status: string; licenseCat?: string | null };
+}
+
 interface Repair {
   id: string; equipmentId: string; description: string;
   reason?: string | null; startDate: string; endDate?: string | null;
@@ -91,6 +97,7 @@ interface Repair {
   notes?: string | null; createdAt: string; updatedAt: string;
   equipment?: { id: string; name: string; registrationNum?: string | null; brand?: string | null; model?: string | null };
   photos?: RepairPhoto[]; stages?: RepairStage[];
+  masters?: RepairEmployee[];
 }
 
 interface EquipmentHistory {
@@ -169,6 +176,7 @@ interface Employee {
   createdAt: string; updatedAt: string;
   crew?: { id: string; name: string; type: string; status: string } | null;
   equipment?: { id: string; name: string; registrationNum?: string | null; type: string } | null;
+  repairAssignments?: { id: string; repairId: string; role: string; assignedAt: string; repair: { id: string; description: string; status: string; equipment: { id: string; name: string } } }[];
 }
 
 interface Crew {
@@ -325,6 +333,12 @@ const EMPLOYEE_STATUS_MAP: Record<string, { label: string; color: string; border
   dismissed: { label: 'Уволен', color: 'bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-400', border: 'border-l-red-500' },
   vacation: { label: 'Отпуск', color: 'bg-sky-100 text-sky-800 dark:bg-sky-900/40 dark:text-sky-400', border: 'border-l-sky-500' },
   sick: { label: 'Больничный', color: 'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-400', border: 'border-l-amber-500' },
+}
+
+const REPAIR_MASTER_ROLE_MAP: Record<string, { label: string; color: string }> = {
+  master: { label: 'Мастер', color: 'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-400' },
+  assistant: { label: 'Помощник', color: 'bg-sky-100 text-sky-800 dark:bg-sky-900/40 dark:text-sky-400' },
+  supervisor: { label: 'Ответственный', color: 'bg-violet-100 text-violet-800 dark:bg-violet-900/40 dark:text-violet-400' },
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -872,8 +886,8 @@ export default function Home() {
       {/* ─── DIALOGS ──────────────────────────────────────────── */}
       <EquipmentDetailSheet open={eqDetailOpen} onOpenChange={setEqDetailOpen} equipment={selectedEq} loading={eqDetailLoading} detailTab={eqDetailTab} setDetailTab={setEqDetailTab} companies={companies} photoCategoryFilter={photoCategoryFilter} setPhotoCategoryFilter={setPhotoCategoryFilter} fullPhoto={fullPhoto} setFullPhoto={setFullPhoto} onEdit={(eq) => { setEqDetailOpen(false); setEqFormEdit(eq); setEqFormStep(0); setEqFormOpen(true) }} onDelete={(eq) => { setEqDetailOpen(false); setDeleteDialog({ open: true, type: 'equipment', id: eq.id, name: eq.name }) }} onAddRepair={(eqId) => { setRepairFormEdit(null); setRepairFormEquipmentId(eqId); setRepairFormOpen(true) }} onUploadPhoto={(eqId) => setPhotoUploadEq(eqId)} onRefresh={() => selectedEq && fetchEquipmentDetail(selectedEq.id)} onOpenRepairDetail={(r) => openRepairDetail(r)} onAddTrip={(eqId) => { setTripFormEdit(null); setTripFormEquipmentId(eqId); setTripFormOpen(true) }} onOpenTripDetail={openTripDetail} allEquipment={equipment} onRefreshAll={fetchEquipment} />
       <EquipmentFormDialog open={eqFormOpen} onOpenChange={setEqFormOpen} editData={eqFormEdit} companies={companies} step={eqFormStep} setStep={setEqFormStep} saving={eqFormSaving} setSaving={setEqFormSaving} onSaved={() => { setEqFormOpen(false); fetchAll() }} />
-      <RepairDetailDialog open={repairDetailOpen} onOpenChange={setRepairDetailOpen} repair={selectedRepair} loading={repairDetailLoading} fullPhoto={fullPhoto} setFullPhoto={setFullPhoto} onEdit={(r) => { setRepairDetailOpen(false); setRepairFormEdit(r); setRepairFormEquipmentId(r.equipmentId); setRepairFormOpen(true) }} onDelete={(r) => { setRepairDetailOpen(false); setDeleteDialog({ open: true, type: 'repair', id: r.id, name: r.description }) }} onComplete={async (r) => { try { const res = await fetch(`/api/repairs/${r.id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...r, status: 'completed', endDate: new Date().toISOString() }) }); if (!res.ok) throw new Error(); toast.success('Ремонт завершён'); fetchRepairDetail(r.id); fetchAll() } catch { toast.error('Ошибка завершения ремонта') } }} onAddStage={(repairId) => { setStageFormRepairId(repairId); setStageFormEdit(null); setStageFormOpen(true) }} onEditStage={(stage, repairId) => { setStageFormRepairId(repairId); setStageFormEdit(stage); setStageFormOpen(true) }} onDeleteStage={async (stageId, repairId) => { try { const res = await fetch(`/api/repairs/${repairId}/stages?stageId=${stageId}`, { method: 'DELETE' }); if (!res.ok) throw new Error(); toast.success('Этап удалён'); fetchRepairDetail(repairId) } catch { toast.error('Ошибка удаления этапа') } }} onUploadPhoto={(repairId) => setPhotoUploadRepair(repairId)} onRefresh={() => selectedRepair && fetchRepairDetail(selectedRepair.id)} />
-      <RepairFormDialog open={repairFormOpen} onOpenChange={setRepairFormOpen} editData={repairFormEdit} equipmentId={repairFormEquipmentId} equipmentList={equipment} saving={repairFormSaving} setSaving={setRepairFormSaving} onSaved={() => { setRepairFormOpen(false); fetchAll() }} />
+      <RepairDetailDialog open={repairDetailOpen} onOpenChange={setRepairDetailOpen} repair={selectedRepair} loading={repairDetailLoading} fullPhoto={fullPhoto} setFullPhoto={setFullPhoto} onEdit={(r) => { setRepairDetailOpen(false); setRepairFormEdit(r); setRepairFormEquipmentId(r.equipmentId); setRepairFormOpen(true) }} onDelete={(r) => { setRepairDetailOpen(false); setDeleteDialog({ open: true, type: 'repair', id: r.id, name: r.description }) }} onComplete={async (r) => { try { const res = await fetch(`/api/repairs/${r.id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...r, status: 'completed', endDate: new Date().toISOString() }) }); if (!res.ok) throw new Error(); toast.success('Ремонт завершён'); fetchRepairDetail(r.id); fetchAll() } catch { toast.error('Ошибка завершения ремонта') } }} onAddStage={(repairId) => { setStageFormRepairId(repairId); setStageFormEdit(null); setStageFormOpen(true) }} onEditStage={(stage, repairId) => { setStageFormRepairId(repairId); setStageFormEdit(stage); setStageFormOpen(true) }} onDeleteStage={async (stageId, repairId) => { try { const res = await fetch(`/api/repairs/${repairId}/stages?stageId=${stageId}`, { method: 'DELETE' }); if (!res.ok) throw new Error(); toast.success('Этап удалён'); fetchRepairDetail(repairId) } catch { toast.error('Ошибка удаления этапа') } }} onUploadPhoto={(repairId) => setPhotoUploadRepair(repairId)} onRefresh={() => selectedRepair && fetchRepairDetail(selectedRepair.id)} employees={employees} />
+      <RepairFormDialog open={repairFormOpen} onOpenChange={setRepairFormOpen} editData={repairFormEdit} equipmentId={repairFormEquipmentId} equipmentList={equipment} saving={repairFormSaving} setSaving={setRepairFormSaving} onSaved={() => { setRepairFormOpen(false); fetchAll() }} employees={employees} />
       <CompanyFormDialog open={companyFormOpen} onOpenChange={setCompanyFormOpen} editData={companyFormEdit} saving={companyFormSaving} setSaving={setCompanyFormSaving} onSaved={() => { setCompanyFormOpen(false); fetchAll() }} />
       <StageFormDialog open={stageFormOpen} onOpenChange={setStageFormOpen} repairId={stageFormRepairId} editData={stageFormEdit} saving={stageFormSaving} setSaving={setStageFormSaving} onSaved={() => { setStageFormOpen(false); if (selectedRepair) fetchRepairDetail(selectedRepair.id) }} />
       <PhotoUploadDialog open={!!photoUploadEq} onOpenChange={(v) => { if (!v) setPhotoUploadEq(null) }} targetId={photoUploadEq || ''} targetType="equipment" onUploaded={() => { setPhotoUploadEq(null); if (selectedEq) fetchEquipmentDetail(selectedEq.id); fetchAll() }} />
@@ -2236,6 +2250,15 @@ function RepairsTab({ repairs, equipment, onOpenDetail, onAdd, onDelete }: {
                   <div><span className="text-muted-foreground">Подрядчик:</span> <span className="font-medium truncate">{r.contractor || '—'}</span></div>
                   <div><span className="text-muted-foreground">Причина:</span> <span className="font-medium truncate">{r.reason || '—'}</span></div>
                 </div>
+                {r.masters && r.masters.length > 0 && (
+                  <div className="flex flex-wrap gap-1 mt-0.5">
+                    {r.masters.map(m => (
+                      <span key={m.id} className={`inline-flex items-center gap-0.5 rounded px-1.5 py-0.5 text-[10px] font-medium ${REPAIR_MASTER_ROLE_MAP[m.role]?.color || 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-400'}`}>
+                        <User className="size-2.5" />{m.employee.fullName}
+                      </span>
+                    ))}
+                  </div>
+                )}
                 {r.stages && r.stages.length > 0 && (
                   <div className="space-y-0.5">
                     <div className="flex items-center justify-between text-[10px] text-muted-foreground">
@@ -2258,10 +2281,136 @@ function RepairsTab({ repairs, equipment, onOpenDetail, onAdd, onDelete }: {
 }
 
 // ═══════════════════════════════════════════════════════════════
+// REPAIR MASTERS SECTION — НАЗНАЧЕННЫЕ МАСТЕРА
+// ═══════════════════════════════════════════════════════════════
+
+function RepairMastersSection({ repair, employees, onRefresh }: {
+  repair: Repair; employees: Employee[]; onRefresh: () => void;
+}) {
+  const [addingMaster, setAddingMaster] = useState(false)
+  const [selectedEmployee, setSelectedEmployee] = useState('')
+  const [selectedRole, setSelectedRole] = useState('master')
+  const [assigning, setAssigning] = useState(false)
+
+  const assignedIds = new Set(repair.masters?.map(m => m.employeeId) || [])
+  const availableEmployees = employees.filter(e => e.status === 'active' && !assignedIds.has(e.id))
+
+  const handleAssign = async () => {
+    if (!selectedEmployee) { toast.error('Выберите сотрудника'); return }
+    setAssigning(true)
+    try {
+      const res = await fetch(`/api/repairs/${repair.id}/masters`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ employeeId: selectedEmployee, role: selectedRole })
+      })
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}))
+        toast.error(data.error || 'Ошибка назначения')
+        setAssigning(false)
+        return
+      }
+      toast.success('Мастер назначен')
+      setSelectedEmployee('')
+      setSelectedRole('master')
+      setAddingMaster(false)
+      onRefresh()
+    } catch { toast.error('Ошибка назначения мастера') }
+    setAssigning(false)
+  }
+
+  const handleRemove = async (employeeId: string) => {
+    try {
+      const res = await fetch(`/api/repairs/${repair.id}/masters?employeeId=${employeeId}`, { method: 'DELETE' })
+      if (!res.ok) throw new Error()
+      toast.success('Мастер снят с ремонта')
+      onRefresh()
+    } catch { toast.error('Ошибка снятия мастера') }
+  }
+
+  return (
+    <DetailSection title="Назначенные мастера" icon={<Users className="size-3.5" />}>
+      <div className="col-span-2">
+        {/* List of assigned masters */}
+        {repair.masters && repair.masters.length > 0 ? (
+          <div className="space-y-1.5 mb-2">
+            {repair.masters.map(m => (
+              <div key={m.id} className="flex items-center gap-2 p-2 rounded-md border bg-card/50">
+                <div className="size-7 rounded-full bg-primary/10 flex items-center justify-center shrink-0">
+                  <User className="size-3.5 text-primary" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-1.5">
+                    <p className="text-xs font-medium truncate">{m.employee.fullName}</p>
+                    {statusBadge(m.role, REPAIR_MASTER_ROLE_MAP)}
+                  </div>
+                  <div className="flex gap-2 mt-0.5 text-[10px] text-muted-foreground">
+                    {m.employee.phone && <span>{m.employee.phone}</span>}
+                    {m.employee.position && <span>{EMPLOYEE_POSITION_MAP[m.employee.position]?.label || m.employee.position}</span>}
+                  </div>
+                </div>
+                {repair.status === 'in_progress' && (
+                  <Button size="sm" variant="ghost" className="size-6 p-0 text-destructive hover:text-destructive shrink-0" onClick={() => handleRemove(m.employeeId)} aria-label="Снять с ремонта">
+                    <X className="size-3" />
+                  </Button>
+                )}
+              </div>
+            ))}
+          </div>
+        ) : (
+          <p className="text-[11px] text-muted-foreground mb-2">Мастера не назначены</p>
+        )}
+
+        {/* Add master form */}
+        {repair.status === 'in_progress' && (
+          addingMaster ? (
+            <div className="flex flex-col gap-2 p-2 rounded-md border border-dashed">
+              <Select value={selectedEmployee} onValueChange={setSelectedEmployee}>
+                <SelectTrigger className="h-8 text-sm"><SelectValue placeholder="Выберите сотрудника" /></SelectTrigger>
+                <SelectContent>
+                  {availableEmployees.length === 0 ? (
+                    <div className="px-2 py-1.5 text-xs text-muted-foreground">Нет доступных сотрудников</div>
+                  ) : (
+                    availableEmployees.map(e => (
+                      <SelectItem key={e.id} value={e.id}>
+                        {e.fullName} — {EMPLOYEE_POSITION_MAP[e.position]?.label || e.position}
+                      </SelectItem>
+                    ))
+                  )}
+                </SelectContent>
+              </Select>
+              <Select value={selectedRole} onValueChange={setSelectedRole}>
+                <SelectTrigger className="h-8 text-sm"><SelectValue placeholder="Роль" /></SelectTrigger>
+                <SelectContent>
+                  {Object.entries(REPAIR_MASTER_ROLE_MAP).map(([k, v]) => (
+                    <SelectItem key={k} value={k}>{v.label}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <div className="flex gap-1.5">
+                <Button size="sm" className="h-7 gap-1 text-[11px]" onClick={handleAssign} disabled={assigning || !selectedEmployee}>
+                  {assigning ? <Loader2 className="size-3 animate-spin" /> : <CheckCircle2 className="size-3" />}
+                  Назначить
+                </Button>
+                <Button size="sm" variant="outline" className="h-7 text-[11px]" onClick={() => { setAddingMaster(false); setSelectedEmployee('') }}>Отмена</Button>
+              </div>
+            </div>
+          ) : (
+            <Button size="sm" variant="outline" className="h-7 gap-1 text-[11px]" onClick={() => setAddingMaster(true)}>
+              <Plus className="size-3" />Назначить мастера
+            </Button>
+          )
+        )}
+      </div>
+    </DetailSection>
+  )
+}
+
+// ═══════════════════════════════════════════════════════════════
 // REPAIR DETAIL DIALOG — С ПРОКРУТКОЙ!
 // ═══════════════════════════════════════════════════════════════
 
-function RepairDetailDialog({ open, onOpenChange, repair, loading, fullPhoto, setFullPhoto, onEdit, onDelete, onComplete, onAddStage, onEditStage, onDeleteStage, onUploadPhoto, onRefresh }: {
+function RepairDetailDialog({ open, onOpenChange, repair, loading, fullPhoto, setFullPhoto, onEdit, onDelete, onComplete, onAddStage, onEditStage, onDeleteStage, onUploadPhoto, onRefresh, employees }: {
   open: boolean; onOpenChange: (v: boolean) => void;
   repair: Repair | null; loading: boolean;
   fullPhoto: string | null; setFullPhoto: (v: string | null) => void;
@@ -2272,6 +2421,7 @@ function RepairDetailDialog({ open, onOpenChange, repair, loading, fullPhoto, se
   onDeleteStage: (stageId: string, repairId: string) => void;
   onUploadPhoto: (repairId: string) => void;
   onRefresh: () => void;
+  employees: Employee[];
 }) {
   if (!repair) return null
   const r = repair
@@ -2318,6 +2468,9 @@ function RepairDetailDialog({ open, onOpenChange, repair, loading, fullPhoto, se
                 <DetailRow label="Следующий ТО" value={formatDate(r.nextInspection)} />
                 <DetailRow label="Заметки" value={r.notes} />
               </DetailSection>
+
+              {/* Assigned Masters */}
+              <RepairMastersSection repair={r} employees={employees} onRefresh={onRefresh} />
 
               {/* Stages */}
               <DetailSection title="Этапы ремонта" icon={<Settings2 className="size-3.5" />}>
@@ -2412,14 +2565,16 @@ function RepairDetailDialog({ open, onOpenChange, repair, loading, fullPhoto, se
 // REPAIR FORM DIALOG
 // ═══════════════════════════════════════════════════════════════
 
-function RepairFormDialog({ open, onOpenChange, editData, equipmentId, equipmentList, saving, setSaving, onSaved }: {
+function RepairFormDialog({ open, onOpenChange, editData, equipmentId, equipmentList, saving, setSaving, onSaved, employees }: {
   open: boolean; onOpenChange: (v: boolean) => void;
   editData: Repair | null; equipmentId: string; equipmentList: Equipment[];
   saving: boolean; setSaving: (v: boolean) => void;
   onSaved: () => void;
+  employees: Employee[];
 }) {
   const [form, setForm] = useState<Record<string, string>>({})
   const [stages, setStages] = useState<{ name: string; description: string }[]>([])
+  const [selectedMasters, setSelectedMasters] = useState<{ employeeId: string; role: string }[]>([])
 
   useEffect(() => {
     if (editData) {
@@ -2433,9 +2588,12 @@ function RepairFormDialog({ open, onOpenChange, editData, equipmentId, equipment
         nextInspection: editData.nextInspection ? new Date(editData.nextInspection).toISOString().split('T')[0] : '',
         notes: editData.notes || '',
       })
+      // Pre-fill existing masters
+      setSelectedMasters(editData.masters?.map(m => ({ employeeId: m.employeeId, role: m.role })) || [])
       setStages([])
     } else {
       setForm({ equipmentId: equipmentId || '', startDate: new Date().toISOString().split('T')[0], status: 'in_progress' })
+      setSelectedMasters([])
       setStages([])
     }
   }, [editData, equipmentId, open])
@@ -2443,12 +2601,27 @@ function RepairFormDialog({ open, onOpenChange, editData, equipmentId, equipment
   const f = (key: string) => form[key] || ''
   const setF = (key: string, value: string) => setForm(prev => ({ ...prev, [key]: value }))
 
+  const addMaster = (employeeId: string) => {
+    if (!employeeId || selectedMasters.some(m => m.employeeId === employeeId)) return
+    setSelectedMasters([...selectedMasters, { employeeId, role: 'master' }])
+  }
+
+  const removeMaster = (employeeId: string) => {
+    setSelectedMasters(selectedMasters.filter(m => m.employeeId !== employeeId))
+  }
+
+  const updateMasterRole = (employeeId: string, role: string) => {
+    setSelectedMasters(selectedMasters.map(m => m.employeeId === employeeId ? { ...m, role } : m))
+  }
+
+  const availableEmployees = employees.filter(e => e.status === 'active' && !selectedMasters.some(m => m.employeeId === e.id))
+
   const handleSave = async () => {
     if (!f('equipmentId')) { toast.error('Выберите технику'); return }
     if (!f('description').trim()) { toast.error('Укажите описание ремонта'); return }
     setSaving(true)
     try {
-      const body = { ...form, stages: editData ? undefined : stages.filter(s => s.name.trim()) }
+      const body = { ...form, stages: editData ? undefined : stages.filter(s => s.name.trim()), masters: selectedMasters }
       const url = editData ? `/api/repairs/${editData.id}` : '/api/repairs'
       const method = editData ? 'PUT' : 'POST'
       const res = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
@@ -2481,6 +2654,55 @@ function RepairFormDialog({ open, onOpenChange, editData, equipmentId, equipment
             <div><Label className="text-xs">Дата следующего ТО</Label><Input type="date" value={f('nextInspection')} onChange={e => setF('nextInspection', e.target.value)} /></div>
             <div className="sm:col-span-2"><Label className="text-xs">Заметки</Label><Textarea value={f('notes')} onChange={e => setF('notes', e.target.value)} rows={2} /></div>
           </div>
+
+          {/* Masters assignment */}
+          <div>
+            <div className="flex items-center justify-between mb-1.5">
+              <Label className="text-xs flex items-center gap-1"><Users className="size-3" />Назначить мастеров</Label>
+              {availableEmployees.length > 0 && (
+                <Select onValueChange={addMaster}>
+                  <SelectTrigger className="h-6 w-auto gap-1 text-[11px] border-dashed"><Plus className="size-3" /><SelectValue placeholder="Добавить" /></SelectTrigger>
+                  <SelectContent>
+                    {availableEmployees.map(e => (
+                      <SelectItem key={e.id} value={e.id}>{e.fullName} — {EMPLOYEE_POSITION_MAP[e.position]?.label || e.position}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
+            </div>
+            {selectedMasters.length > 0 ? (
+              <div className="space-y-1">
+                {selectedMasters.map(m => {
+                  const emp = employees.find(e => e.id === m.employeeId)
+                  if (!emp) return null
+                  return (
+                    <div key={m.employeeId} className="flex items-center gap-2 p-1.5 rounded-md border bg-card/50">
+                      <div className="size-6 rounded-full bg-primary/10 flex items-center justify-center shrink-0">
+                        <User className="size-3 text-primary" />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-[11px] font-medium truncate">{emp.fullName}</p>
+                      </div>
+                      <Select value={m.role} onValueChange={v => updateMasterRole(m.employeeId, v)}>
+                        <SelectTrigger className="h-6 w-[100px] text-[10px]"><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          {Object.entries(REPAIR_MASTER_ROLE_MAP).map(([k, v]) => (
+                            <SelectItem key={k} value={k}>{v.label}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <Button size="sm" variant="ghost" className="size-6 p-0 text-destructive hover:text-destructive shrink-0" onClick={() => removeMaster(m.employeeId)} aria-label="Удалить">
+                        <X className="size-3" />
+                      </Button>
+                    </div>
+                  )
+                })}
+              </div>
+            ) : (
+              <p className="text-[11px] text-muted-foreground">Мастера не выбраны</p>
+            )}
+          </div>
+
           {!editData && (
             <div>
               <div className="flex items-center justify-between mb-1.5">
@@ -3466,6 +3688,32 @@ function EmployeeDetailSheet({ open, onOpenChange, employee, loading, crews, onE
                   <p className="text-xs text-muted-foreground col-span-2">Не назначена</p>
                 )}
               </DetailSection>
+
+              {/* Repair assignments */}
+              {e.repairAssignments && e.repairAssignments.length > 0 && (
+                <DetailSection title="Назначения на ремонт" icon={<Wrench className="size-3.5" />}>
+                  <div className="col-span-2 space-y-1.5">
+                    {e.repairAssignments.map(a => (
+                      <div key={a.id} className="flex items-center gap-2 p-2 rounded-md border bg-card/50">
+                        <div className="size-7 rounded-lg bg-amber-100 dark:bg-amber-900/30 flex items-center justify-center shrink-0">
+                          <Wrench className="size-3.5 text-amber-600 dark:text-amber-400" />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-xs font-medium truncate">{a.repair.description}</p>
+                          <div className="flex gap-2 mt-0.5 text-[10px] text-muted-foreground">
+                            <span>{a.repair.equipment?.name || '—'}</span>
+                            <span>{formatDate(a.assignedAt)}</span>
+                          </div>
+                        </div>
+                        <div className="flex flex-col items-end gap-0.5 shrink-0">
+                          {statusBadge(a.role, REPAIR_MASTER_ROLE_MAP)}
+                          {statusBadge(a.repair.status, REPAIR_STATUS_MAP)}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </DetailSection>
+              )}
 
               {/* License info */}
               <DetailSection title="Водительское удостоверение" icon={<ClipboardCheck className="size-3.5" />}>
