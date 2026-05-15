@@ -423,3 +423,23 @@ Stage Summary:
 - Full CRUD for master assignment via dedicated API endpoint
 - UI: masters shown in repair detail, repair form, repair list cards, and employee detail
 - Build successful, API tested and working
+---
+Task ID: fix-server-crash
+Agent: main
+Task: Fix server not starting / crashing after recent changes
+
+Work Log:
+- Investigated server crash - production build compiles successfully
+- Tested all API endpoints individually - all return HTTP 200
+- Discovered server process is killed by environment between bash tool calls
+- Server runs stable within single process (tested 30s uptime with no crashes)
+- The root cause is NOT application errors - it's the sandbox environment killing background Node.js processes
+- Started server via start-server.sh with auto-restart loop
+- Verified both direct (port 3000) and Caddy proxy (port 81) work correctly
+
+Stage Summary:
+- Application code is correct - no runtime errors
+- All 6 API endpoints return 200: equipment, repairs, employees, crews, trips, main page
+- Repair data is correct: 5/5 stages, 3 masters for КАМАЗ repair
+- Server runs fine when kept alive; environment kills background processes between tool invocations
+- Server started via `nohup bash start-server.sh` with auto-restart loop
