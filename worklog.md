@@ -342,3 +342,23 @@ Stage Summary:
 - Fix: Ran `npx prisma generate` to include the Employee model in the generated client
 - Application is now running successfully on port 3000
 - All API endpoints (including /api/employees) returning correct responses
+
+---
+Task ID: 2
+Agent: Main
+Task: Add 15 test employees and fill demo data for equipment
+
+Work Log:
+- Created 15 diverse employees via API with full data (phone, email, birthDate, hireDate, license, passport, address, salary, notes)
+- Positions: 7 drivers, 3 mechanics, 2 assistants, 2 loaders, 1 other (dispatcher)
+- Statuses: 9 active, 2 vacation, 2 sick, 1 dismissed
+- Updated existing employee Иванов with full data
+- Fixed critical bug in equipment PUT route: `body.brand || null` was clearing fields not included in request body. Changed to only update fields explicitly provided in body
+- Re-filled all 6 equipment items with complete demo data (VIN, STS, PTS, engine specs, insurance, inspection, prices, etc.)
+- All equipment now has 26-27 out of 28 fields filled
+
+Stage Summary:
+- 16 employees total with rich demo data
+- 6 equipment items fully populated
+- Fixed PUT route bug that was clearing unspecified fields
+- Application running correctly on port 3000

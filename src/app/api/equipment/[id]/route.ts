@@ -46,40 +46,48 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
 
     const oldEquipment = await db.equipment.findUnique({ where: { id } })
 
+    // Helper: only include field if explicitly provided in body
+    const data: Record<string, unknown> = {}
+    const setOrNull = (key: string, val: unknown) => { if (val !== undefined) data[key] = val || null }
+    const setOrKeep = (key: string, val: unknown) => { if (val !== undefined) data[key] = val }
+    const setIntOrNull = (key: string, val: unknown) => { if (val !== undefined) data[key] = val ? parseInt(String(val)) : null }
+    const setFloatOrNull = (key: string, val: unknown) => { if (val !== undefined) data[key] = val ? parseFloat(String(val)) : null }
+    const setDateOrNull = (key: string, val: unknown) => { if (val !== undefined) data[key] = val ? new Date(val as string) : null }
+
+    setOrKeep('name', body.name)
+    setOrKeep('type', body.type)
+    setOrNull('brand', body.brand)
+    setOrNull('model', body.model)
+    setIntOrNull('year', body.year)
+    setOrNull('vin', body.vin)
+    setOrNull('serialNumber', body.serialNumber)
+    setOrNull('registrationNum', body.registrationNum)
+    setOrNull('stsNumber', body.stsNumber)
+    setOrNull('ptsNumber', body.ptsNumber)
+    setOrNull('category', body.category)
+    setOrNull('color', body.color)
+    setOrNull('engineType', body.engineType)
+    setOrNull('engineVolume', body.engineVolume)
+    setOrNull('enginePower', body.enginePower)
+    setIntOrNull('mileage', body.mileage)
+    setOrNull('fuelType', body.fuelType)
+    setOrNull('loadCapacity', body.loadCapacity)
+    setIntOrNull('passengerSeats', body.passengerSeats)
+    setDateOrNull('purchaseDate', body.purchaseDate)
+    setFloatOrNull('purchasePrice', body.purchasePrice)
+    setFloatOrNull('currentPrice', body.currentPrice)
+    setOrNull('insuranceNumber', body.insuranceNumber)
+    setDateOrNull('insuranceExpiry', body.insuranceExpiry)
+    setDateOrNull('inspectionDate', body.inspectionDate)
+    setDateOrNull('inspectionExpiry', body.inspectionExpiry)
+    setOrKeep('status', body.status)
+    setOrNull('notes', body.notes)
+    setOrNull('ownerId', body.ownerId)
+    setOrNull('renterId', body.renterId)
+
     const equipment = await db.equipment.update({
       where: { id },
-      data: {
-        name: body.name,
-        type: body.type,
-        brand: body.brand || null,
-        model: body.model || null,
-        year: body.year ? parseInt(String(body.year)) : null,
-        vin: body.vin || null,
-        serialNumber: body.serialNumber || null,
-        registrationNum: body.registrationNum || null,
-        stsNumber: body.stsNumber || null,
-        ptsNumber: body.ptsNumber || null,
-        category: body.category || null,
-        color: body.color || null,
-        engineType: body.engineType || null,
-        engineVolume: body.engineVolume || null,
-        enginePower: body.enginePower || null,
-        mileage: body.mileage ? parseInt(String(body.mileage)) : null,
-        fuelType: body.fuelType || null,
-        loadCapacity: body.loadCapacity || null,
-        passengerSeats: body.passengerSeats ? parseInt(String(body.passengerSeats)) : null,
-        purchaseDate: body.purchaseDate ? new Date(body.purchaseDate) : null,
-        purchasePrice: body.purchasePrice ? parseFloat(String(body.purchasePrice)) : null,
-        currentPrice: body.currentPrice ? parseFloat(String(body.currentPrice)) : null,
-        insuranceNumber: body.insuranceNumber || null,
-        insuranceExpiry: body.insuranceExpiry ? new Date(body.insuranceExpiry) : null,
-        inspectionDate: body.inspectionDate ? new Date(body.inspectionDate) : null,
-        inspectionExpiry: body.inspectionExpiry ? new Date(body.inspectionExpiry) : null,
-        status: body.status,
-        notes: body.notes || null,
-        ownerId: body.ownerId || null,
-        renterId: body.renterId || null,
-      },
+      data,
       include: {
         owner: true,
         renter: true,
