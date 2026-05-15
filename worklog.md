@@ -297,3 +297,29 @@ Stage Summary:
 - Equipment types now have visual differentiation: icons, colors, categories
 - Select dropdowns show grouped types by category
 - All displays (cards, detail, map) show type-specific icons and badges
+---
+Task ID: 1
+Agent: main
+Task: Доработка раздела Сотрудники (водители, техники)
+
+Work Log:
+- Created Employee model in Prisma schema with rich fields: fullName, position, phone, email, birthDate, hireDate, fireDate, licenseNum, licenseCat, licenseExpiry, passportSeries, passportNum, address, status, salary, notes, crewId
+- Added Employee relation to Crew model (employees array)
+- Pushed schema changes with prisma db push
+- Created API routes: /api/employees (GET, POST) and /api/employees/[id] (GET, PUT, DELETE) with search/filter support
+- Added Employee interface and EMPLOYEE_POSITION_MAP/EMPLOYEE_STATUS_MAP constants
+- Added employee-related state variables and fetch functions
+- Added "Сотрудники" tab to desktop and mobile navigation (6 tabs now)
+- Created EmployeesTab component with: stats cards (drivers/mechanics/active), search, position filter, status filter, employee cards with license expiry warnings
+- Created EmployeeDetailSheet component with sections: contacts, work info, license info, passport info, personal info, notes
+- Created EmployeeFormDialog with sections: basic info, work info, license, personal data
+- Integrated employee CRUD into delete dialog handler
+- Build passes successfully
+
+Stage Summary:
+- New Employee model with 17+ fields for comprehensive employee management
+- Full CRUD API for employees
+- Dedicated "Сотрудники" tab in navigation
+- Rich UI with search, filters, stats, detail sheet, and form dialog
+- License expiry warnings (expired and expiring within 30 days)
+- Employee-Crew linkage via crewId

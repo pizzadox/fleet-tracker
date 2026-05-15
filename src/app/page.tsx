@@ -155,10 +155,20 @@ interface CrewMember {
   notes?: string | null; createdAt: string; updatedAt: string;
 }
 
+interface Employee {
+  id: string; fullName: string; position: string; phone?: string | null; email?: string | null;
+  birthDate?: string | null; hireDate?: string | null; fireDate?: string | null;
+  licenseNum?: string | null; licenseCat?: string | null; licenseExpiry?: string | null;
+  passportSeries?: string | null; passportNum?: string | null; address?: string | null;
+  status: string; salary?: number | null; notes?: string | null; crewId?: string | null;
+  createdAt: string; updatedAt: string;
+  crew?: { id: string; name: string; type: string; status: string } | null;
+}
+
 interface Crew {
   id: string; name: string; description?: string | null; type: string;
   status: string; notes?: string | null; createdAt: string; updatedAt: string;
-  members?: CrewMember[]; _count?: { trips: number };
+  members?: CrewMember[]; employees?: Employee[]; _count?: { trips: number };
 }
 
 interface Trip {
@@ -296,6 +306,21 @@ const MEMBER_ROLE_MAP: Record<string, string> = {
   driver: 'Водитель', mechanic: 'Механик', assistant: 'Помощник', loader: 'Грузчик', other: 'Другой'
 }
 
+const EMPLOYEE_POSITION_MAP: Record<string, { label: string; icon: React.ReactNode; color: string; darkColor: string }> = {
+  driver: { label: 'Водитель', icon: <Car className="size-3.5" />, color: 'bg-blue-100 text-blue-700', darkColor: 'dark:bg-blue-900/40 dark:text-blue-400' },
+  mechanic: { label: 'Механик', icon: <Wrench className="size-3.5" />, color: 'bg-amber-100 text-amber-700', darkColor: 'dark:bg-amber-900/40 dark:text-amber-400' },
+  assistant: { label: 'Помощник', icon: <UserCircle className="size-3.5" />, color: 'bg-sky-100 text-sky-700', darkColor: 'dark:bg-sky-900/40 dark:text-sky-400' },
+  loader: { label: 'Грузчик', icon: <Weight className="size-3.5" />, color: 'bg-stone-100 text-stone-700', darkColor: 'dark:bg-stone-900/40 dark:text-stone-400' },
+  other: { label: 'Другой', icon: <User className="size-3.5" />, color: 'bg-gray-100 text-gray-600', darkColor: 'dark:bg-gray-900/40 dark:text-gray-400' },
+}
+
+const EMPLOYEE_STATUS_MAP: Record<string, { label: string; color: string; border: string }> = {
+  active: { label: 'Работает', color: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-400', border: 'border-l-emerald-500' },
+  dismissed: { label: 'Уволен', color: 'bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-400', border: 'border-l-red-500' },
+  vacation: { label: 'Отпуск', color: 'bg-sky-100 text-sky-800 dark:bg-sky-900/40 dark:text-sky-400', border: 'border-l-sky-500' },
+  sick: { label: 'Больничный', color: 'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-400', border: 'border-l-amber-500' },
+}
+
 // ═══════════════════════════════════════════════════════════════
 // HELPERS
 // ═══════════════════════════════════════════════════════════════
@@ -388,7 +413,7 @@ export default function Home() {
   const [companyFormOpen, setCompanyFormOpen] = useState(false)
   const [companyFormEdit, setCompanyFormEdit] = useState<Company | null>(null)
   const [companyFormSaving, setCompanyFormSaving] = useState(false)
-  const [deleteDialog, setDeleteDialog] = useState<{ open: boolean; type: 'equipment' | 'repair' | 'company' | 'trip' | 'crew'; id: string; name: string }>({
+  const [deleteDialog, setDeleteDialog] = useState<{ open: boolean; type: 'equipment' | 'repair' | 'company' | 'trip' | 'crew' | 'employee'; id: string; name: string }>({
     open: false, type: 'equipment', id: '', name: ''
   })
   const [photoUploadEq, setPhotoUploadEq] = useState<string | null>(null)
@@ -405,6 +430,16 @@ export default function Home() {
   const [syncing, setSyncing] = useState(false)
   const [trips, setTrips] = useState<Trip[]>([])
   const [crews, setCrews] = useState<Crew[]>([])
+  const [employees, setEmployees] = useState<Employee[]>([])
+  const [empSearch, setEmpSearch] = useState('')
+  const [empPositionFilter, setEmpPositionFilter] = useState('all')
+  const [empStatusFilter, setEmpStatusFilter] = useState('all')
+  const [empFormOpen, setEmpFormOpen] = useState(false)
+  const [empFormEdit, setEmpFormEdit] = useState<Employee | null>(null)
+  const [empFormSaving, setEmpFormSaving] = useState(false)
+  const [empDetailOpen, setEmpDetailOpen] = useState(false)
+  const [selectedEmp, setSelectedEmp] = useState<Employee | null>(null)
+  const [empDetailLoading, setEmpDetailLoading] = useState(false)
   const [tripFormOpen, setTripFormOpen] = useState(false)
   const [tripFormEdit, setTripFormEdit] = useState<Trip | null>(null)
   const [tripFormSaving, setTripFormSaving] = useState(false)
@@ -481,11 +516,20 @@ export default function Home() {
     } catch { toast.error('Ошибка загрузки экипажей') }
   }, [])
 
+  const fetchEmployees = useCallback(async () => {
+    try {
+      const res = await fetch('/api/employees')
+      if (!res.ok) throw new Error()
+      const data = await res.json()
+      setEmployees(data)
+    } catch { toast.error('Ошибка загрузки сотрудников') }
+  }, [])
+
   const fetchAll = useCallback(async () => {
     setLoading(true)
-    await Promise.all([fetchEquipment(), fetchCompanies(), fetchRepairs(), fetchTrips(), fetchCrews()])
+    await Promise.all([fetchEquipment(), fetchCompanies(), fetchRepairs(), fetchTrips(), fetchCrews(), fetchEmployees()])
     setLoading(false)
-  }, [fetchEquipment, fetchCompanies, fetchRepairs, fetchTrips, fetchCrews])
+  }, [fetchEquipment, fetchCompanies, fetchRepairs, fetchTrips, fetchCrews, fetchEmployees])
 
   useEffect(() => { fetchAll() }, [fetchAll])
 
@@ -572,6 +616,22 @@ export default function Home() {
     if (eq) openEquipmentDetail(eq)
   }
 
+  const fetchEmployeeDetail = async (id: string) => {
+    setEmpDetailLoading(true)
+    try {
+      const res = await fetch(`/api/employees/${id}`)
+      if (!res.ok) throw new Error()
+      const data = await res.json()
+      setSelectedEmp(data)
+    } catch { toast.error('Ошибка загрузки данных сотрудника') }
+    setEmpDetailLoading(false)
+  }
+
+  const openEmployeeDetail = (emp: Employee) => {
+    setEmpDetailOpen(true)
+    fetchEmployeeDetail(emp.id)
+  }
+
   const fetchRepairDetail = async (id: string) => {
     setRepairDetailLoading(true)
     try {
@@ -620,12 +680,14 @@ export default function Home() {
       let apiUrl = `/api/${type}s/${id}`
       if (type === 'crew') apiUrl = `/api/crews/${id}`
       if (type === 'trip') apiUrl = `/api/trips/${id}`
+      if (type === 'employee') apiUrl = `/api/employees/${id}`
       const res = await fetch(apiUrl, { method: 'DELETE' })
       if (!res.ok) throw new Error()
       toast.success('Удалено успешно')
       if (type === 'equipment') { setEqDetailOpen(false); setSelectedEq(null) }
       if (type === 'repair') { setRepairDetailOpen(false); setSelectedRepair(null) }
       if (type === 'trip') { setTripDetailOpen(false); setSelectedTrip(null) }
+      if (type === 'employee') { setEmpDetailOpen(false); setSelectedEmp(null) }
       fetchAll()
     } catch { toast.error('Ошибка удаления') }
     setDeleteDialog({ open: false, type: 'equipment', id: '', name: '' })
@@ -746,6 +808,7 @@ export default function Home() {
             <TabsTrigger value="equipment" className="gap-1.5"><Truck className="size-4" />Техника</TabsTrigger>
             <TabsTrigger value="repairs" className="gap-1.5"><Wrench className="size-4" />Ремонты</TabsTrigger>
             <TabsTrigger value="trips" className="gap-1.5"><Route className="size-4" />Рейсы</TabsTrigger>
+            <TabsTrigger value="employees" className="gap-1.5"><Users className="size-4" />Сотрудники</TabsTrigger>
             <TabsTrigger value="companies" className="gap-1.5"><Building2 className="size-4" />Компании</TabsTrigger>
             <TabsTrigger value="map" className="gap-1.5"><Map className="size-4" />Карта</TabsTrigger>
           </TabsList>
@@ -757,6 +820,9 @@ export default function Home() {
           </TabsContent>
           <TabsContent value="trips">
             <TripsTab trips={trips} equipment={equipment} crews={crews} onOpenDetail={openTripDetail} onAdd={(eqId) => { setTripFormEdit(null); setTripFormEquipmentId(eqId || ''); setTripFormOpen(true) }} onDelete={(t) => setDeleteDialog({ open: true, type: 'trip', id: t.id, name: t.route })} onAddCrew={() => { setCrewFormEdit(null); setCrewFormOpen(true) }} onEditCrew={(c) => { setCrewFormEdit(c); setCrewFormOpen(true) }} onDeleteCrew={(c) => setDeleteDialog({ open: true, type: 'crew', id: c.id, name: c.name })} />
+          </TabsContent>
+          <TabsContent value="employees">
+            <EmployeesTab employees={employees} crews={crews} empSearch={empSearch} setEmpSearch={setEmpSearch} empPositionFilter={empPositionFilter} setEmpPositionFilter={setEmpPositionFilter} empStatusFilter={empStatusFilter} setEmpStatusFilter={setEmpStatusFilter} onOpenDetail={openEmployeeDetail} onAdd={() => { setEmpFormEdit(null); setEmpFormOpen(true) }} onEdit={(emp) => { setEmpFormEdit(emp); setEmpFormOpen(true) }} onDelete={(emp) => setDeleteDialog({ open: true, type: 'employee', id: emp.id, name: emp.fullName })} />
           </TabsContent>
           <TabsContent value="companies">
             <CompaniesTab companies={companies} onAdd={() => { setCompanyFormEdit(null); setCompanyFormOpen(true) }} onEdit={(c) => { setCompanyFormEdit(c); setCompanyFormOpen(true) }} onDelete={(c) => setDeleteDialog({ open: true, type: 'company', id: c.id, name: c.name })} />
@@ -771,6 +837,7 @@ export default function Home() {
           {mainTab === 'equipment' && <EquipmentTab equipment={equipment} companies={companies} eqSearch={eqSearch} setEqSearch={setEqSearch} eqStatusFilter={eqStatusFilter} setEqStatusFilter={setEqStatusFilter} eqTypeFilter={eqTypeFilter} setEqTypeFilter={setEqTypeFilter} onOpenDetail={openEquipmentDetail} onAdd={() => { setEqFormEdit(null); setEqFormStep(0); setEqFormOpen(true) }} onEdit={(eq) => { setEqFormEdit(eq); setEqFormStep(0); setEqFormOpen(true) }} onDelete={(eq) => setDeleteDialog({ open: true, type: 'equipment', id: eq.id, name: eq.name })} />}
           {mainTab === 'repairs' && <RepairsTab repairs={repairs} equipment={equipment} onOpenDetail={openRepairDetail} onAdd={(eqId) => { setRepairFormEdit(null); setRepairFormEquipmentId(eqId || ''); setRepairFormOpen(true) }} onDelete={(r) => setDeleteDialog({ open: true, type: 'repair', id: r.id, name: r.description })} />}
           {mainTab === 'trips' && <TripsTab trips={trips} equipment={equipment} crews={crews} onOpenDetail={openTripDetail} onAdd={(eqId) => { setTripFormEdit(null); setTripFormEquipmentId(eqId || ''); setTripFormOpen(true) }} onDelete={(t) => setDeleteDialog({ open: true, type: 'trip', id: t.id, name: t.route })} onAddCrew={() => { setCrewFormEdit(null); setCrewFormOpen(true) }} onEditCrew={(c) => { setCrewFormEdit(c); setCrewFormOpen(true) }} onDeleteCrew={(c) => setDeleteDialog({ open: true, type: 'crew', id: c.id, name: c.name })} />}
+          {mainTab === 'employees' && <EmployeesTab employees={employees} crews={crews} empSearch={empSearch} setEmpSearch={setEmpSearch} empPositionFilter={empPositionFilter} setEmpPositionFilter={setEmpPositionFilter} empStatusFilter={empStatusFilter} setEmpStatusFilter={setEmpStatusFilter} onOpenDetail={openEmployeeDetail} onAdd={() => { setEmpFormEdit(null); setEmpFormOpen(true) }} onEdit={(emp) => { setEmpFormEdit(emp); setEmpFormOpen(true) }} onDelete={(emp) => setDeleteDialog({ open: true, type: 'employee', id: emp.id, name: emp.fullName })} />}
           {mainTab === 'companies' && <CompaniesTab companies={companies} onAdd={() => { setCompanyFormEdit(null); setCompanyFormOpen(true) }} onEdit={(c) => { setCompanyFormEdit(c); setCompanyFormOpen(true) }} onDelete={(c) => setDeleteDialog({ open: true, type: 'company', id: c.id, name: c.name })} />}
           {mainTab === 'map' && <MapTab equipment={equipment} onOpenDetail={openEquipmentDetailById} onSync={async () => { try { const res = await fetch('/api/glonass/sync', { method: 'POST' }); const data = await res.json(); if (data.synced !== undefined) toast.success(`Синхронизация: ${data.synced} из ${data.totalTrackers}`); else toast.error(data.error || 'Ошибка'); fetchEquipment() } catch { toast.error('Ошибка синхронизации') } }} />}
         </div>
@@ -778,11 +845,12 @@ export default function Home() {
 
       {/* ─── MOBILE BOTTOM NAV ────────────────────────────────── */}
       <nav className="md:hidden fixed bottom-0 left-0 right-0 z-40 border-t bg-card/95 backdrop-blur-sm">
-        <div className="grid grid-cols-5 h-14">
+        <div className="grid grid-cols-6 h-14">
           {[
             { value: 'equipment', icon: <Truck className="size-5" />, label: 'Техника' },
             { value: 'repairs', icon: <Wrench className="size-5" />, label: 'Ремонты' },
             { value: 'trips', icon: <Route className="size-5" />, label: 'Рейсы' },
+            { value: 'employees', icon: <Users className="size-5" />, label: 'Сотрудники' },
             { value: 'companies', icon: <Building2 className="size-5" />, label: 'Компании' },
             { value: 'map', icon: <Map className="size-5" />, label: 'Карта' },
           ].map(tab => (
@@ -807,6 +875,8 @@ export default function Home() {
       <TripDetailDialog open={tripDetailOpen} onOpenChange={setTripDetailOpen} trip={selectedTrip} loading={tripDetailLoading} crews={crews} onEdit={(t) => { setTripDetailOpen(false); setTripFormEdit(t); setTripFormEquipmentId(t.equipmentId); setTripFormOpen(true) }} onDelete={(t) => { setTripDetailOpen(false); setDeleteDialog({ open: true, type: 'trip', id: t.id, name: t.route }) }} onStart={async (t) => { try { const res = await fetch(`/api/trips/${t.id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status: 'in_progress' }) }); if (!res.ok) throw new Error(); toast.success('Рейс начат'); fetchTripDetail(t.id); fetchAll() } catch { toast.error('Ошибка') } }} onComplete={async (t) => { try { const res = await fetch(`/api/trips/${t.id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status: 'completed', endDate: new Date().toISOString() }) }); if (!res.ok) throw new Error(); toast.success('Рейс завершён'); fetchTripDetail(t.id); fetchAll() } catch { toast.error('Ошибка завершения рейса') } }} onRefresh={() => selectedTrip && fetchTripDetail(selectedTrip.id)} />
       <TripFormDialog open={tripFormOpen} onOpenChange={setTripFormOpen} editData={tripFormEdit} equipmentId={tripFormEquipmentId} equipmentList={equipment} crews={crews} saving={tripFormSaving} setSaving={setTripFormSaving} onSaved={() => { setTripFormOpen(false); fetchAll() }} />
       <CrewFormDialog open={crewFormOpen} onOpenChange={setCrewFormOpen} editData={crewFormEdit} saving={crewFormSaving} setSaving={setCrewFormSaving} onSaved={() => { setCrewFormOpen(false); fetchAll() }} />
+      <EmployeeDetailSheet open={empDetailOpen} onOpenChange={setEmpDetailOpen} employee={selectedEmp} loading={empDetailLoading} crews={crews} onEdit={(emp) => { setEmpDetailOpen(false); setEmpFormEdit(emp); setEmpFormOpen(true) }} onDelete={(emp) => { setEmpDetailOpen(false); setDeleteDialog({ open: true, type: 'employee', id: emp.id, name: emp.fullName }) }} onRefresh={() => selectedEmp && fetchEmployeeDetail(selectedEmp.id)} />
+      <EmployeeFormDialog open={empFormOpen} onOpenChange={setEmpFormOpen} editData={empFormEdit} crews={crews} saving={empFormSaving} setSaving={setEmpFormSaving} onSaved={() => { setEmpFormOpen(false); fetchAll() }} />
 
       {/* Full photo view */}
       <Dialog open={!!fullPhoto} onOpenChange={() => setFullPhoto(null)}>
@@ -3065,6 +3135,367 @@ function CrewFormDialog({ open, onOpenChange, editData, saving, setSaving, onSav
               </div>
             ))}
           </div>
+        </div>
+        <DialogFooter>
+          <Button size="sm" onClick={handleSave} disabled={saving}>{saving ? <Loader2 className="size-3.5 animate-spin" /> : <CheckCircle2 className="size-3.5" />}{editData ? 'Сохранить' : 'Добавить'}</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+// ═══════════════════════════════════════════════════════════════
+// EMPLOYEES TAB — Сотрудники (водители, техники)
+// ═══════════════════════════════════════════════════════════════
+
+function EmployeesTab({ employees, crews, empSearch, setEmpSearch, empPositionFilter, setEmpPositionFilter, empStatusFilter, setEmpStatusFilter, onOpenDetail, onAdd, onEdit, onDelete }: {
+  employees: Employee[]; crews: Crew[];
+  empSearch: string; setEmpSearch: (v: string) => void;
+  empPositionFilter: string; setEmpPositionFilter: (v: string) => void;
+  empStatusFilter: string; setEmpStatusFilter: (v: string) => void;
+  onOpenDetail: (emp: Employee) => void; onAdd: () => void;
+  onEdit: (emp: Employee) => void; onDelete: (emp: Employee) => void;
+}) {
+  const debouncedSearch = useDebounce(empSearch, 300)
+
+  const filtered = useMemo(() => employees.filter(e => {
+    if (empPositionFilter !== 'all' && e.position !== empPositionFilter) return false
+    if (empStatusFilter !== 'all' && e.status !== empStatusFilter) return false
+    if (debouncedSearch) {
+      const q = debouncedSearch.toLowerCase()
+      if (!e.fullName.toLowerCase().includes(q) && !(e.phone || '').toLowerCase().includes(q) && !(e.licenseNum || '').toLowerCase().includes(q) && !(e.email || '').toLowerCase().includes(q)) return false
+    }
+    return true
+  }), [employees, empPositionFilter, empStatusFilter, debouncedSearch])
+
+  const driverCount = employees.filter(e => e.position === 'driver' && e.status === 'active').length
+  const mechanicCount = employees.filter(e => e.position === 'mechanic' && e.status === 'active').length
+  const activeCount = employees.filter(e => e.status === 'active').length
+
+  const getPositionIcon = (pos: string) => EMPLOYEE_POSITION_MAP[pos]?.icon || <User className="size-3.5" />
+  const getPositionColor = (pos: string) => {
+    const p = EMPLOYEE_POSITION_MAP[pos]
+    return p ? `${p.color} ${p.darkColor}` : 'bg-gray-100 text-gray-600 dark:bg-gray-900/40 dark:text-gray-400'
+  }
+
+  return (
+    <div className="space-y-3">
+      {/* Stats */}
+      <div className="grid grid-cols-3 gap-2">
+        <Card className="border-0 shadow-none bg-blue-50 dark:bg-blue-950/20">
+          <CardContent className="p-2.5 flex items-center gap-2">
+            <div className="size-8 rounded-md bg-blue-100 dark:bg-blue-900/40 flex items-center justify-center"><Car className="size-4 text-blue-600 dark:text-blue-400" /></div>
+            <div><p className="text-lg font-bold text-blue-700 dark:text-blue-400">{driverCount}</p><p className="text-[10px] text-muted-foreground">Водителей</p></div>
+          </CardContent>
+        </Card>
+        <Card className="border-0 shadow-none bg-amber-50 dark:bg-amber-950/20">
+          <CardContent className="p-2.5 flex items-center gap-2">
+            <div className="size-8 rounded-md bg-amber-100 dark:bg-amber-900/40 flex items-center justify-center"><Wrench className="size-4 text-amber-600 dark:text-amber-400" /></div>
+            <div><p className="text-lg font-bold text-amber-700 dark:text-amber-400">{mechanicCount}</p><p className="text-[10px] text-muted-foreground">Техников</p></div>
+          </CardContent>
+        </Card>
+        <Card className="border-0 shadow-none bg-emerald-50 dark:bg-emerald-950/20">
+          <CardContent className="p-2.5 flex items-center gap-2">
+            <div className="size-8 rounded-md bg-emerald-100 dark:bg-emerald-900/40 flex items-center justify-center"><Users className="size-4 text-emerald-600 dark:text-emerald-400" /></div>
+            <div><p className="text-lg font-bold text-emerald-700 dark:text-emerald-400">{activeCount}</p><p className="text-[10px] text-muted-foreground">Всего активных</p></div>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Filters */}
+      <div className="flex flex-col sm:flex-row gap-2">
+        <div className="relative flex-1">
+          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 size-3.5 text-muted-foreground" />
+          <Input placeholder="Поиск по ФИО, телефону, ВУ..." value={empSearch} onChange={e => setEmpSearch(e.target.value)} className="pl-8 h-9 text-sm" />
+        </div>
+        <Select value={empPositionFilter} onValueChange={setEmpPositionFilter}>
+          <SelectTrigger className="w-full sm:w-[150px] h-9 text-sm"><SelectValue placeholder="Должность" /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">Все должности</SelectItem>
+            {Object.entries(EMPLOYEE_POSITION_MAP).map(([k, v]) => <SelectItem key={k} value={k}>{v.label}</SelectItem>)}
+          </SelectContent>
+        </Select>
+        <Select value={empStatusFilter} onValueChange={setEmpStatusFilter}>
+          <SelectTrigger className="w-full sm:w-[140px] h-9 text-sm"><SelectValue placeholder="Статус" /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">Все статусы</SelectItem>
+            {Object.entries(EMPLOYEE_STATUS_MAP).map(([k, v]) => <SelectItem key={k} value={k}>{v.label}</SelectItem>)}
+          </SelectContent>
+        </Select>
+        <Button onClick={onAdd} size="sm" className="h-9 gap-1.5"><Plus className="size-3.5" />Сотрудник</Button>
+      </div>
+
+      <p className="text-xs text-muted-foreground">Найдено: {filtered.length} из {employees.length}</p>
+
+      {/* Employee list */}
+      {filtered.length === 0 ? (
+        <Card className="py-8">
+          <CardContent className="flex flex-col items-center text-center p-4 pt-0">
+            <Users className="size-10 text-muted-foreground/40 mb-2" />
+            <p className="text-sm text-muted-foreground">Сотрудники не найдены</p>
+            <p className="text-xs text-muted-foreground mt-1">Добавьте водителей и техников для управления персоналом</p>
+          </CardContent>
+        </Card>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+          {filtered.map(emp => {
+            const posInfo = EMPLOYEE_POSITION_MAP[emp.position]
+            const statusInfo = EMPLOYEE_STATUS_MAP[emp.status]
+            const crew = emp.crewId ? crews.find(c => c.id === emp.crewId) : null
+            // Check for expiring license (within 30 days)
+            const licenseExpiring = emp.licenseExpiry && new Date(emp.licenseExpiry) <= new Date(Date.now() + 30 * 24 * 60 * 60 * 1000) && new Date(emp.licenseExpiry) >= new Date()
+            const licenseExpired = emp.licenseExpiry && new Date(emp.licenseExpiry) < new Date()
+            return (
+              <Card key={emp.id} className={`cursor-pointer hover:shadow-md transition-shadow border-l-3 ${statusInfo?.border || 'border-l-gray-300'}`} onClick={() => onOpenDetail(emp)}>
+                <CardHeader className="pb-1.5 pt-3 px-3">
+                  <div className="flex items-start justify-between gap-1.5">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <div className={`flex items-center justify-center size-9 rounded-lg shrink-0 ${getPositionColor(emp.position)}`}>
+                        {getPositionIcon(emp.position)}
+                      </div>
+                      <div className="min-w-0">
+                        <CardTitle className="text-sm font-semibold truncate">{emp.fullName}</CardTitle>
+                        <p className="text-[11px] text-muted-foreground">
+                          <span className={`inline-flex items-center gap-0.5 rounded px-1 py-0 text-[10px] font-medium ${getPositionColor(emp.position)}`}>{posInfo?.label || emp.position}</span>
+                          {crew && <span className="ml-1">• {crew.name}</span>}
+                        </p>
+                      </div>
+                    </div>
+                    {statusInfo && <span className={`inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-medium shrink-0 ${statusInfo.color}`}>{statusInfo.label}</span>}
+                  </div>
+                </CardHeader>
+                <CardContent className="px-3 pb-3 pt-0 space-y-1">
+                  <Separator />
+                  <div className="grid grid-cols-2 gap-x-4 gap-y-0.5 text-[11px]">
+                    {emp.phone && <div><span className="text-muted-foreground">Телефон:</span> <span className="font-medium">{emp.phone}</span></div>}
+                    {emp.licenseNum && <div><span className="text-muted-foreground">ВУ:</span> <span className="font-medium">{emp.licenseNum}</span></div>}
+                    {emp.licenseCat && <div><span className="text-muted-foreground">Кат. ВУ:</span> <span className="font-medium">{emp.licenseCat}</span></div>}
+                    {emp.salary != null && <div><span className="text-muted-foreground">Зарплата:</span> <span className="font-medium">{formatPrice(emp.salary)}</span></div>}
+                  </div>
+                  {licenseExpired && (
+                    <div className="flex items-center gap-1 text-[10px] text-red-600 dark:text-red-400 font-medium mt-1"><AlertTriangle className="size-3" />ВУ истекло!</div>
+                  )}
+                  {licenseExpiring && !licenseExpired && (
+                    <div className="flex items-center gap-1 text-[10px] text-amber-600 dark:text-amber-400 font-medium mt-1"><Clock className="size-3" />ВУ истекает скоро</div>
+                  )}
+                  <div className="flex gap-1 pt-1" onClick={e => e.stopPropagation()}>
+                    <Button size="sm" variant="ghost" className="h-6 text-[10px] gap-0.5" onClick={() => onEdit(emp)}><Edit className="size-3" />Изменить</Button>
+                    <Button size="sm" variant="ghost" className="h-6 text-[10px] gap-0.5 text-destructive hover:text-destructive" onClick={() => onDelete(emp)}><Trash2 className="size-3" />Удалить</Button>
+                  </div>
+                </CardContent>
+              </Card>
+            )
+          })}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ═══════════════════════════════════════════════════════════════
+// EMPLOYEE DETAIL SHEET
+// ═══════════════════════════════════════════════════════════════
+
+function EmployeeDetailSheet({ open, onOpenChange, employee, loading, crews, onEdit, onDelete, onRefresh }: {
+  open: boolean; onOpenChange: (v: boolean) => void;
+  employee: Employee | null; loading: boolean; crews: Crew[];
+  onEdit: (emp: Employee) => void; onDelete: (emp: Employee) => void;
+  onRefresh: () => void;
+}) {
+  if (!employee) return null
+  const e = employee
+  const posInfo = EMPLOYEE_POSITION_MAP[e.position]
+  const statusInfo = EMPLOYEE_STATUS_MAP[e.status]
+  const crew = e.crewId ? crews.find(c => c.id === e.crewId) : null
+  const licenseExpired = e.licenseExpiry && new Date(e.licenseExpiry) < new Date()
+
+  return (
+    <Sheet open={open} onOpenChange={onOpenChange}>
+      <SheetContent className="w-full sm:max-w-xl p-0 flex flex-col">
+        <SheetHeader className="px-4 pt-4 pb-2 border-b">
+          <div className="flex items-center gap-3">
+            <div className={`flex items-center justify-center size-12 rounded-xl shrink-0 ${posInfo ? `${posInfo.color} ${posInfo.darkColor}` : 'bg-gray-100 dark:bg-gray-900/40'}`}>
+              {posInfo?.icon || <User className="size-5" />}
+            </div>
+            <div className="min-w-0">
+              <SheetTitle className="text-base">{e.fullName}</SheetTitle>
+              <SheetDescription className="flex items-center gap-2 flex-wrap">
+                <span className={`inline-flex items-center gap-0.5 rounded px-1.5 py-0.5 text-[10px] font-medium ${posInfo ? `${posInfo.color} ${posInfo.darkColor}` : ''}`}>{posInfo?.label || e.position}</span>
+                {statusInfo && <span className={`inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-medium ${statusInfo.color}`}>{statusInfo.label}</span>}
+              </SheetDescription>
+            </div>
+          </div>
+        </SheetHeader>
+        <div className="flex-1 overflow-y-auto px-4 py-3 space-y-4">
+          {loading ? (
+            <div className="flex items-center justify-center h-24"><Loader2 className="size-5 animate-spin text-muted-foreground" /></div>
+          ) : (
+            <>
+              {/* Contact info */}
+              <DetailSection title="Контакты" icon={<Phone className="size-3.5" />}>
+                <DetailRow label="Телефон" value={e.phone} />
+                <DetailRow label="Email" value={e.email} />
+                <DetailRow label="Адрес" value={e.address} />
+              </DetailSection>
+
+              {/* Work info */}
+              <DetailSection title="Трудовая информация" icon={<IdCard className="size-3.5" />}>
+                <DetailRow label="Дата приёма" value={formatDate(e.hireDate)} />
+                <DetailRow label="Дата увольнения" value={formatDate(e.fireDate)} />
+                <DetailRow label="Зарплата" value={e.salary != null ? formatPrice(e.salary) : undefined} />
+                <DetailRow label="Экипаж" value={crew?.name} />
+              </DetailSection>
+
+              {/* License info */}
+              <DetailSection title="Водительское удостоверение" icon={<ClipboardCheck className="size-3.5" />}>
+                <DetailRow label="Номер ВУ" value={e.licenseNum} />
+                <DetailRow label="Категория" value={e.licenseCat} />
+                <DetailRow label="Срок действия" value={formatDate(e.licenseExpiry)} />
+                {licenseExpired && (
+                  <div className="col-span-2 flex items-center gap-1.5 text-xs text-red-600 dark:text-red-400 font-medium bg-red-50 dark:bg-red-950/30 rounded px-2 py-1.5">
+                    <AlertTriangle className="size-3.5" />Водительское удостоверение истекло!
+                  </div>
+                )}
+              </DetailSection>
+
+              {/* Passport info */}
+              {(e.passportSeries || e.passportNum) && (
+                <DetailSection title="Паспортные данные" icon={<Shield className="size-3.5" />}>
+                  <DetailRow label="Серия" value={e.passportSeries} />
+                  <DetailRow label="Номер" value={e.passportNum} />
+                </DetailSection>
+              )}
+
+              {/* Personal info */}
+              <DetailSection title="Личные данные" icon={<User className="size-3.5" />}>
+                <DetailRow label="Дата рождения" value={formatDate(e.birthDate)} />
+              </DetailSection>
+
+              {e.notes && <DetailSection title="Заметки" icon={<ClipboardList className="size-3.5" />}><p className="text-xs whitespace-pre-wrap">{e.notes}</p></DetailSection>}
+            </>
+          )}
+        </div>
+        <div className="border-t px-4 py-3 flex gap-2">
+          <Button variant="outline" size="sm" className="h-8 gap-1 text-xs" onClick={() => onEdit(e)}><Edit className="size-3.5" />Редактировать</Button>
+          <Button variant="outline" size="sm" className="h-8 gap-1 text-xs" onClick={onRefresh}><RefreshCw className="size-3.5" />Обновить</Button>
+          <div className="flex-1" />
+          <Button variant="destructive" size="sm" className="h-8 gap-1 text-xs" onClick={() => onDelete(e)}><Trash2 className="size-3.5" />Удалить</Button>
+        </div>
+      </SheetContent>
+    </Sheet>
+  )
+}
+
+// ═══════════════════════════════════════════════════════════════
+// EMPLOYEE FORM DIALOG
+// ═══════════════════════════════════════════════════════════════
+
+function EmployeeFormDialog({ open, onOpenChange, editData, crews, saving, setSaving, onSaved }: {
+  open: boolean; onOpenChange: (v: boolean) => void;
+  editData: Employee | null; crews: Crew[];
+  saving: boolean; setSaving: (v: boolean) => void;
+  onSaved: () => void;
+}) {
+  const [form, setForm] = useState<Record<string, string>>({})
+
+  useEffect(() => {
+    if (editData) {
+      setForm({
+        fullName: editData.fullName || '',
+        position: editData.position || 'driver',
+        phone: editData.phone || '',
+        email: editData.email || '',
+        birthDate: editData.birthDate ? new Date(editData.birthDate).toISOString().split('T')[0] : '',
+        hireDate: editData.hireDate ? new Date(editData.hireDate).toISOString().split('T')[0] : '',
+        fireDate: editData.fireDate ? new Date(editData.fireDate).toISOString().split('T')[0] : '',
+        licenseNum: editData.licenseNum || '',
+        licenseCat: editData.licenseCat || '',
+        licenseExpiry: editData.licenseExpiry ? new Date(editData.licenseExpiry).toISOString().split('T')[0] : '',
+        passportSeries: editData.passportSeries || '',
+        passportNum: editData.passportNum || '',
+        address: editData.address || '',
+        status: editData.status || 'active',
+        salary: editData.salary?.toString() || '',
+        notes: editData.notes || '',
+        crewId: editData.crewId || '',
+      })
+    } else {
+      setForm({ position: 'driver', status: 'active', hireDate: new Date().toISOString().split('T')[0] })
+    }
+  }, [editData, open])
+
+  const f = (key: string) => form[key] || ''
+  const setF = (key: string, value: string) => setForm(prev => ({ ...prev, [key]: value }))
+
+  const handleSave = async () => {
+    if (!f('fullName').trim()) { toast.error('Укажите ФИО сотрудника'); return }
+    setSaving(true)
+    try {
+      const url = editData ? `/api/employees/${editData.id}` : '/api/employees'
+      const method = editData ? 'PUT' : 'POST'
+      const res = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(form) })
+      if (!res.ok) throw new Error()
+      toast.success(editData ? 'Сотрудник обновлён' : 'Сотрудник добавлен')
+      onSaved()
+    } catch { toast.error('Ошибка сохранения') }
+    setSaving(false)
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-2xl">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">{editData ? <Edit className="size-4" /> : <Plus className="size-4" />}{editData ? 'Редактирование сотрудника' : 'Новый сотрудник'}</DialogTitle>
+        </DialogHeader>
+        <div className="space-y-3 px-4 sm:px-5 overflow-y-auto flex-1 min-h-0">
+          {/* Basic info */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div className="sm:col-span-2"><Label className="text-xs">ФИО *</Label><Input value={f('fullName')} onChange={e => setF('fullName', e.target.value)} placeholder="Иванов Иван Иванович" autoFocus /></div>
+            <div><Label className="text-xs">Должность</Label><Select value={f('position')} onValueChange={v => setF('position', v)}><SelectTrigger className="h-9 text-sm"><SelectValue /></SelectTrigger><SelectContent>{Object.entries(EMPLOYEE_POSITION_MAP).map(([k, v]) => <SelectItem key={k} value={k}>{v.label}</SelectItem>)}</SelectContent></Select></div>
+            <div><Label className="text-xs">Статус</Label><Select value={f('status')} onValueChange={v => setF('status', v)}><SelectTrigger className="h-9 text-sm"><SelectValue /></SelectTrigger><SelectContent>{Object.entries(EMPLOYEE_STATUS_MAP).map(([k, v]) => <SelectItem key={k} value={k}>{v.label}</SelectItem>)}</SelectContent></Select></div>
+            <div><Label className="text-xs">Телефон</Label><Input value={f('phone')} onChange={e => setF('phone', e.target.value)} placeholder="+7 (999) 123-45-67" /></div>
+            <div><Label className="text-xs">Email</Label><Input type="email" value={f('email')} onChange={e => setF('email', e.target.value)} placeholder="ivan@company.ru" /></div>
+          </div>
+
+          <Separator />
+
+          {/* Work info */}
+          <div>
+            <p className="text-xs font-semibold flex items-center gap-1.5 mb-2"><IdCard className="size-3.5" />Трудовая информация</p>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div><Label className="text-xs">Дата приёма</Label><Input type="date" value={f('hireDate')} onChange={e => setF('hireDate', e.target.value)} /></div>
+              <div><Label className="text-xs">Дата увольнения</Label><Input type="date" value={f('fireDate')} onChange={e => setF('fireDate', e.target.value)} /></div>
+              <div><Label className="text-xs">Зарплата (₽)</Label><Input type="number" value={f('salary')} onChange={e => setF('salary', e.target.value)} /></div>
+              <div><Label className="text-xs">Экипаж</Label><Select value={f('crewId') || '_none'} onValueChange={v => setF('crewId', v === '_none' ? '' : v)}><SelectTrigger className="h-9 text-sm"><SelectValue placeholder="Без экипажа" /></SelectTrigger><SelectContent><SelectItem value="_none">Без экипажа</SelectItem>{crews.filter(c => c.status === 'active').map(c => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}</SelectContent></Select></div>
+            </div>
+          </div>
+
+          <Separator />
+
+          {/* License */}
+          <div>
+            <p className="text-xs font-semibold flex items-center gap-1.5 mb-2"><ClipboardCheck className="size-3.5" />Водительское удостоверение</p>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <div><Label className="text-xs">Номер ВУ</Label><Input value={f('licenseNum')} onChange={e => setF('licenseNum', e.target.value)} placeholder="99 99 999999" /></div>
+              <div><Label className="text-xs">Категория</Label><Input value={f('licenseCat')} onChange={e => setF('licenseCat', e.target.value)} placeholder="B, C, D, CE" /></div>
+              <div><Label className="text-xs">Срок действия</Label><Input type="date" value={f('licenseExpiry')} onChange={e => setF('licenseExpiry', e.target.value)} /></div>
+            </div>
+          </div>
+
+          <Separator />
+
+          {/* Personal info */}
+          <div>
+            <p className="text-xs font-semibold flex items-center gap-1.5 mb-2"><User className="size-3.5" />Личные данные</p>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div><Label className="text-xs">Дата рождения</Label><Input type="date" value={f('birthDate')} onChange={e => setF('birthDate', e.target.value)} /></div>
+              <div><Label className="text-xs">Адрес</Label><Input value={f('address')} onChange={e => setF('address', e.target.value)} /></div>
+              <div><Label className="text-xs">Серия паспорта</Label><Input value={f('passportSeries')} onChange={e => setF('passportSeries', e.target.value)} placeholder="9999" /></div>
+              <div><Label className="text-xs">Номер паспорта</Label><Input value={f('passportNum')} onChange={e => setF('passportNum', e.target.value)} placeholder="999999" /></div>
+            </div>
+          </div>
+
+          <div className="sm:col-span-2"><Label className="text-xs">Заметки</Label><Textarea value={f('notes')} onChange={e => setF('notes', e.target.value)} rows={2} /></div>
         </div>
         <DialogFooter>
           <Button size="sm" onClick={handleSave} disabled={saving}>{saving ? <Loader2 className="size-3.5 animate-spin" /> : <CheckCircle2 className="size-3.5" />}{editData ? 'Сохранить' : 'Добавить'}</Button>

@@ -204,6 +204,31 @@ model GlonassSensorData {
   tracker      GlonassTracker @relation(fields: [trackerId], references: [id], onDelete: Cascade)
 }
 
+model Employee {
+  id             String    @id @default(cuid())
+  fullName       String    // ФИО сотрудника
+  position       String    // driver | mechanic | assistant | loader | other
+  phone          String?
+  email          String?
+  birthDate      DateTime? // Дата рождения
+  hireDate       DateTime? // Дата приёма на работу
+  fireDate       DateTime? // Дата увольнения
+  licenseNum     String?   // Номер водительского удостоверения
+  licenseCat     String?   // Категория ВУ (B, C, D, CE...)
+  licenseExpiry  DateTime? // Срок действия ВУ
+  passportSeries String?   // Серия паспорта
+  passportNum    String?   // Номер паспорта
+  address        String?   // Адрес проживания
+  status         String    @default("active") // active | dismissed | vacation | sick
+  salary         Float?    // Зарплата
+  notes          String?
+  crewId         String?   // Привязка к экипажу
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  crew           Crew?     @relation(fields: [crewId], references: [id], onDelete: SetNull)
+}
+
 model Crew {
   id          String   @id @default(cuid())
   name        String   // Название экипажа / бригады
@@ -215,6 +240,7 @@ model Crew {
   updatedAt   DateTime @updatedAt
 
   members     CrewMember[]
+  employees   Employee[]
   trips       Trip[]
 }
 
