@@ -595,25 +595,15 @@ export default function TrackerMap({ trackers, trackPoints, trackData, onMarkerC
         </div>
       `
 
-      // Click on marker → open equipment card directly (no popup, card opens immediately)
       const marker = L.marker([tracker.lastLatitude, tracker.lastLongitude], { icon })
         .addTo(map)
+        .bindPopup(popupHtml, { className: 'tracker-popup', maxWidth: 340 })
 
       // Show tooltip with equipment name on hover
       marker.bindTooltip(
         `<div style="font-family:system-ui;font-size:11px;"><strong>${tracker.equipmentName || tracker.trackerName || 'Трекер'}</strong>${regNum ? `<br/><span style="color:#6b7280">${regNum}</span>` : ''}</div>`,
         { direction: 'top', offset: [0, -24], className: 'tracker-tooltip' }
       )
-
-      if (onEquipmentClick && tracker.equipmentId) {
-        marker.on('click', () => {
-          onEquipmentClick(tracker.equipmentId!)
-        })
-      } else if (onMarkerClick) {
-        marker.on('click', () => {
-          onMarkerClick(tracker.id)
-        })
-      }
 
       markers.push(marker)
     }
