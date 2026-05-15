@@ -1,18 +1,18 @@
 #!/bin/bash
-# Persistent server runner
+# Persistent production server runner
 cd /home/z/my-project
+export PORT=3000
+export HOSTNAME=0.0.0.0
 
 # Kill existing
 pkill -f "next" 2>/dev/null || true
+pkill -f "server.js" 2>/dev/null || true
 sleep 2
 
-# Create a PID file
-PIDFILE=/home/z/my-project/.next-dev.pid
-
-# Start server in background
-nohup node node_modules/.bin/next dev -p 3000 -H 0.0.0.0 > /home/z/my-project/next.log 2>&1 &
-echo $! > "$PIDFILE"
-echo "Server started with PID: $(cat $PIDFILE)"
+# Start production server in background
+nohup node .next/standalone/server.js > /home/z/my-project/server.log 2>&1 &
+echo $! > /home/z/my-project/.next-dev.pid
+echo "Production server started with PID: $(cat /home/z/my-project/.next-dev.pid)"
 
 # Wait for server to be ready
 for i in $(seq 1 30); do
