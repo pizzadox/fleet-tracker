@@ -246,6 +246,7 @@ model Employee {
   crew           Crew?     @relation(fields: [crewId], references: [id], onDelete: SetNull)
   equipment      Equipment? @relation(fields: [equipmentId], references: [id], onDelete: SetNull)
   repairAssignments RepairEmployee[]
+  crewMembers    CrewMember[]
 }
 
 model Crew {
@@ -266,6 +267,7 @@ model Crew {
 model CrewMember {
   id          String   @id @default(cuid())
   crewId      String
+  employeeId  String?  // Привязка к сотруднику (если выбран из списка)
   fullName    String   // ФИО члена экипажа
   role        String   // driver | mechanic | assistant | loader | other
   phone       String?  // Телефон
@@ -276,6 +278,9 @@ model CrewMember {
   updatedAt   DateTime @updatedAt
 
   crew        Crew     @relation(fields: [crewId], references: [id], onDelete: Cascade)
+  employee    Employee? @relation(fields: [employeeId], references: [id], onDelete: SetNull)
+
+  @@unique([crewId, employeeId])
 }
 
 model Trip {

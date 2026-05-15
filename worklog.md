@@ -512,3 +512,36 @@ Stage Summary:
 - Причина: Next.js standalone build не включает .next/static и public — требуется ручное копирование
 - Решение: автоматическое копирование в launch-server.py (ensure_static_files) и .zscripts/dev.sh
 - Все статические файлы теперь отдаются корректно (HTTP 200)
+
+---
+Task ID: crews-employee-link
+Agent: main
+Task: Доработать Экипажи — выбор сотрудников из списка вместо ручного ввода ФИО
+
+Work Log:
+- Обновил Prisma схему: добавил employeeId в CrewMember (опциональная связь с Employee), @@unique([crewId, employeeId]), обратная связь crewMembers в Employee
+- Применил миграцию: npx prisma db push && npx prisma generate
+- Обновил API /api/crews (POST): добавил resolveMemberData() — при указании employeeId автоматически заполняет fullName, role, phone, licenseNum, licenseCat из профиля сотрудника
+- Обновил API /api/crews/[id] (PUT): аналогичная логика resolveMemberData при обновлении состава
+- API теперь возвращает members с включённым employee объектом
+- Обновил интерфейс CrewMember в page.tsx: добавил employeeId и employee поля
+- Полностью переписал CrewFormDialog:
+  - Два способа добавления: "Из сотрудников" (выбор из списка активных) и "Вручную" (ввод ФИО)
+  - Дропдаун показывает ФИО, должность и телефон каждого сотрудника
+  - Защита от дубликатов — уже добавленные сотрудники не показываются в списке
+  - Сотрудники из списка отображаются с бейджем "Сотрудник" и иконкой UserCheck
+  - Визуальное отличие: привязанные сотрудники подсвечены бордером primary, ручной ввод — серый фон
+  - Добавлено поле "Кат. ВУ" (licenseCat) которого не было раньше
+- Обновил карточки экипажей: привязанные сотрудники показываются с иконкой UserCheck (primary), вручную введённые — UserCircle (серый)
+- Обновил TripDetailDialog: та же визуальная разница для членов экипажа
+- Добавил иконки UserPlus, UserCheck в импорты lucide-react
+- Исправил баг: POSITION_MAP -> EMPLOYEE_POSITION_MAP в CrewFormDialog
+- Передал employees как проп в CrewFormDialog
+- Пересобрал проект (build успешен), скопировал статику, перезапустил сервер
+- Протестировал создание экипажа через API — данные сотрудника автоматически заполняются
+
+Stage Summary:
+- CrewMember теперь связан с Employee через employeeId (опционально)
+- API автоматически заполняет данные из профиля сотрудника при указании employeeId
+- UI позволяет выбирать сотрудников из списка или вводить ФИО вручную
+- Визуальная разница между привязанными и вручную введёнными членами экипажа

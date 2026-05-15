@@ -51,7 +51,8 @@ import {
   Navigation, Fuel, Thermometer, Zap, Cog, RefreshCw, Wifi, WifiOff,
   Satellite, ArrowLeft, ChevronDown, ChevronUp, Filter, ListFilter,
   Route, Package, Weight, UserCircle, IdCard, ClipboardCheck, Map, Bell,
-  Car, Bus, Bike, Tractor, Ship, Container, Wrench as Settings, CircuitBoard, Cable
+  Car, Bus, Bike, Tractor, Ship, Container, Wrench as Settings, CircuitBoard, Cable,
+  UserPlus, UserCheck
 } from 'lucide-react'
 
 // ═══════════════════════════════════════════════════════════════
@@ -161,9 +162,10 @@ interface AxentaSettings {
 }
 
 interface CrewMember {
-  id: string; crewId: string; fullName: string; role: string;
+  id: string; crewId: string; employeeId?: string | null; fullName: string; role: string;
   phone?: string | null; licenseNum?: string | null; licenseCat?: string | null;
   notes?: string | null; createdAt: string; updatedAt: string;
+  employee?: { id: string; fullName: string; position: string; phone?: string | null; status: string } | null;
 }
 
 interface Employee {
@@ -894,7 +896,7 @@ export default function Home() {
       <RepairPhotoUploadDialog open={!!photoUploadRepair} onOpenChange={(v) => { if (!v) setPhotoUploadRepair(null) }} targetId={photoUploadRepair || ''} stages={selectedRepair?.stages || []} onUploaded={() => { setPhotoUploadRepair(null); if (selectedRepair) fetchRepairDetail(selectedRepair.id) }} />
       <TripDetailDialog open={tripDetailOpen} onOpenChange={setTripDetailOpen} trip={selectedTrip} loading={tripDetailLoading} crews={crews} onEdit={(t) => { setTripDetailOpen(false); setTripFormEdit(t); setTripFormEquipmentId(t.equipmentId); setTripFormOpen(true) }} onDelete={(t) => { setTripDetailOpen(false); setDeleteDialog({ open: true, type: 'trip', id: t.id, name: t.route }) }} onStart={async (t) => { try { const res = await fetch(`/api/trips/${t.id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status: 'in_progress' }) }); if (!res.ok) throw new Error(); toast.success('Рейс начат'); fetchTripDetail(t.id); fetchAll() } catch { toast.error('Ошибка') } }} onComplete={async (t) => { try { const res = await fetch(`/api/trips/${t.id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status: 'completed', endDate: new Date().toISOString() }) }); if (!res.ok) throw new Error(); toast.success('Рейс завершён'); fetchTripDetail(t.id); fetchAll() } catch { toast.error('Ошибка завершения рейса') } }} onRefresh={() => selectedTrip && fetchTripDetail(selectedTrip.id)} />
       <TripFormDialog open={tripFormOpen} onOpenChange={setTripFormOpen} editData={tripFormEdit} equipmentId={tripFormEquipmentId} equipmentList={equipment} crews={crews} saving={tripFormSaving} setSaving={setTripFormSaving} onSaved={() => { setTripFormOpen(false); fetchAll() }} />
-      <CrewFormDialog open={crewFormOpen} onOpenChange={setCrewFormOpen} editData={crewFormEdit} saving={crewFormSaving} setSaving={setCrewFormSaving} onSaved={() => { setCrewFormOpen(false); fetchAll() }} />
+      <CrewFormDialog open={crewFormOpen} onOpenChange={setCrewFormOpen} editData={crewFormEdit} saving={crewFormSaving} setSaving={setCrewFormSaving} onSaved={() => { setCrewFormOpen(false); fetchAll() }} employees={employees} />
       <EmployeeDetailSheet open={empDetailOpen} onOpenChange={setEmpDetailOpen} employee={selectedEmp} loading={empDetailLoading} crews={crews} onEdit={(emp) => { setEmpDetailOpen(false); setEmpFormEdit(emp); setEmpFormOpen(true) }} onDelete={(emp) => { setEmpDetailOpen(false); setDeleteDialog({ open: true, type: 'employee', id: emp.id, name: emp.fullName }) }} onRefresh={() => selectedEmp && fetchEmployeeDetail(selectedEmp.id)} />
       <EmployeeFormDialog open={empFormOpen} onOpenChange={setEmpFormOpen} editData={empFormEdit} crews={crews} equipment={equipment} saving={empFormSaving} setSaving={setEmpFormSaving} onSaved={() => { setEmpFormOpen(false); fetchAll() }} />
 
@@ -3168,8 +3170,8 @@ function TripsTab({ trips, equipment, crews, onOpenDetail, onAdd, onDelete, onAd
                       <div className="space-y-0.5 pl-2">
                         {c.members.map(m => (
                           <div key={m.id} className="flex items-center gap-1 text-[10px]">
-                            <UserCircle className="size-3 text-muted-foreground" />
-                            <span>{m.fullName}</span>
+                            {m.employeeId ? <UserCheck className="size-3 text-primary" /> : <UserCircle className="size-3 text-muted-foreground" />}
+                            <span className={m.employeeId ? 'font-medium' : ''}>{m.fullName}</span>
                             <span className="text-muted-foreground">({MEMBER_ROLE_MAP[m.role] || m.role})</span>
                           </div>
                         ))}
@@ -3284,8 +3286,8 @@ function TripDetailDialog({ open, onOpenChange, trip, loading, crews, onEdit, on
                   <div className="col-span-2 space-y-0.5 pl-2">
                     {crew.members.map(m => (
                       <div key={m.id} className="flex items-center gap-1 text-[10px]">
-                        <UserCircle className="size-3 text-muted-foreground" />
-                        <span>{m.fullName}</span>
+                        {m.employeeId ? <UserCheck className="size-3 text-primary" /> : <UserCircle className="size-3 text-muted-foreground" />}
+                        <span className={m.employeeId ? 'font-medium' : ''}>{m.fullName}</span>
                         <span className="text-muted-foreground">({MEMBER_ROLE_MAP[m.role] || m.role})</span>
                         {m.phone && <span className="text-muted-foreground">• {m.phone}</span>}
                       </div>
@@ -3412,18 +3414,26 @@ function TripFormDialog({ open, onOpenChange, editData, equipmentId, equipmentLi
 // CREW FORM DIALOG
 // ═══════════════════════════════════════════════════════════════
 
-function CrewFormDialog({ open, onOpenChange, editData, saving, setSaving, onSaved }: {
+function CrewFormDialog({ open, onOpenChange, editData, saving, setSaving, onSaved, employees }: {
   open: boolean; onOpenChange: (v: boolean) => void;
   editData: Crew | null; saving: boolean; setSaving: (v: boolean) => void;
   onSaved: () => void;
+  employees: Employee[];
 }) {
   const [form, setForm] = useState<Record<string, string>>({})
-  const [members, setMembers] = useState<{ fullName: string; role: string; phone: string; licenseNum: string; licenseCat: string }[]>([])
+  const [members, setMembers] = useState<{ employeeId: string; fullName: string; role: string; phone: string; licenseNum: string; licenseCat: string }[]>([])
 
   useEffect(() => {
     if (editData) {
       setForm({ name: editData.name || '', description: editData.description || '', type: editData.type || 'driver', status: editData.status || 'active', notes: editData.notes || '' })
-      setMembers(editData.members?.map(m => ({ fullName: m.fullName, role: m.role, phone: m.phone || '', licenseNum: m.licenseNum || '', licenseCat: m.licenseCat || '' })) || [])
+      setMembers(editData.members?.map(m => ({
+        employeeId: m.employeeId || '',
+        fullName: m.fullName,
+        role: m.role,
+        phone: m.phone || '',
+        licenseNum: m.licenseNum || '',
+        licenseCat: m.licenseCat || '',
+      })) || [])
     } else {
       setForm({ type: 'driver', status: 'active' })
       setMembers([])
@@ -3432,6 +3442,29 @@ function CrewFormDialog({ open, onOpenChange, editData, saving, setSaving, onSav
 
   const f = (key: string) => form[key] || ''
   const setF = (key: string, value: string) => setForm(prev => ({ ...prev, [key]: value }))
+
+  // Get IDs already added to avoid duplicates in employee selector
+  const usedEmployeeIds = members.filter(m => m.employeeId).map(m => m.employeeId)
+
+  // Add employee from dropdown
+  const handleAddEmployee = (empId: string) => {
+    if (!empId || usedEmployeeIds.includes(empId)) return
+    const emp = employees.find(e => e.id === empId)
+    if (!emp) return
+    setMembers(prev => [...prev, {
+      employeeId: emp.id,
+      fullName: emp.fullName,
+      role: emp.position || 'driver',
+      phone: emp.phone || '',
+      licenseNum: emp.licenseNum || '',
+      licenseCat: emp.licenseCat || '',
+    }])
+  }
+
+  // Add empty manual member
+  const handleAddManual = () => {
+    setMembers(prev => [...prev, { employeeId: '', fullName: '', role: 'driver', phone: '', licenseNum: '', licenseCat: '' }])
+  }
 
   const handleSave = async () => {
     if (!f('name').trim()) { toast.error('Укажите название экипажа'); return }
@@ -3464,20 +3497,56 @@ function CrewFormDialog({ open, onOpenChange, editData, saving, setSaving, onSav
           <Separator />
           <div>
             <div className="flex items-center justify-between mb-1.5">
-              <Label className="text-xs flex items-center gap-1"><Users className="size-3" />Члены экипажа ({members.length})</Label>
-              <Button size="sm" variant="outline" className="h-6 gap-1 text-[11px]" onClick={() => setMembers([...members, { fullName: '', role: 'driver', phone: '', licenseNum: '', licenseCat: '' }])}><Plus className="size-3" />Добавить</Button>
-            </div>
-            {members.map((m, i) => (
-              <div key={i} className="grid grid-cols-1 sm:grid-cols-5 gap-1.5 mb-1.5">
-                <Input placeholder="ФИО *" value={m.fullName} onChange={e => { const n = [...members]; n[i] = { ...n[i], fullName: e.target.value }; setMembers(n) }} className="sm:col-span-2 h-8 text-sm" />
-                <Select value={m.role} onValueChange={v => { const n = [...members]; n[i] = { ...n[i], role: v }; setMembers(n) }}>
-                  <SelectTrigger className="h-8 text-sm"><SelectValue /></SelectTrigger>
-                  <SelectContent>{Object.entries(MEMBER_ROLE_MAP).map(([k, v]) => <SelectItem key={k} value={k}>{v}</SelectItem>)}</SelectContent>
+              <Label className="text-xs flex items-center gap-1"><Users className="size-3" />Состав экипажа ({members.length})</Label>
+              <div className="flex gap-1.5">
+                <Select onValueChange={handleAddEmployee}>
+                  <SelectTrigger className="h-6 text-[11px] gap-1 w-auto px-2">
+                    <UserPlus className="size-3" />
+                    <span>Из сотрудников</span>
+                  </SelectTrigger>
+                  <SelectContent>
+                    {employees
+                      .filter(e => e.status === 'active' && !usedEmployeeIds.includes(e.id))
+                      .map(e => (
+                        <SelectItem key={e.id} value={e.id}>
+                          {e.fullName} ({EMPLOYEE_POSITION_MAP[e.position]?.label || e.position}{e.phone ? `, ${e.phone}` : ''})
+                        </SelectItem>
+                      ))}
+                    {employees.filter(e => e.status === 'active' && !usedEmployeeIds.includes(e.id)).length === 0 && (
+                      <div className="px-2 py-1.5 text-xs text-muted-foreground">Нет доступных сотрудников</div>
+                    )}
+                  </SelectContent>
                 </Select>
-                <Input placeholder="Телефон" value={m.phone} onChange={e => { const n = [...members]; n[i] = { ...n[i], phone: e.target.value }; setMembers(n) }} className="h-8 text-sm" />
-                <div className="flex gap-1">
-                  <Input placeholder="ВУ" value={m.licenseNum} onChange={e => { const n = [...members]; n[i] = { ...n[i], licenseNum: e.target.value }; setMembers(n) }} className="h-8 text-sm flex-1" />
-                  <Button size="sm" variant="ghost" className="size-8 p-0 text-destructive shrink-0" onClick={() => setMembers(members.filter((_, j) => j !== i))}><X className="size-3.5" /></Button>
+                <Button size="sm" variant="outline" className="h-6 gap-1 text-[11px]" onClick={handleAddManual}><Plus className="size-3" />Вручную</Button>
+              </div>
+            </div>
+            {members.length === 0 && (
+              <div className="text-center py-4 text-xs text-muted-foreground">Добавьте сотрудников из списка или вручную</div>
+            )}
+            {members.map((m, i) => (
+              <div key={i} className={`mb-2 rounded-lg border ${m.employeeId ? 'bg-primary/5 border-primary/20 dark:bg-primary/10 dark:border-primary/30' : 'bg-muted/50'}`}>
+                <div className="flex items-start gap-2 p-2">
+                  <div className="flex-1 min-w-0 space-y-1.5">
+                    {/* Employee link badge or manual input */}
+                    {m.employeeId ? (
+                      <div className="flex items-center gap-1.5">
+                        <Badge variant="secondary" className="text-[10px] gap-0.5 px-1.5 py-0"><UserCheck className="size-2.5" />Сотрудник</Badge>
+                        <span className="text-sm font-medium truncate">{m.fullName}</span>
+                      </div>
+                    ) : (
+                      <Input placeholder="ФИО *" value={m.fullName} onChange={e => { const n = [...members]; n[i] = { ...n[i], fullName: e.target.value }; setMembers(n) }} className="h-8 text-sm" />
+                    )}
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5">
+                      <Select value={m.role} onValueChange={v => { const n = [...members]; n[i] = { ...n[i], role: v }; setMembers(n) }}>
+                        <SelectTrigger className="h-7 text-xs"><SelectValue /></SelectTrigger>
+                        <SelectContent>{Object.entries(MEMBER_ROLE_MAP).map(([k, v]) => <SelectItem key={k} value={k}>{v}</SelectItem>)}</SelectContent>
+                      </Select>
+                      <Input placeholder="Телефон" value={m.phone} onChange={e => { const n = [...members]; n[i] = { ...n[i], phone: e.target.value }; setMembers(n) }} className="h-7 text-xs" />
+                      <Input placeholder="ВУ №" value={m.licenseNum} onChange={e => { const n = [...members]; n[i] = { ...n[i], licenseNum: e.target.value }; setMembers(n) }} className="h-7 text-xs" />
+                      <Input placeholder="Кат. ВУ" value={m.licenseCat} onChange={e => { const n = [...members]; n[i] = { ...n[i], licenseCat: e.target.value }; setMembers(n) }} className="h-7 text-xs" />
+                    </div>
+                  </div>
+                  <Button size="sm" variant="ghost" className="size-7 p-0 text-destructive shrink-0" onClick={() => setMembers(members.filter((_, j) => j !== i))}><X className="size-3.5" /></Button>
                 </div>
               </div>
             ))}
