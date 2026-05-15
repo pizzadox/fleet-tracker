@@ -44,7 +44,10 @@ export async function GET(request: NextRequest) {
               take: 20,
             }
           }
-        }
+        },
+        employees: {
+          select: { id: true, fullName: true, position: true, phone: true, status: true },
+        },
       }
     })
     return NextResponse.json(equipment)

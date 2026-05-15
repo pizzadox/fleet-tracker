@@ -8,6 +8,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
       where: { id },
       include: {
         crew: { select: { id: true, name: true, type: true, status: true } },
+        equipment: { select: { id: true, name: true, registrationNum: true, type: true } },
       },
     })
     if (!employee) return NextResponse.json({ error: 'Employee not found' }, { status: 404 })
@@ -27,7 +28,7 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
       birthDate, hireDate, fireDate,
       licenseNum, licenseCat, licenseExpiry,
       passportSeries, passportNum, address,
-      status, salary, notes, crewId,
+      status, salary, notes, crewId, equipmentId,
     } = body
 
     const employee = await db.employee.update({
@@ -50,8 +51,9 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
         salary: salary !== undefined ? (salary ? parseFloat(salary) : null) : undefined,
         notes: notes !== undefined ? notes || null : undefined,
         crewId: crewId !== undefined ? crewId || null : undefined,
+        equipmentId: equipmentId !== undefined ? equipmentId || null : undefined,
       },
-      include: { crew: true },
+      include: { crew: true, equipment: { select: { id: true, name: true, registrationNum: true, type: true } } },
     })
 
     return NextResponse.json(employee)

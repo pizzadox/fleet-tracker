@@ -31,6 +31,9 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue
 } from '@/components/ui/select'
 import {
+  Popover, PopoverContent, PopoverTrigger
+} from '@/components/ui/popover'
+import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow
 } from '@/components/ui/table'
 import {
@@ -121,6 +124,7 @@ interface Equipment {
   photos?: EquipmentPhoto[]; repairs?: Repair[];
   history?: EquipmentHistory[]; documents?: EquipmentDocument[];
   trackers?: GlonassTracker[];
+  employees?: { id: string; fullName: string; position: string; phone?: string | null; status: string; licenseCat?: string | null }[];
 }
 
 interface GlonassTracker {
@@ -161,8 +165,10 @@ interface Employee {
   licenseNum?: string | null; licenseCat?: string | null; licenseExpiry?: string | null;
   passportSeries?: string | null; passportNum?: string | null; address?: string | null;
   status: string; salary?: number | null; notes?: string | null; crewId?: string | null;
+  equipmentId?: string | null;
   createdAt: string; updatedAt: string;
   crew?: { id: string; name: string; type: string; status: string } | null;
+  equipment?: { id: string; name: string; registrationNum?: string | null; type: string } | null;
 }
 
 interface Crew {
@@ -876,7 +882,7 @@ export default function Home() {
       <TripFormDialog open={tripFormOpen} onOpenChange={setTripFormOpen} editData={tripFormEdit} equipmentId={tripFormEquipmentId} equipmentList={equipment} crews={crews} saving={tripFormSaving} setSaving={setTripFormSaving} onSaved={() => { setTripFormOpen(false); fetchAll() }} />
       <CrewFormDialog open={crewFormOpen} onOpenChange={setCrewFormOpen} editData={crewFormEdit} saving={crewFormSaving} setSaving={setCrewFormSaving} onSaved={() => { setCrewFormOpen(false); fetchAll() }} />
       <EmployeeDetailSheet open={empDetailOpen} onOpenChange={setEmpDetailOpen} employee={selectedEmp} loading={empDetailLoading} crews={crews} onEdit={(emp) => { setEmpDetailOpen(false); setEmpFormEdit(emp); setEmpFormOpen(true) }} onDelete={(emp) => { setEmpDetailOpen(false); setDeleteDialog({ open: true, type: 'employee', id: emp.id, name: emp.fullName }) }} onRefresh={() => selectedEmp && fetchEmployeeDetail(selectedEmp.id)} />
-      <EmployeeFormDialog open={empFormOpen} onOpenChange={setEmpFormOpen} editData={empFormEdit} crews={crews} saving={empFormSaving} setSaving={setEmpFormSaving} onSaved={() => { setEmpFormOpen(false); fetchAll() }} />
+      <EmployeeFormDialog open={empFormOpen} onOpenChange={setEmpFormOpen} editData={empFormEdit} crews={crews} equipment={equipment} saving={empFormSaving} setSaving={setEmpFormSaving} onSaved={() => { setEmpFormOpen(false); fetchAll() }} />
 
       {/* Full photo view */}
       <Dialog open={!!fullPhoto} onOpenChange={() => setFullPhoto(null)}>
@@ -1074,9 +1080,19 @@ function EquipmentTab({ equipment, companies, eqSearch, setEqSearch, eqStatusFil
                   <div><span className="text-muted-foreground">Владелец:</span> <span className="font-medium truncate">{eq.owner?.name || '—'}</span></div>
                   <div><span className="text-muted-foreground">Арендатор:</span> <span className="font-medium truncate">{eq.renter?.name || '—'}</span></div>
                 </div>
+                {eq.employees && eq.employees.length > 0 && (
+                  <div className="flex flex-wrap gap-1 mt-0.5">
+                    {eq.employees.map(emp => (
+                      <span key={emp.id} className={`inline-flex items-center gap-0.5 rounded px-1 py-0 text-[10px] font-medium ${EMPLOYEE_POSITION_MAP[emp.position]?.color || 'bg-gray-100 text-gray-600'} ${EMPLOYEE_POSITION_MAP[emp.position]?.darkColor || ''}`}>
+                        {EMPLOYEE_POSITION_MAP[emp.position]?.icon}{emp.fullName.split(' ')[0]}
+                      </span>
+                    ))}
+                  </div>
+                )}
                 <div className="flex items-center gap-3 text-[11px] text-muted-foreground pt-0.5">
                   <span className="flex items-center gap-0.5"><Wrench className="size-3" />{eq._count?.repairs || 0}</span>
                   <span className="flex items-center gap-0.5"><Camera className="size-3" />{eq._count?.photos || 0}</span>
+                  {eq.employees && eq.employees.length > 0 && <span className="flex items-center gap-0.5"><Users className="size-3" />{eq.employees.length}</span>}
                 </div>
                 <div className="flex gap-1 pt-1" onClick={e => e.stopPropagation()}>
                   <Button size="sm" variant="ghost" className="h-7 text-[11px] gap-1" onClick={() => onEdit(eq)}><Edit className="size-3" />Изменить</Button>
@@ -1094,6 +1110,66 @@ function EquipmentTab({ equipment, companies, eqSearch, setEqSearch, eqStatusFil
 // ═══════════════════════════════════════════════════════════════
 // EQUIPMENT DETAIL SHEET
 // ═══════════════════════════════════════════════════════════════
+
+function AssignEmployeeSelect({ eqId, assignedIds, onAssigned }: { eqId: string; assignedIds: string[]; onAssigned: () => void }) {
+  const [search, setSearch] = useState('')
+  const [results, setResults] = useState<Employee[]>([])
+  const [loading, setLoading] = useState(false)
+  const [assigning, setAssigning] = useState<string | null>(null)
+  const [open, setOpen] = useState(false)
+
+  useEffect(() => {
+    if (!open) return
+    setLoading(true)
+    fetch(`/api/employees?status=active&search=${encodeURIComponent(search)}`)
+      .then(r => r.json())
+      .then((data: Employee[]) => setResults(data.filter(e => !assignedIds.includes(e.id))))
+      .catch(() => setResults([]))
+      .finally(() => setLoading(false))
+  }, [open, search, assignedIds])
+
+  const handleAssign = async (empId: string) => {
+    setAssigning(empId)
+    try {
+      await fetch(`/api/employees/${empId}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ equipmentId: eqId }) })
+      toast.success('Сотрудник назначен')
+      onAssigned()
+    } catch { toast.error('Ошибка назначения') }
+    setAssigning(null)
+  }
+
+  return (
+    <div className="space-y-2">
+      <Popover open={open} onOpenChange={setOpen}>
+        <PopoverTrigger asChild>
+          <Button variant="outline" size="sm" className="w-full h-8 gap-1.5 text-xs"><Plus className="size-3" />Назначить сотрудника</Button>
+        </PopoverTrigger>
+        <PopoverContent className="p-2 w-[320px]" align="start">
+          <div className="space-y-2">
+            <Input placeholder="Поиск по ФИО..." value={search} onChange={e => setSearch(e.target.value)} className="h-8 text-xs" />
+            <div className="max-h-[200px] overflow-y-auto space-y-1">
+              {loading ? <div className="text-center py-2"><Loader2 className="size-4 animate-spin mx-auto text-muted-foreground" /></div> :
+                results.length === 0 ? <p className="text-xs text-muted-foreground text-center py-2">Нет доступных сотрудников</p> :
+                results.map(emp => (
+                  <button key={emp.id} className="w-full flex items-center gap-2 p-1.5 rounded-md hover:bg-accent text-left" onClick={() => { handleAssign(emp.id); setOpen(false) }} disabled={assigning === emp.id}>
+                    <div className={`size-6 rounded-full flex items-center justify-center text-[9px] font-bold shrink-0 ${EMPLOYEE_POSITION_MAP[emp.position]?.color || 'bg-gray-100 text-gray-600'} ${EMPLOYEE_POSITION_MAP[emp.position]?.darkColor || ''}`}>
+                      {emp.fullName.split(' ').map(n => n[0]).slice(0, 2).join('')}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs font-medium truncate">{emp.fullName}</p>
+                      <p className="text-[10px] text-muted-foreground">{EMPLOYEE_POSITION_MAP[emp.position]?.label || emp.position}{emp.equipment ? ` • ${emp.equipment.name}` : ''}</p>
+                    </div>
+                    {assigning === emp.id && <Loader2 className="size-3 animate-spin" />}
+                  </button>
+                ))
+              }
+            </div>
+          </div>
+        </PopoverContent>
+      </Popover>
+    </div>
+  )
+}
 
 function EquipmentDetailSheet({ open, onOpenChange, equipment, loading, detailTab, setDetailTab, companies, photoCategoryFilter, setPhotoCategoryFilter, fullPhoto, setFullPhoto, onEdit, onDelete, onAddRepair, onUploadPhoto, onRefresh, onOpenRepairDetail, onAddTrip, onOpenTripDetail, allEquipment, onRefreshAll }: {
   open: boolean; onOpenChange: (v: boolean) => void;
@@ -1279,6 +1355,7 @@ function EquipmentDetailSheet({ open, onOpenChange, equipment, loading, detailTa
               <TabsTrigger value="glonass" className="gap-1 text-xs"><MapPin className="size-3" /><span className="hidden sm:inline">ГЛОНАСС</span></TabsTrigger>
               <TabsTrigger value="trips" className="gap-1 text-xs"><Route className="size-3" /><span className="hidden sm:inline">Рейсы</span></TabsTrigger>
               <TabsTrigger value="history" className="gap-1 text-xs"><History className="size-3" /><span className="hidden sm:inline">История</span></TabsTrigger>
+              <TabsTrigger value="employees" className="gap-1 text-xs"><Users className="size-3" /><span className="hidden sm:inline">Сотрудники</span></TabsTrigger>
             </TabsList>
           </div>
 
@@ -1704,6 +1781,37 @@ function EquipmentDetailSheet({ open, onOpenChange, equipment, loading, detailTa
                         ))}
                       </div>
                     )}
+                  </div>
+                )}
+
+                {detailTab === 'employees' && (
+                  <div className="px-4 sm:px-5 py-3 space-y-3">
+                    {/* Assigned employees */}
+                    {(!eq.employees || eq.employees.length === 0) ? (
+                      <div className="text-center py-6 text-muted-foreground"><Users className="size-8 mx-auto mb-2 opacity-40" /><p className="text-xs">Нет назначенных сотрудников</p></div>
+                    ) : (
+                      <div className="space-y-2">
+                        {eq.employees.map(emp => (
+                          <div key={emp.id} className="flex items-center gap-2.5 p-2 rounded-lg border bg-card">
+                            <div className={`size-8 rounded-full flex items-center justify-center text-xs font-bold shrink-0 ${EMPLOYEE_POSITION_MAP[emp.position]?.color || 'bg-gray-100 text-gray-600'} ${EMPLOYEE_POSITION_MAP[emp.position]?.darkColor || 'dark:bg-gray-900/40 dark:text-gray-400'}`}>
+                              {emp.fullName.split(' ').map(n => n[0]).slice(0, 2).join('')}
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <p className="text-sm font-medium truncate">{emp.fullName}</p>
+                              <div className="flex items-center gap-1.5">
+                                <Badge variant="outline" className="text-[10px] h-4 px-1">{EMPLOYEE_POSITION_MAP[emp.position]?.label || emp.position}</Badge>
+                                {emp.licenseCat && <span className="text-[10px] text-muted-foreground">Кат. {emp.licenseCat}</span>}
+                                <Badge className={`text-[10px] h-4 px-1 ${EMPLOYEE_STATUS_MAP[emp.status]?.color || ''}`}>{EMPLOYEE_STATUS_MAP[emp.status]?.label || emp.status}</Badge>
+                              </div>
+                            </div>
+                            {emp.phone && <a href={`tel:${emp.phone}`} className="text-muted-foreground hover:text-foreground"><Phone className="size-3.5" /></a>}
+                            <Button variant="ghost" size="sm" className="size-7 h-auto w-auto p-1 text-muted-foreground hover:text-destructive" onClick={async () => { await fetch(`/api/employees/${emp.id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ equipmentId: '' }) }); onRefresh(); toast.success('Сотрудник откреплён') }}><X className="size-3.5" /></Button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    {/* Assign employee */}
+                    <AssignEmployeeSelect eqId={eq.id} assignedIds={(eq.employees || []).map(e => e.id)} onAssigned={onRefresh} />
                   </div>
                 )}
               </>
@@ -3271,6 +3379,7 @@ function EmployeesTab({ employees, crews, empSearch, setEmpSearch, empPositionFi
                     {emp.licenseNum && <div><span className="text-muted-foreground">ВУ:</span> <span className="font-medium">{emp.licenseNum}</span></div>}
                     {emp.licenseCat && <div><span className="text-muted-foreground">Кат. ВУ:</span> <span className="font-medium">{emp.licenseCat}</span></div>}
                     {emp.salary != null && <div><span className="text-muted-foreground">Зарплата:</span> <span className="font-medium">{formatPrice(emp.salary)}</span></div>}
+                    {emp.equipment && <div className="col-span-2"><span className="text-muted-foreground">Техника:</span> <span className="font-medium inline-flex items-center gap-0.5"><Truck className="size-3" />{emp.equipment.name}{emp.equipment.registrationNum ? ` (${emp.equipment.registrationNum})` : ''}</span></div>}
                   </div>
                   {licenseExpired && (
                     <div className="flex items-center gap-1 text-[10px] text-red-600 dark:text-red-400 font-medium mt-1"><AlertTriangle className="size-3" />ВУ истекло!</div>
@@ -3346,6 +3455,18 @@ function EmployeeDetailSheet({ open, onOpenChange, employee, loading, crews, onE
                 <DetailRow label="Экипаж" value={crew?.name} />
               </DetailSection>
 
+              {/* Assigned equipment */}
+              <DetailSection title="Назначенная техника" icon={<Truck className="size-3.5" />}>
+                {e.equipment ? (
+                  <>
+                    <DetailRow label="Наименование" value={e.equipment.name} />
+                    <DetailRow label="Гос. номер" value={e.equipment.registrationNum} />
+                  </>
+                ) : (
+                  <p className="text-xs text-muted-foreground col-span-2">Не назначена</p>
+                )}
+              </DetailSection>
+
               {/* License info */}
               <DetailSection title="Водительское удостоверение" icon={<ClipboardCheck className="size-3.5" />}>
                 <DetailRow label="Номер ВУ" value={e.licenseNum} />
@@ -3390,9 +3511,9 @@ function EmployeeDetailSheet({ open, onOpenChange, employee, loading, crews, onE
 // EMPLOYEE FORM DIALOG
 // ═══════════════════════════════════════════════════════════════
 
-function EmployeeFormDialog({ open, onOpenChange, editData, crews, saving, setSaving, onSaved }: {
+function EmployeeFormDialog({ open, onOpenChange, editData, crews, equipment, saving, setSaving, onSaved }: {
   open: boolean; onOpenChange: (v: boolean) => void;
-  editData: Employee | null; crews: Crew[];
+  editData: Employee | null; crews: Crew[]; equipment: Equipment[];
   saving: boolean; setSaving: (v: boolean) => void;
   onSaved: () => void;
 }) {
@@ -3418,6 +3539,7 @@ function EmployeeFormDialog({ open, onOpenChange, editData, crews, saving, setSa
         salary: editData.salary?.toString() || '',
         notes: editData.notes || '',
         crewId: editData.crewId || '',
+        equipmentId: editData.equipmentId || '',
       })
     } else {
       setForm({ position: 'driver', status: 'active', hireDate: new Date().toISOString().split('T')[0] })
@@ -3467,6 +3589,7 @@ function EmployeeFormDialog({ open, onOpenChange, editData, crews, saving, setSa
               <div><Label className="text-xs">Дата увольнения</Label><Input type="date" value={f('fireDate')} onChange={e => setF('fireDate', e.target.value)} /></div>
               <div><Label className="text-xs">Зарплата (₽)</Label><Input type="number" value={f('salary')} onChange={e => setF('salary', e.target.value)} /></div>
               <div><Label className="text-xs">Экипаж</Label><Select value={f('crewId') || '_none'} onValueChange={v => setF('crewId', v === '_none' ? '' : v)}><SelectTrigger className="h-9 text-sm"><SelectValue placeholder="Без экипажа" /></SelectTrigger><SelectContent><SelectItem value="_none">Без экипажа</SelectItem>{crews.filter(c => c.status === 'active').map(c => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}</SelectContent></Select></div>
+              <div><Label className="text-xs">Назначенная техника</Label><Select value={f('equipmentId') || '_none'} onValueChange={v => setF('equipmentId', v === '_none' ? '' : v)}><SelectTrigger className="h-9 text-sm"><SelectValue placeholder="Не назначена" /></SelectTrigger><SelectContent><SelectItem value="_none">Не назначена</SelectItem>{equipment.filter(eq => eq.status === 'active' || eq.status === 'rented').map(eq => <SelectItem key={eq.id} value={eq.id}>{eq.name}{eq.registrationNum ? ` (${eq.registrationNum})` : ''}</SelectItem>)}</SelectContent></Select></div>
             </div>
           </div>
 

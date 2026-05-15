@@ -362,3 +362,34 @@ Stage Summary:
 - 6 equipment items fully populated
 - Fixed PUT route bug that was clearing unspecified fields
 - Application running correctly on port 3000
+
+---
+Task ID: 3
+Agent: Main
+Task: Add employee assignment to equipment
+
+Work Log:
+- Added `equipmentId` field to Employee model in Prisma schema
+- Added `employees` relation to Equipment model
+- Ran prisma db push and prisma generate successfully
+- Updated employees API routes (GET list, GET detail, POST create, PUT update) to include equipment relation
+- Updated equipment API routes (GET list, GET detail) to include employees relation
+- Added "Сотрудники" tab to EquipmentDetailSheet with:
+  - List of assigned employees with avatars, position badges, status badges
+  - Unassign button per employee
+  - AssignEmployeeSelect component with search and popover
+- Added "Назначенная техника" section to EmployeeDetailSheet showing assigned equipment
+- Added equipment field to EmployeeFormDialog (equipment select dropdown)
+- Added employee names as colored badges on equipment cards in list view
+- Added employee count indicator on equipment cards
+- Added equipment info on employee cards in Employees tab
+- Assigned 6 demo employees to equipment for testing
+
+Stage Summary:
+- Full bidirectional employee-equipment assignment implemented
+- UI: equipment detail → employees tab with assign/unassign
+- UI: employee detail → shows assigned equipment
+- UI: employee form → equipment selection dropdown
+- UI: equipment cards show assigned employee names
+- UI: employee cards show assigned equipment name
+- Build passes without errors

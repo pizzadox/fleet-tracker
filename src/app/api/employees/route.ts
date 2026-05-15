@@ -31,6 +31,7 @@ export async function GET(request: NextRequest) {
       where,
       include: {
         crew: { select: { id: true, name: true, type: true } },
+        equipment: { select: { id: true, name: true, registrationNum: true, type: true } },
       },
       orderBy: { createdAt: 'desc' },
     })
@@ -50,7 +51,7 @@ export async function POST(request: NextRequest) {
       birthDate, hireDate, fireDate,
       licenseNum, licenseCat, licenseExpiry,
       passportSeries, passportNum, address,
-      status, salary, notes, crewId,
+      status, salary, notes, crewId, equipmentId,
     } = body
 
     if (!fullName?.trim()) {
@@ -76,8 +77,9 @@ export async function POST(request: NextRequest) {
         salary: salary ? parseFloat(salary) : null,
         notes: notes || null,
         crewId: crewId || null,
+        equipmentId: equipmentId || null,
       },
-      include: { crew: true },
+      include: { crew: true, equipment: { select: { id: true, name: true, registrationNum: true, type: true } } },
     })
 
     return NextResponse.json(employee, { status: 201 })

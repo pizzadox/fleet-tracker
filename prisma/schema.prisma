@@ -71,6 +71,7 @@ model Equipment {
   trackers        GlonassTracker[]
   trips           Trip[]
   notificationRules NotificationRule[]
+  employees       Employee[]
 }
 
 model EquipmentPhoto {
@@ -223,10 +224,12 @@ model Employee {
   salary         Float?    // Зарплата
   notes          String?
   crewId         String?   // Привязка к экипажу
+  equipmentId    String?   // Назначенная техника
   createdAt      DateTime  @default(now())
   updatedAt      DateTime  @updatedAt
 
   crew           Crew?     @relation(fields: [crewId], references: [id], onDelete: SetNull)
+  equipment      Equipment? @relation(fields: [equipmentId], references: [id], onDelete: SetNull)
 }
 
 model Crew {

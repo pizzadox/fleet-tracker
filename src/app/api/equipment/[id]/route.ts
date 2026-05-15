@@ -27,6 +27,10 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
             }
           }
         },
+        employees: {
+          select: { id: true, fullName: true, position: true, phone: true, status: true, licenseCat: true },
+          orderBy: { position: 'asc' },
+        },
       }
     })
     if (!equipment) {
