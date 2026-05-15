@@ -3264,6 +3264,12 @@ function TripDetailDialog({ open, onOpenChange, trip, loading, crews, onEdit, on
   const [trackLoading, setTrackLoading] = useState(false)
   const [trackError, setTrackError] = useState<string | null>(null)
 
+  // Reset track data when trip changes — must be before any early return (Rules of Hooks)
+  useEffect(() => {
+    setTrackData(null)
+    setTrackError(null)
+  }, [trip?.id])
+
   if (!trip) return null
   const t = trip
   const crew = crews.find(c => c.id === t.crewId)
@@ -3308,12 +3314,6 @@ function TripDetailDialog({ open, onOpenChange, trip, loading, crews, onEdit, on
     }
     setTrackLoading(false)
   }
-
-  // Reset track data when trip changes
-  useEffect(() => {
-    setTrackData(null)
-    setTrackError(null)
-  }, [t.id])
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>

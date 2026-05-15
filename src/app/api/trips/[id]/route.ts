@@ -59,33 +59,62 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
         tripId: id, equipmentName: trip.equipment.name, registrationNum: trip.equipment.registrationNum,
       }
       if (trackData.trips && Array.isArray(trackData.trips)) {
-        result.trips = trackData.trips.map((trip: Record<string, unknown>) => ({
-          distance: trip.distance || 0, startDate: trip.startDate, endDate: trip.endDate,
-          points: (trip.messagesCoordinates || []).map((pt: Record<string, unknown>) => ({
-            lat: pt.latitude || pt.lat, lng: pt.longitude || pt.lng, speed: pt.speed || 0, time: pt.date || pt.time,
-          })),
-        }))
+        result.trips = trackData.trips.map((trip: Record<string, unknown>) => {
+          const raw = trip.messagesCoordinates || []
+          let points: Array<{ lat: number; lng: number; speed: number; time: string | null }> = []
+
+          // Axenta returns messagesCoordinates as array of arrays [[lat, lng, speed, time], ...]
+          if (Array.isArray(raw) && raw.length > 0) {
+            const first = raw[0]
+            if (Array.isArray(first)) {
+              // Array of arrays: [[lat, lng, speed, time], [lat, lng, speed, time], ...]
+              for (const pt of raw) {
+                if (Array.isArray(pt) && pt.length >= 2) {
+                  const lat = Number(pt[0])
+                  const lng = Number(pt[1])
+                  const speed = Number(pt[2]) || 0
+                  const time = String(pt[3] || '')
+                  if (isFinite(lat) && isFinite(lng) && lat !== 0 && lng !== 0) {
+                    points.push({ lat, lng, speed, time })
+                  }
+                }
+              }
+            } else if (typeof first === 'object' && first !== null) {
+              // Object format: [{latitude, longitude, speed, date}, ...]
+              points = (raw as Record<string, unknown>[]).map((pt: Record<string, unknown>) => ({
+                lat: Number(pt.latitude ?? pt.lat ?? 0),
+                lng: Number(pt.longitude ?? pt.lng ?? 0),
+                speed: Number(pt.speed ?? 0),
+                time: String(pt.date || pt.time || ''),
+              })).filter((pt: { lat: number; lng: number }) => isFinite(pt.lat) && isFinite(pt.lng) && pt.lat !== 0 && pt.lng !== 0)
+            }
+          }
+
+          return {
+            distance: trip.distance || 0, startDate: trip.startDate, endDate: trip.endDate, points,
+          }
+        }).filter((t: { points: unknown[] }) => t.points.length >= 2)
       }
       if (trackData.parkings && Array.isArray(trackData.parkings)) {
         result.parkings = trackData.parkings.map((p: Record<string, unknown>) => ({
-          startDate: p.startDate, endDate: p.endDate, lat: p.latitude || p.lat, lng: p.longitude || p.lng,
+          startDate: p.startDate, endDate: p.endDate, lat: p.latitude ?? p.lat, lng: p.longitude ?? p.lng,
           duration: p.duration || 0, ignitionTime: p.ignitionTime || 0,
-        }))
+        })).filter((p: { lat: unknown; lng: unknown }) => p.lat != null && p.lng != null)
       }
       if (trackData.stops && Array.isArray(trackData.stops)) {
         result.stops = trackData.stops.map((s: Record<string, unknown>) => ({
-          startDate: s.startDate, endDate: s.endDate, lat: s.latitude || s.lat, lng: s.longitude || s.lng, duration: s.duration || 0,
-        }))
+          startDate: s.startDate, endDate: s.endDate, lat: s.latitude ?? s.lat, lng: s.longitude ?? s.lng, duration: s.duration || 0,
+        })).filter((s: { lat: unknown; lng: unknown }) => s.lat != null && s.lng != null)
       }
       if (trackData.refuels && Array.isArray(trackData.refuels)) {
         result.refuels = trackData.refuels.map((r: Record<string, unknown>) => ({
-          startDate: r.startDate, endDate: r.endDate, volume: r.volume || r.fuelDiff, lat: r.latitude || r.lat, lng: r.longitude || r.lng,
-        }))
+          startDate: r.startDate, endDate: r.endDate, volume: r.volume || r.fuelDiff, lat: r.latitude ?? r.lat, lng: r.longitude ?? r.lng,
+        })).filter((r: { lat: unknown; lng: unknown }) => r.lat != null && r.lng != null)
       }
       if (trackData.plums && Array.isArray(trackData.plums)) {
         result.plums = trackData.plums.map((p: Record<string, unknown>) => ({
-          startDate: p.startDate, endDate: p.endDate, volume: p.volume || p.fuelDiff, lat: p.latitude || p.lat, lng: p.longitude || p.lng,
-        }))
+          startDate: p.startDate, endDate: p.endDate, volume: p.volume || p.fuelDiff, lat: p.latitude ?? p.lat, lng: p.longitude ?? p.lng,
+        })).filter((p: { lat: unknown; lng: unknown }) => p.lat != null && p.lng != null)
       }
       return NextResponse.json(result)
     }

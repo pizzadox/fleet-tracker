@@ -263,23 +263,27 @@ export default function TrackerMap({ trackers, trackPoints, trackData, onMarkerC
     if (trackData && trackData.trips && trackData.trips.length > 0) {
       // Render each trip segment with speed-colored segments
       for (const trip of trackData.trips) {
-        if (!trip.points || trip.points.length < 2) continue
+        // Filter out points without valid coordinates
+        const validPoints = (trip.points || []).filter((p: TripPoint) => p.lat != null && p.lng != null && isFinite(p.lat) && isFinite(p.lng))
+        if (validPoints.length < 2) continue
 
         // Draw colored segments based on speed
-        for (let i = 1; i < trip.points.length; i++) {
-          const prev = trip.points[i - 1]
-          const curr = trip.points[i]
+        for (let i = 1; i < validPoints.length; i++) {
+          const prev = validPoints[i - 1]
+          const curr = validPoints[i]
           const avgSpeed = (prev.speed + curr.speed) / 2
           const color = speedToColor(avgSpeed)
 
-          L.polyline(
-            [[prev.lat, prev.lng], [curr.lat, curr.lng]],
-            { color, weight: 5, opacity: 0.85, lineCap: 'round', lineJoin: 'round' }
-          ).addTo(map)
+          try {
+            L.polyline(
+              [[prev.lat, prev.lng], [curr.lat, curr.lng]],
+              { color, weight: 5, opacity: 0.85, lineCap: 'round', lineJoin: 'round' }
+            ).addTo(map)
+          } catch { /* skip invalid segment */ }
         }
 
         // Trip start marker (green circle with "A")
-        const firstPoint = trip.points[0]
+        const firstPoint = validPoints[0]
         const startIcon = L.divIcon({
           className: 'track-marker',
           html: `<div style="
@@ -294,19 +298,21 @@ export default function TrackerMap({ trackers, trackPoints, trackData, onMarkerC
           iconSize: [30, 30],
           iconAnchor: [15, 15],
         })
-        L.marker([firstPoint.lat, firstPoint.lng], { icon: startIcon })
-          .addTo(map)
-          .bindPopup(`
-            <div style="font-family: system-ui; font-size: 12px; min-width: 180px;">
-              <div style="font-weight: 700; color: #22c55e; margin-bottom: 4px;">🟢 Начало поездки</div>
-              <div>⏱ ${formatTime(trip.startDate)}</div>
-              <div>📅 ${formatDateTime(trip.startDate)}</div>
-              ${trip.distance ? `<div>📏 ${trip.distance.toFixed(1)} км</div>` : ''}
-            </div>
-          `, { className: 'track-popup' })
+        try {
+          L.marker([firstPoint.lat, firstPoint.lng], { icon: startIcon })
+            .addTo(map)
+            .bindPopup(`
+              <div style="font-family: system-ui; font-size: 12px; min-width: 180px;">
+                <div style="font-weight: 700; color: #22c55e; margin-bottom: 4px;">🟢 Начало поездки</div>
+                <div>⏱ ${formatTime(trip.startDate)}</div>
+                <div>📅 ${formatDateTime(trip.startDate)}</div>
+                ${trip.distance ? `<div>📏 ${trip.distance.toFixed(1)} км</div>` : ''}
+              </div>
+            `, { className: 'track-popup' })
+        } catch { /* skip invalid marker */ }
 
         // Trip end marker (red circle with "B")
-        const lastPoint = trip.points[trip.points.length - 1]
+        const lastPoint = validPoints[validPoints.length - 1]
         const endIcon = L.divIcon({
           className: 'track-marker',
           html: `<div style="
@@ -321,23 +327,25 @@ export default function TrackerMap({ trackers, trackPoints, trackData, onMarkerC
           iconSize: [30, 30],
           iconAnchor: [15, 15],
         })
-        L.marker([lastPoint.lat, lastPoint.lng], { icon: endIcon })
-          .addTo(map)
-          .bindPopup(`
-            <div style="font-family: system-ui; font-size: 12px; min-width: 180px;">
-              <div style="font-weight: 700; color: #ef4444; margin-bottom: 4px;">🔴 Конец поездки</div>
-              <div>⏱ ${formatTime(trip.endDate)}</div>
-              <div>📅 ${formatDateTime(trip.endDate)}</div>
-              <div>🏁 Скорость: ${lastPoint.speed} км/ч</div>
-              ${trip.distance ? `<div>📏 ${trip.distance.toFixed(1)} км</div>` : ''}
-            </div>
-          `, { className: 'track-popup' })
+        try {
+          L.marker([lastPoint.lat, lastPoint.lng], { icon: endIcon })
+            .addTo(map)
+            .bindPopup(`
+              <div style="font-family: system-ui; font-size: 12px; min-width: 180px;">
+                <div style="font-weight: 700; color: #ef4444; margin-bottom: 4px;">🔴 Конец поездки</div>
+                <div>⏱ ${formatTime(trip.endDate)}</div>
+                <div>📅 ${formatDateTime(trip.endDate)}</div>
+                <div>🏁 Скорость: ${lastPoint.speed} км/ч</div>
+                ${trip.distance ? `<div>📏 ${trip.distance.toFixed(1)} км</div>` : ''}
+              </div>
+            `, { className: 'track-popup' })
+        } catch { /* skip invalid marker */ }
 
         // Add direction arrows along the track every N points
-        const arrowInterval = Math.max(1, Math.floor(trip.points.length / 8))
-        for (let i = arrowInterval; i < trip.points.length - 1; i += arrowInterval) {
-          const p = trip.points[i]
-          const next = trip.points[Math.min(i + 1, trip.points.length - 1)]
+        const arrowInterval = Math.max(1, Math.floor(validPoints.length / 8))
+        for (let i = arrowInterval; i < validPoints.length - 1; i += arrowInterval) {
+          const p = validPoints[i]
+          const next = validPoints[Math.min(i + 1, validPoints.length - 1)]
           const angle = Math.atan2(next.lng - p.lng, next.lat - p.lat) * (180 / Math.PI)
 
           const arrowIcon = L.divIcon({
@@ -351,17 +359,22 @@ export default function TrackerMap({ trackers, trackPoints, trackData, onMarkerC
             iconSize: [16, 16],
             iconAnchor: [8, 8],
           })
-          L.marker([p.lat, p.lng], { icon: arrowIcon, interactive: false }).addTo(map)
+          try {
+            L.marker([p.lat, p.lng], { icon: arrowIcon, interactive: false }).addTo(map)
+          } catch { /* skip invalid marker */ }
         }
 
         // Collect bounds
-        const tripBounds = L.latLngBounds(trip.points.map(p => [p.lat, p.lng]))
-        allBounds.push(tripBounds)
+        try {
+          const tripBounds = L.latLngBounds(validPoints.map(p => [p.lat, p.lng] as [number, number]))
+          allBounds.push(tripBounds)
+        } catch { /* skip invalid bounds */ }
       }
 
       // Render parkings (blue P markers)
       if (trackData.parkings && trackData.parkings.length > 0) {
         for (const parking of trackData.parkings) {
+          if (parking.lat == null || parking.lng == null || !isFinite(parking.lat) || !isFinite(parking.lng)) continue
           const parkingIcon = L.divIcon({
             className: 'parking-marker',
             html: `<div style="
@@ -376,25 +389,27 @@ export default function TrackerMap({ trackers, trackPoints, trackData, onMarkerC
             iconSize: [28, 28],
             iconAnchor: [14, 14],
           })
-          L.marker([parking.lat, parking.lng], { icon: parkingIcon })
-            .addTo(map)
-            .bindPopup(`
-              <div style="font-family: system-ui; font-size: 12px; min-width: 180px;">
-                <div style="font-weight: 700; color: #3b82f6; margin-bottom: 4px;">🅿️ Стоянка</div>
-                <div>⏱ Длительность: ${formatDuration(parking.duration)}</div>
-                <div>📅 С: ${formatDateTime(parking.startDate)}</div>
-                <div>📅 По: ${formatDateTime(parking.endDate)}</div>
-                ${parking.ignitionTime != null && parking.ignitionTime > 0 ? `<div>🔑 Моточасы: ${formatDuration(parking.ignitionTime)}</div>` : ''}
-              </div>
-            `, { className: 'track-popup' })
-
-          allBounds.push(L.latLngBounds([[parking.lat, parking.lng], [parking.lat, parking.lng]]))
+          try {
+            L.marker([parking.lat, parking.lng], { icon: parkingIcon })
+              .addTo(map)
+              .bindPopup(`
+                <div style="font-family: system-ui; font-size: 12px; min-width: 180px;">
+                  <div style="font-weight: 700; color: #3b82f6; margin-bottom: 4px;">🅿️ Стоянка</div>
+                  <div>⏱ Длительность: ${formatDuration(parking.duration)}</div>
+                  <div>📅 С: ${formatDateTime(parking.startDate)}</div>
+                  <div>📅 По: ${formatDateTime(parking.endDate)}</div>
+                  ${parking.ignitionTime != null && parking.ignitionTime > 0 ? `<div>🔑 Моточасы: ${formatDuration(parking.ignitionTime)}</div>` : ''}
+                </div>
+              `, { className: 'track-popup' })
+            allBounds.push(L.latLngBounds([[parking.lat, parking.lng], [parking.lat, parking.lng]]))
+          } catch { /* skip invalid parking */ }
         }
       }
 
       // Render stops (orange markers)
       if (trackData.stops && trackData.stops.length > 0) {
         for (const stop of trackData.stops) {
+          if (stop.lat == null || stop.lng == null || !isFinite(stop.lat) || !isFinite(stop.lng)) continue
           const stopIcon = L.divIcon({
             className: 'stop-marker',
             html: `<div style="
@@ -409,18 +424,19 @@ export default function TrackerMap({ trackers, trackPoints, trackData, onMarkerC
             iconSize: [22, 22],
             iconAnchor: [11, 11],
           })
-          L.marker([stop.lat, stop.lng], { icon: stopIcon })
-            .addTo(map)
-            .bindPopup(`
-              <div style="font-family: system-ui; font-size: 12px; min-width: 180px;">
-                <div style="font-weight: 700; color: #f97316; margin-bottom: 4px;">⏸ Остановка</div>
-                <div>⏱ Длительность: ${formatDuration(stop.duration)}</div>
-                <div>📅 С: ${formatDateTime(stop.startDate)}</div>
-                <div>📅 По: ${formatDateTime(stop.endDate)}</div>
-              </div>
-            `, { className: 'track-popup' })
-
-          allBounds.push(L.latLngBounds([[stop.lat, stop.lng], [stop.lat, stop.lng]]))
+          try {
+            L.marker([stop.lat, stop.lng], { icon: stopIcon })
+              .addTo(map)
+              .bindPopup(`
+                <div style="font-family: system-ui; font-size: 12px; min-width: 180px;">
+                  <div style="font-weight: 700; color: #f97316; margin-bottom: 4px;">⏸ Остановка</div>
+                  <div>⏱ Длительность: ${formatDuration(stop.duration)}</div>
+                  <div>📅 С: ${formatDateTime(stop.startDate)}</div>
+                  <div>📅 По: ${formatDateTime(stop.endDate)}</div>
+                </div>
+              `, { className: 'track-popup' })
+            allBounds.push(L.latLngBounds([[stop.lat, stop.lng], [stop.lat, stop.lng]]))
+          } catch { /* skip invalid stop */ }
         }
       }
 
