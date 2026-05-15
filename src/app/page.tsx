@@ -195,6 +195,11 @@ interface Trip {
   status: string; fuelStart?: number | null; fuelEnd?: number | null;
   mileageStart?: number | null; mileageEnd?: number | null;
   cost?: number | null; revenue?: number | null; notes?: string | null;
+  // ── Аналитика трекера ──
+  avgSpeed?: number | null; maxSpeed?: number | null; fuelConsumed?: number | null;
+  tripDuration?: number | null; engineHours?: number | null; avgFuelRate?: number | null;
+  refuelVolume?: number | null; plumVolume?: number | null; idleTime?: number | null;
+  parkingsDuration?: number | null; trackerSnapshot?: string | null;
   createdAt: string; updatedAt: string;
   equipment?: { id: string; name: string; registrationNum?: string | null; brand?: string | null; model?: string | null };
   crew?: { id: string; name: string; members?: { fullName: string; role: string }[] } | null;
@@ -894,7 +899,7 @@ export default function Home() {
       <StageFormDialog open={stageFormOpen} onOpenChange={setStageFormOpen} repairId={stageFormRepairId} editData={stageFormEdit} saving={stageFormSaving} setSaving={setStageFormSaving} onSaved={() => { setStageFormOpen(false); if (selectedRepair) { fetchRepairDetail(selectedRepair.id); fetchRepairs(); if (selectedEq) fetchEquipmentDetail(selectedEq.id) } }} />
       <PhotoUploadDialog open={!!photoUploadEq} onOpenChange={(v) => { if (!v) setPhotoUploadEq(null) }} targetId={photoUploadEq || ''} targetType="equipment" onUploaded={() => { setPhotoUploadEq(null); if (selectedEq) fetchEquipmentDetail(selectedEq.id); fetchAll() }} />
       <RepairPhotoUploadDialog open={!!photoUploadRepair} onOpenChange={(v) => { if (!v) setPhotoUploadRepair(null) }} targetId={photoUploadRepair || ''} stages={selectedRepair?.stages || []} onUploaded={() => { setPhotoUploadRepair(null); if (selectedRepair) fetchRepairDetail(selectedRepair.id) }} />
-      <TripDetailDialog open={tripDetailOpen} onOpenChange={setTripDetailOpen} trip={selectedTrip} loading={tripDetailLoading} crews={crews} onEdit={(t) => { setTripDetailOpen(false); setTripFormEdit(t); setTripFormEquipmentId(t.equipmentId); setTripFormOpen(true) }} onDelete={(t) => { setTripDetailOpen(false); setDeleteDialog({ open: true, type: 'trip', id: t.id, name: t.route }) }} onStart={async (t) => { try { const res = await fetch(`/api/trips/${t.id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status: 'in_progress' }) }); if (!res.ok) throw new Error(); toast.success('Рейс начат'); fetchTripDetail(t.id); fetchAll() } catch { toast.error('Ошибка') } }} onComplete={async (t) => { try { const res = await fetch(`/api/trips/${t.id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status: 'completed', endDate: new Date().toISOString() }) }); if (!res.ok) throw new Error(); toast.success('Рейс завершён'); fetchTripDetail(t.id); fetchAll() } catch { toast.error('Ошибка завершения рейса') } }} onRefresh={() => selectedTrip && fetchTripDetail(selectedTrip.id)} />
+      <TripDetailDialog open={tripDetailOpen} onOpenChange={setTripDetailOpen} trip={selectedTrip} loading={tripDetailLoading} crews={crews} onEdit={(t) => { setTripDetailOpen(false); setTripFormEdit(t); setTripFormEquipmentId(t.equipmentId); setTripFormOpen(true) }} onDelete={(t) => { setTripDetailOpen(false); setDeleteDialog({ open: true, type: 'trip', id: t.id, name: t.route }) }} onStart={async (t) => { try { const res = await fetch(`/api/trips/${t.id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status: 'in_progress' }) }); if (!res.ok) throw new Error(); toast.success('Рейс начат'); fetchTripDetail(t.id); fetchAll() } catch { toast.error('Ошибка') } }} onComplete={async (t) => { try { const res = await fetch(`/api/trips/${t.id}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'complete' }) }); if (!res.ok) { const errData = await res.json().catch(() => null); throw new Error(errData?.error || 'Ошибка') } toast.success('Рейс завершён'); fetchTripDetail(t.id); fetchAll() } catch (e: any) { toast.error(e.message || 'Ошибка завершения рейса') } }} onRefresh={() => selectedTrip && fetchTripDetail(selectedTrip.id)} />
       <TripFormDialog open={tripFormOpen} onOpenChange={setTripFormOpen} editData={tripFormEdit} equipmentId={tripFormEquipmentId} equipmentList={equipment} crews={crews} saving={tripFormSaving} setSaving={setTripFormSaving} onSaved={() => { setTripFormOpen(false); fetchAll() }} />
       <CrewFormDialog open={crewFormOpen} onOpenChange={setCrewFormOpen} editData={crewFormEdit} saving={crewFormSaving} setSaving={setCrewFormSaving} onSaved={() => { setCrewFormOpen(false); fetchAll() }} employees={employees} />
       <EmployeeDetailSheet open={empDetailOpen} onOpenChange={setEmpDetailOpen} employee={selectedEmp} loading={empDetailLoading} crews={crews} onEdit={(emp) => { setEmpDetailOpen(false); setEmpFormEdit(emp); setEmpFormOpen(true) }} onDelete={(emp) => { setEmpDetailOpen(false); setDeleteDialog({ open: true, type: 'employee', id: emp.id, name: emp.fullName }) }} onRefresh={() => selectedEmp && fetchEmployeeDetail(selectedEmp.id)} />
@@ -3217,10 +3222,19 @@ function TripsTab({ trips, equipment, crews, onOpenDetail, onAdd, onDelete, onAd
               <CardContent className="px-3 pb-3 pt-0 space-y-1.5">
                 <Separator />
                 <div className="grid grid-cols-2 gap-x-4 gap-y-0.5 text-[11px]">
-                  <div><span className="text-muted-foreground">Начало:</span> <span className="font-medium">{formatDate(t.startDate)}</span></div>
+                  <div><span className="text-muted-foreground">Начало:</span> <span className="font-medium">{formatDateTime(t.startDate)}</span></div>
                   <div><span className="text-muted-foreground">Груз:</span> <span className="font-medium truncate">{t.cargo || '—'}</span></div>
                   <div><span className="text-muted-foreground">Расстояние:</span> <span className="font-medium">{t.distance != null ? `${t.distance} км` : '—'}</span></div>
                   <div><span className="text-muted-foreground">Экипаж:</span> <span className="font-medium truncate">{t.crew?.name || '—'}</span></div>
+                  {t.status === 'completed' && t.fuelConsumed != null && (
+                    <div><span className="text-muted-foreground">Топливо:</span> <span className="font-medium text-amber-600 dark:text-amber-400">{t.fuelConsumed} л</span></div>
+                  )}
+                  {t.status === 'completed' && t.mileageStart != null && t.mileageEnd != null && (
+                    <div><span className="text-muted-foreground">Пробег:</span> <span className="font-medium text-emerald-600 dark:text-emerald-400">{(t.mileageEnd - t.mileageStart).toLocaleString('ru-RU')} км</span></div>
+                  )}
+                  {t.endDate && (
+                    <div><span className="text-muted-foreground">Окончание:</span> <span className="font-medium">{formatDateTime(t.endDate)}</span></div>
+                  )}
                 </div>
                 {t.cost != null && <p className="text-[10px] text-muted-foreground">Стоимость: {formatPrice(t.cost)} {t.revenue != null ? `• Доход: ${formatPrice(t.revenue)}` : ''}</p>}
                 <div className="flex gap-1 pt-1" onClick={e => e.stopPropagation()}>
@@ -3246,13 +3260,64 @@ function TripDetailDialog({ open, onOpenChange, trip, loading, crews, onEdit, on
   onStart: (t: Trip) => void; onComplete: (t: Trip) => void;
   onRefresh: () => void;
 }) {
+  const [trackData, setTrackData] = useState<Record<string, unknown> | null>(null)
+  const [trackLoading, setTrackLoading] = useState(false)
+  const [trackError, setTrackError] = useState<string | null>(null)
+
   if (!trip) return null
   const t = trip
   const crew = crews.find(c => c.id === t.crewId)
+  const isCompleted = t.status === 'completed'
+
+  // Parse tracker snapshot
+  let trackerSnapshot: Record<string, unknown> | null = null
+  if (t.trackerSnapshot) {
+    try { trackerSnapshot = JSON.parse(t.trackerSnapshot) } catch { /* ignore */ }
+  }
+
+  // Duration formatter
+  const fmtDur = (sec: number | null | undefined) => {
+    if (sec == null) return null
+    const h = Math.floor(sec / 3600)
+    const m = Math.floor((sec % 3600) / 60)
+    const s = Math.floor(sec % 60)
+    if (h > 0) return `${h} ч ${m} мин`
+    if (m > 0) return `${m} мин ${s} сек`
+    return `${s} сек`
+  }
+
+  // Calculated distance from mileage
+  const calcDistKm = (t.mileageStart != null && t.mileageEnd != null) ? t.mileageEnd - t.mileageStart : null
+  const displayDist = t.distance ?? calcDistKm
+
+  // Load track data for completed trips
+  const loadTrack = async () => {
+    if (!t.endDate) return
+    setTrackLoading(true)
+    setTrackError(null)
+    try {
+      const res = await fetch(`/api/trips/${t.id}?action=track`)
+      if (!res.ok) {
+        const errData = await res.json().catch(() => null)
+        throw new Error(errData?.error || 'Ошибка загрузки трека')
+      }
+      const data = await res.json()
+      setTrackData(data)
+    } catch (e: any) {
+      setTrackError(e.message || 'Ошибка загрузки трека')
+    }
+    setTrackLoading(false)
+  }
+
+  // Reset track data when trip changes
+  useEffect(() => {
+    setTrackData(null)
+    setTrackError(null)
+  }, [t.id])
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-2xl">
+      <DialogContent className="sm:max-w-3xl max-h-[90vh]">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2"><Route className="size-4" />{t.route}</DialogTitle>
           <DialogDescription className="flex items-center gap-2 flex-wrap">
@@ -3269,16 +3334,22 @@ function TripDetailDialog({ open, onOpenChange, trip, loading, crews, onEdit, on
                 <DetailRow label="Маршрут" value={t.route} />
                 <DetailRow label="Пункт отправления" value={t.startPoint} />
                 <DetailRow label="Пункт назначения" value={t.endPoint} />
-                <DetailRow label="Расстояние" value={t.distance != null ? `${t.distance} км` : undefined} />
+                <DetailRow label="Расстояние" value={displayDist != null ? `${displayDist.toFixed(1)} км` : undefined} />
               </DetailSection>
               <DetailSection title="Груз" icon={<Package className="size-3.5" />}>
                 <DetailRow label="Груз" value={t.cargo} />
                 <DetailRow label="Вес (т)" value={t.cargoWeight?.toString()} />
               </DetailSection>
               <DetailSection title="Время" icon={<Calendar className="size-3.5" />}>
-                <DetailRow label="Дата начала" value={formatDate(t.startDate)} />
-                <DetailRow label="Планируемое окончание" value={formatDate(t.plannedEndDate)} />
-                <DetailRow label="Дата окончания" value={formatDate(t.endDate)} />
+                <DetailRow label="Начало рейса" value={formatDateTime(t.startDate)} />
+                <DetailRow label="Планируемое окончание" value={formatDateTime(t.plannedEndDate)} />
+                <DetailRow label="Окончание рейса" value={formatDateTime(t.endDate)} />
+                {isCompleted && t.tripDuration != null && (
+                  <DetailRow label="Длительность" value={fmtDur(t.tripDuration)} />
+                )}
+                {isCompleted && t.parkingsDuration != null && (
+                  <DetailRow label="Время стоянок" value={fmtDur(t.parkingsDuration)} />
+                )}
               </DetailSection>
               <DetailSection title="Экипаж" icon={<Users className="size-3.5" />}>
                 <DetailRow label="Экипаж" value={crew?.name || t.crew?.name} />
@@ -3295,12 +3366,95 @@ function TripDetailDialog({ open, onOpenChange, trip, loading, crews, onEdit, on
                   </div>
                 )}
               </DetailSection>
+
+              {/* ── ТОПЛИВО И ПРОБЕГ ── */}
               <DetailSection title="Топливо и пробег" icon={<Fuel className="size-3.5" />}>
                 <DetailRow label="Топливо на старте (л)" value={t.fuelStart?.toString()} />
                 <DetailRow label="Топливо на финише (л)" value={t.fuelEnd?.toString()} />
-                <DetailRow label="Пробег на старте" value={t.mileageStart?.toLocaleString('ru-RU')} />
-                <DetailRow label="Пробег на финише" value={t.mileageEnd?.toLocaleString('ru-RU')} />
+                {isCompleted && t.fuelConsumed != null && (
+                  <DetailRow label="Израсходовано (л)" value={
+                    <span className="font-semibold text-amber-600 dark:text-amber-400">{t.fuelConsumed} л</span> as any
+                  } />
+                )}
+                {isCompleted && t.avgFuelRate != null && (
+                  <DetailRow label="Средний расход (л/100км)" value={`${t.avgFuelRate}`} />
+                )}
+                {isCompleted && t.refuelVolume != null && t.refuelVolume > 0 && (
+                  <DetailRow label="Заправки (л)" value={`${t.refuelVolume}`} />
+                )}
+                {isCompleted && t.plumVolume != null && t.plumVolume > 0 && (
+                  <DetailRow label="Сливы (л)" value={
+                    <span className="font-semibold text-red-600 dark:text-red-400">{t.plumVolume}</span> as any
+                  } />
+                )}
+                <DetailRow label="Пробег на старте (км)" value={t.mileageStart?.toLocaleString('ru-RU')} />
+                <DetailRow label="Пробег на финише (км)" value={t.mileageEnd?.toLocaleString('ru-RU')} />
+                {(t.mileageStart != null && t.mileageEnd != null) && (
+                  <DetailRow label="Пройдено (км)" value={
+                    <span className="font-semibold text-emerald-600 dark:text-emerald-400">{(t.mileageEnd! - t.mileageStart!).toLocaleString('ru-RU')} км</span> as any
+                  } />
+                )}
               </DetailSection>
+
+              {/* ── АНАЛИТИКА ТРЕКЕРА (для завершённых рейсов) ── */}
+              {isCompleted && (
+                <DetailSection title="Аналитика трекера" icon={<Gauge className="size-3.5" />}>
+                  {t.avgSpeed != null && <DetailRow label="Средняя скорость (км/ч)" value={t.avgSpeed.toString()} />}
+                  {t.maxSpeed != null && <DetailRow label="Макс. скорость (км/ч)" value={t.maxSpeed.toString()} />}
+                  {t.engineHours != null && <DetailRow label="Моточасы" value={t.engineHours.toString()} />}
+                  {t.idleTime != null && <DetailRow label="Холостой ход" value={fmtDur(t.idleTime)} />}
+                  {!t.avgSpeed && !t.maxSpeed && !t.engineHours && !t.fuelConsumed && !trackerSnapshot && (
+                    <p className="text-xs text-muted-foreground col-span-2">Данные трекера отсутствуют. Завершите рейс с подключённым трекером для получения аналитики.</p>
+                  )}
+                </DetailSection>
+              )}
+
+              {/* ── ДАННЫЕ ДАТЧИКОВ ИЗ СНАПШОТА ── */}
+              {isCompleted && trackerSnapshot && (trackerSnapshot as any).sensors && (trackerSnapshot as any).sensors.length > 0 && (
+                <DetailSection title="Датчики (на момент завершения)" icon={<CircuitBoard className="size-3.5" />}>
+                  <div className="col-span-2">
+                    <div className="grid grid-cols-2 gap-1">
+                      {(trackerSnapshot as any).sensors.map((s: any, i: number) => (
+                        <div key={i} className="flex items-center gap-1.5 text-[10px] py-0.5 px-1.5 rounded bg-muted/50">
+                          <span className="text-muted-foreground">{s.name || s.type}</span>
+                          <span className="font-medium ml-auto">{s.value != null ? `${s.value}${s.unit ? ' ' + s.unit : ''}` : '—'}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </DetailSection>
+              )}
+
+              {/* ── ТРЕК НА КАРТЕ ── */}
+              {isCompleted && t.endDate && (
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <h4 className="text-xs font-semibold flex items-center gap-1.5"><Map className="size-3.5" />Трек на карте</h4>
+                    {!trackData && !trackLoading && (
+                      <Button variant="outline" size="sm" className="h-7 text-[10px] gap-1" onClick={loadTrack}>
+                        <Navigation className="size-3" />Загрузить трек
+                      </Button>
+                    )}
+                  </div>
+                  {trackLoading && (
+                    <div className="flex items-center justify-center h-32 bg-muted/30 rounded-lg">
+                      <Loader2 className="size-4 animate-spin text-muted-foreground" />
+                      <span className="ml-2 text-xs text-muted-foreground">Загрузка трека...</span>
+                    </div>
+                  )}
+                  {trackError && (
+                    <div className="flex items-center gap-2 p-3 bg-red-50 dark:bg-red-900/20 rounded-lg text-xs text-red-600 dark:text-red-400">
+                      <AlertTriangle className="size-3.5 shrink-0" />{trackError}
+                    </div>
+                  )}
+                  {trackData && !trackLoading && (
+                    <div className="h-64 rounded-lg overflow-hidden border">
+                      <TrackerMap trackers={[]} trackData={trackData as any} />
+                    </div>
+                  )}
+                </div>
+              )}
+
               <DetailSection title="Финансы" icon={<DollarSign className="size-3.5" />}>
                 <DetailRow label="Стоимость" value={formatPrice(t.cost)} />
                 <DetailRow label="Доход" value={formatPrice(t.revenue)} />
@@ -3342,16 +3496,16 @@ function TripFormDialog({ open, onOpenChange, editData, equipmentId, equipmentLi
       setForm({
         equipmentId: editData.equipmentId, route: editData.route || '', startPoint: editData.startPoint || '', endPoint: editData.endPoint || '',
         cargo: editData.cargo || '', cargoWeight: editData.cargoWeight?.toString() || '', distance: editData.distance?.toString() || '',
-        startDate: editData.startDate ? new Date(editData.startDate).toISOString().split('T')[0] : new Date().toISOString().split('T')[0],
-        endDate: editData.endDate ? new Date(editData.endDate).toISOString().split('T')[0] : '',
-        plannedEndDate: editData.plannedEndDate ? new Date(editData.plannedEndDate).toISOString().split('T')[0] : '',
+        startDate: editData.startDate ? new Date(editData.startDate).toISOString().slice(0, 16) : new Date().toISOString().slice(0, 16),
+        endDate: editData.endDate ? new Date(editData.endDate).toISOString().slice(0, 16) : '',
+        plannedEndDate: editData.plannedEndDate ? new Date(editData.plannedEndDate).toISOString().slice(0, 16) : '',
         status: editData.status || 'planned', crewId: editData.crewId || '',
         fuelStart: editData.fuelStart?.toString() || '', fuelEnd: editData.fuelEnd?.toString() || '',
         mileageStart: editData.mileageStart?.toString() || '', mileageEnd: editData.mileageEnd?.toString() || '',
         cost: editData.cost?.toString() || '', revenue: editData.revenue?.toString() || '', notes: editData.notes || '',
       })
     } else {
-      setForm({ equipmentId: equipmentId || '', startDate: new Date().toISOString().split('T')[0], status: 'planned' })
+      setForm({ equipmentId: equipmentId || '', startDate: new Date().toISOString().slice(0, 16), status: 'planned' })
     }
   }, [editData, equipmentId, open])
 
@@ -3390,9 +3544,9 @@ function TripFormDialog({ open, onOpenChange, editData, equipmentId, equipmentLi
             <div><Label className="text-xs">Груз</Label><Input value={f('cargo')} onChange={e => setF('cargo', e.target.value)} /></div>
             <div><Label className="text-xs">Вес груза (т)</Label><Input type="number" value={f('cargoWeight')} onChange={e => setF('cargoWeight', e.target.value)} /></div>
             <div><Label className="text-xs">Расстояние (км)</Label><Input type="number" value={f('distance')} onChange={e => setF('distance', e.target.value)} /></div>
-            <div><Label className="text-xs">Дата начала</Label><Input type="date" value={f('startDate')} onChange={e => setF('startDate', e.target.value)} /></div>
-            <div><Label className="text-xs">Планируемое окончание</Label><Input type="date" value={f('plannedEndDate')} onChange={e => setF('plannedEndDate', e.target.value)} /></div>
-            <div><Label className="text-xs">Дата окончания</Label><Input type="date" value={f('endDate')} onChange={e => setF('endDate', e.target.value)} /></div>
+            <div><Label className="text-xs">Дата и время начала</Label><Input type="datetime-local" value={f('startDate')} onChange={e => setF('startDate', e.target.value)} /></div>
+            <div><Label className="text-xs">Планируемое окончание</Label><Input type="datetime-local" value={f('plannedEndDate')} onChange={e => setF('plannedEndDate', e.target.value)} /></div>
+            <div><Label className="text-xs">Дата и время окончания</Label><Input type="datetime-local" value={f('endDate')} onChange={e => setF('endDate', e.target.value)} /></div>
             <div><Label className="text-xs">Топливо на старте (л)</Label><Input type="number" value={f('fuelStart')} onChange={e => setF('fuelStart', e.target.value)} /></div>
             <div><Label className="text-xs">Топливо на финише (л)</Label><Input type="number" value={f('fuelEnd')} onChange={e => setF('fuelEnd', e.target.value)} /></div>
             <div><Label className="text-xs">Пробег на старте</Label><Input type="number" value={f('mileageStart')} onChange={e => setF('mileageStart', e.target.value)} /></div>

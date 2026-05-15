@@ -545,3 +545,32 @@ Stage Summary:
 - API автоматически заполняет данные из профиля сотрудника при указании employeeId
 - UI позволяет выбирать сотрудников из списка или вводить ФИО вручную
 - Визуальная разница между привязанными и вручную введёнными членами экипажа
+---
+Task ID: 1
+Agent: main
+Task: Связать маршруты рейсов с техникой и треком, завершение рейса с фиксацией данных датчиков
+
+Work Log:
+- Изучена текущая Prisma-схема и UI рейсов (Trip model, TripDetailDialog, TripFormDialog)
+- Добавлены поля аналитики к модели Trip: avgSpeed, maxSpeed, fuelConsumed, tripDuration, engineHours, avgFuelRate, refuelVolume, plumVolume, idleTime, parkingsDuration, trackerSnapshot
+- Применена миграция (prisma db push) и сгенерирован клиент
+- Изначально созданы вложенные API-маршруты /api/trips/[id]/complete и /api/trips/[id]/track, но они не работали в standalone-режиме (404)
+- Переработана архитектура: добавлены обработчики POST (action=complete) и GET (action=track) в существующий маршрут /api/trips/[id]
+- Завершение рейса (action=complete) захватывает: топливо, пробег, статистику из Axenta.cloud, snapshot датчиков
+- Получение трека (action=track) запрашивает данные из Axenta.cloud для периода рейса
+- Обновлён TripDetailDialog: добавлены секции "Аналитика трекера", "Датчики (snapshot)", "Трек на карте" с мини-картой
+- Обновлён TripFormDialog: datetime-local вместо date для дат
+- Обновлён TripDetailDialog: formatDateTime вместо formatDate, отображение длительности, стоянок
+- Обновлён TripDetailDialog: расчет пройденного расстояния из mileageStart/mileageEnd
+- Обновлён TripDetailDialog: подсветка расхода топлива (amber), сливов (red), пробега (emerald)
+- Обновлён обработчик onComplete в page.tsx: POST с action=complete
+- Обновлены карточки рейсов: показ топлива/пробега для завершённых, formatDateTime для дат
+- Чистая пересборка (rm -rf .next && next build)
+- Тестирование API: завершение рейса успешно захватывает данные трекера (avgSpeed=62, maxSpeed=108, tripDuration=27501, engineHours=7.7 и т.д.)
+
+Stage Summary:
+- Рейсы теперь связаны с техникой через equipmentId и с трекером через связку equipment->trackers
+- При завершении рейса автоматически фиксируются: топливо, пробег, скорость, моточасы, датчики
+- Дата окончания устанавливается с точным временем (datetime)
+- Для завершённых рейсов доступен просмотр: топлива, пробега, длительности, скорости, трека на карте
+- Трек загружается по кнопке "Загрузить трек" из Axenta.cloud

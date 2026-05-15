@@ -304,6 +304,18 @@ model Trip {
   cost            Float?   // Стоимость рейса
   revenue         Float?   // Доход от рейса
   notes           String?
+  // ── Аналитика трекера (заполняется при завершении рейса) ──
+  avgSpeed        Float?   // Средняя скорость (км/ч)
+  maxSpeed        Float?   // Максимальная скорость (км/ч)
+  fuelConsumed    Float?   // Израсходовано топлива (л)
+  tripDuration    Int?     // Длительность рейса (секунды)
+  engineHours     Float?   // Моточасы
+  avgFuelRate     Float?   // Средний расход (л/100км)
+  refuelVolume    Float?   // Заправки (л)
+  plumVolume      Float?   // Сливы (л)
+  idleTime        Int?     // Холостой ход (секунды)
+  parkingsDuration Int?    // Время стоянок (секунды)
+  trackerSnapshot String?  // JSON-снапшот данных трекера на момент завершения
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
