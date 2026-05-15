@@ -491,3 +491,24 @@ Stage Summary:
 - Решение: double-fork daemon (launch-server.py) — процесс усыновляется PID 1 и выживает между сессиями
 - Автоперезапуск: при падении node-сервера, python-daemon перезапускает его через 5 секунд
 - Файлы: launch-server.py, server-ctl.sh, обновлён .zscripts/dev.sh
+
+---
+Task ID: fix-static-404
+Agent: main
+Task: Исправить 404 ошибки статических файлов (CSS, JS, шрифты)
+
+Work Log:
+- Пользователь сообщил о 404 ошибках для всех статических ресурсов (CSS, JS, шрифты, favicon)
+- Обнаружил что .next/standalone/.next/static/ директория отсутствовала
+- Next.js standalone build НЕ включает статические файлы — их нужно копировать вручную
+- Скопировал .next/static -> .next/standalone/.next/static и public -> .next/standalone/public
+- Обновил launch-server.py: добавил функцию ensure_static_files() — копирует статику при каждом запуске
+- Обновил .zscripts/dev.sh: улучшено копирование с удалением старых файлов перед копированием
+- Создал favicon.svg в public/ (скопирован из logo.svg)
+- Перезапустил сервер через server-ctl.sh
+- Проверил все ресурсы: CSS, JS, шрифты, страница — все отдаются с HTTP 200
+
+Stage Summary:
+- Причина: Next.js standalone build не включает .next/static и public — требуется ручное копирование
+- Решение: автоматическое копирование в launch-server.py (ensure_static_files) и .zscripts/dev.sh
+- Все статические файлы теперь отдаются корректно (HTTP 200)

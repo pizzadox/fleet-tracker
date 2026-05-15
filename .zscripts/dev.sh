@@ -78,11 +78,20 @@ if [ ! -f ".next/standalone/server.js" ]; then
         log_step_end "next build"
 fi
 
-# Копировать статику для standalone сервера
+# Копировать статику и public для standalone сервера
+# Next.js standalone build не включает статические файлы — нужно копировать вручную
+log_step_start "Copying static assets"
 if [ -d ".next/static" ] && [ -d ".next/standalone/.next" ]; then
+        rm -rf .next/standalone/.next/static 2>/dev/null
         cp -r .next/static .next/standalone/.next/ 2>/dev/null || true
-        cp -r public .next/standalone/ 2>/dev/null || true
+        echo "[SETUP] Copied .next/static -> .next/standalone/.next/static"
 fi
+if [ -d "public" ] && [ -d ".next/standalone" ]; then
+        rm -rf .next/standalone/public 2>/dev/null
+        cp -r public .next/standalone/ 2>/dev/null || true
+        echo "[SETUP] Copied public -> .next/standalone/public"
+fi
+log_step_end "Copying static assets"
 
 log_step_start "Starting Next.js production server"
 echo "[SERVER] Starting production server daemon..."
