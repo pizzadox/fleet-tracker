@@ -3117,6 +3117,16 @@ function MapTab({ equipment, onSync, onOpenDetail }: {
   } | null>(null)
   const [selectedTripIndex, setSelectedTripIndex] = useState<number | null>(null)
 
+  // ─── Report export state ───────────────────────────────────
+  const [reportOpen, setReportOpen] = useState(false)
+  const [reportEqIds, setReportEqIds] = useState<string[]>([])
+  const [reportDateFrom, setReportDateFrom] = useState<string>('')
+  const [reportDateTo, setReportDateTo] = useState<string>('')
+  const [reportSensorTypes, setReportSensorTypes] = useState<string[]>([])
+  const [reportIncludeStats, setReportIncludeStats] = useState(true)
+  const [reportIncludeTracks, setReportIncludeTracks] = useState(true)
+  const [reportLoading, setReportLoading] = useState(false)
+
   // Equipment that has trackers for track selection
   const trackedEquipment = useMemo(() =>
     equipment.filter(e => e.trackers && e.trackers.length > 0),
@@ -3289,6 +3299,85 @@ function MapTab({ equipment, onSync, onOpenDetail }: {
     setSelectedTripIndex(null)
   }
 
+  // ─── Report export ──────────────────────────────────────────
+  const applyReportDatePreset = (preset: string) => {
+    const now = new Date()
+    let from = new Date()
+    switch (preset) {
+      case 'Сегодня':
+        from = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+        break
+      case 'Вчера':
+        from = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1)
+        now.setDate(now.getDate() - 1); now.setHours(23, 59, 59)
+        break
+      case 'Неделя':
+        from = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 7)
+        break
+      case 'Месяц':
+        from = new Date(now.getFullYear(), now.getMonth() - 1, now.getDate())
+        break
+    }
+    setReportDateFrom(from.toISOString().slice(0, 16))
+    setReportDateTo(now.toISOString().slice(0, 16))
+  }
+
+  const exportReport = async () => {
+    if (reportEqIds.length === 0 || !reportDateFrom || !reportDateTo) {
+      toast.error('Выберите технику и период')
+      return
+    }
+    setReportLoading(true)
+    try {
+      const res = await fetch('/api/glonass/report', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          equipmentIds: reportEqIds,
+          startDate: new Date(reportDateFrom).toISOString(),
+          endDate: new Date(reportDateTo).toISOString(),
+          sensorTypes: reportSensorTypes.length > 0 ? reportSensorTypes : undefined,
+          includeStats: reportIncludeStats,
+          includeTrackSummary: reportIncludeTracks,
+        }),
+      })
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({ error: 'Ошибка' }))
+        throw new Error(errData.error || 'Ошибка генерации отчёта')
+      }
+      // Download the file
+      const blob = await res.blob()
+      const url = window.URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      const disposition = res.headers.get('Content-Disposition')
+      const match = disposition?.match(/filename="?(.+?)"?$/)
+      a.download = match ? decodeURIComponent(match[1]) : 'report.xlsx'
+      document.body.appendChild(a)
+      a.click()
+      a.remove()
+      window.URL.revokeObjectURL(url)
+      toast.success('Отчёт скачан')
+      setReportOpen(false)
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Ошибка экспорта отчёта')
+    }
+    setReportLoading(false)
+  }
+
+  // Collect all unique sensor types from equipment
+  const allSensorTypes = useMemo(() => {
+    const types = new Set<string>()
+    for (const eq of equipment) {
+      for (const tracker of eq.trackers || []) {
+        for (const s of tracker.sensorData || []) {
+          if (s.sensorType) types.add(s.sensorType)
+        }
+      }
+    }
+    return Array.from(types).sort()
+  }, [equipment])
+
   function formatDuration(seconds: number): string {
     const h = Math.floor(seconds / 3600)
     const m = Math.floor((seconds % 3600) / 60)
@@ -3457,6 +3546,9 @@ function MapTab({ equipment, onSync, onOpenDetail }: {
             <Button size="sm" variant={showTrackPanel ? 'default' : 'outline'} className="h-7 text-[11px] gap-1" onClick={() => setShowTrackPanel(!showTrackPanel)}>
               <Route className="size-3" />Трек
               {trackPoints.length > 0 && <span className="ml-0.5 bg-primary/20 rounded-full px-1.5 text-[9px]">{trackPoints.length}</span>}
+            </Button>
+            <Button size="sm" variant="outline" className="h-7 text-[11px] gap-1" onClick={() => { setReportEqIds(trackersForMap.map(t => t.equipmentId!).filter(Boolean)); setReportOpen(true) }}>
+              <FileText className="size-3" />Отчёт XLSX
             </Button>
             <Button size="sm" variant="outline" className="h-7 text-[11px] gap-1" disabled={syncing} onClick={async () => { setSyncing(true); await onSync(); setSyncing(false) }}>
               {syncing ? <Loader2 className="size-3 animate-spin" /> : <RefreshCw className="size-3" />}
@@ -3822,6 +3914,120 @@ function MapTab({ equipment, onSync, onOpenDetail }: {
             <Button size="sm" className="h-7 text-xs" onClick={addRule} disabled={savingRule || !newRuleEqId}>
               {savingRule ? <Loader2 className="size-3 animate-spin" /> : <Plus className="size-3" />}
               Добавить
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Report Export Dialog */}
+      <Dialog open={reportOpen} onOpenChange={setReportOpen}>
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2"><FileText className="size-4" />Экспорт отчёта XLSX</DialogTitle>
+            <DialogDescription>Выгрузка отчёта по датчикам и статистике за указанный период</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            {/* Equipment selection */}
+            <div>
+              <Label className="text-xs font-medium">Техника</Label>
+              <div className="mt-1 max-h-32 overflow-y-auto border rounded-md p-2 space-y-1">
+                {trackedEquipment.map(eq => (
+                  <label key={eq.id} className="flex items-center gap-2 text-xs cursor-pointer hover:bg-muted/50 rounded px-1.5 py-1">
+                    <input
+                      type="checkbox"
+                      checked={reportEqIds.includes(eq.id)}
+                      onChange={e => {
+                        if (e.target.checked) {
+                          setReportEqIds(prev => [...prev, eq.id])
+                        } else {
+                          setReportEqIds(prev => prev.filter(id => id !== eq.id))
+                        }
+                      }}
+                      className="rounded border-gray-300"
+                    />
+                    <span className="truncate">{eq.name}</span>
+                    {eq.registrationNum && <span className="text-muted-foreground">({eq.registrationNum})</span>}
+                  </label>
+                ))}
+                {trackedEquipment.length > 0 && (
+                  <div className="flex gap-2 pt-1 border-t">
+                    <button className="text-[10px] text-primary hover:underline" onClick={() => setReportEqIds(trackedEquipment.map(e => e.id))}>Выбрать все</button>
+                    <button className="text-[10px] text-muted-foreground hover:underline" onClick={() => setReportEqIds([])}>Очистить</button>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Date range */}
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <Label className="text-xs font-medium">С</Label>
+                <Input type="datetime-local" className="h-8 text-xs" value={reportDateFrom} onChange={e => setReportDateFrom(e.target.value)} />
+              </div>
+              <div>
+                <Label className="text-xs font-medium">По</Label>
+                <Input type="datetime-local" className="h-8 text-xs" value={reportDateTo} onChange={e => setReportDateTo(e.target.value)} />
+              </div>
+            </div>
+            <div className="flex flex-wrap gap-1">
+              {['Сегодня', 'Вчера', 'Неделя', 'Месяц'].map(preset => (
+                <Button key={preset} variant="outline" size="sm" className="h-6 text-[10px]" onClick={() => applyReportDatePreset(preset)}>{preset}</Button>
+              ))}
+            </div>
+
+            {/* Sensor types filter */}
+            {allSensorTypes.length > 0 && (
+              <div>
+                <Label className="text-xs font-medium">Типы датчиков (пусто = все)</Label>
+                <div className="mt-1 flex flex-wrap gap-1.5">
+                  {allSensorTypes.map(type => (
+                    <label key={type} className="flex items-center gap-1 text-[10px] cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={reportSensorTypes.includes(type)}
+                        onChange={e => {
+                          if (e.target.checked) {
+                            setReportSensorTypes(prev => [...prev, type])
+                          } else {
+                            setReportSensorTypes(prev => prev.filter(t => t !== type))
+                          }
+                        }}
+                        className="rounded border-gray-300"
+                      />
+                      {type}
+                    </label>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Options */}
+            <div className="flex flex-col gap-2">
+              <label className="flex items-center gap-2 text-xs cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={reportIncludeStats}
+                  onChange={e => setReportIncludeStats(e.target.checked)}
+                  className="rounded border-gray-300"
+                />
+                Включить статистику (пробег, расход, скорости)
+              </label>
+              <label className="flex items-center gap-2 text-xs cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={reportIncludeTracks}
+                  onChange={e => setReportIncludeTracks(e.target.checked)}
+                  className="rounded border-gray-300"
+                />
+                Включить данные треков (поездки, стоянки, заправки)
+              </label>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => setReportOpen(false)}>Отмена</Button>
+            <Button size="sm" className="h-7 text-xs gap-1" onClick={exportReport} disabled={reportLoading || reportEqIds.length === 0 || !reportDateFrom || !reportDateTo}>
+              {reportLoading ? <Loader2 className="size-3 animate-spin" /> : <FileText className="size-3" />}
+              Скачать XLSX
             </Button>
           </DialogFooter>
         </DialogContent>

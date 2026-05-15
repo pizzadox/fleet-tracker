@@ -152,6 +152,69 @@ function formatSpeedKmh(speed: number): string {
   return `${Math.round(speed)} км/ч`
 }
 
+// Map equipment type to emoji icon for map markers
+function getEquipmentIcon(type?: string | null): string {
+  if (!type) return '🚗'
+  const t = type.toLowerCase()
+  // Легковой транспорт
+  if (t === 'автомобиль') return '🚗'
+  if (t === 'кроссовер') return '🚙'
+  if (t === 'внедорожник') return '🚙'
+  if (t === 'мототехника') return '🏍️'
+  // Грузовой транспорт
+  if (t === 'грузовик') return '🚛'
+  if (t === 'фургон') return '🚐'
+  if (t === 'прицеп') return '🏗️'
+  if (t === 'полуприцеп') return '🏗️'
+  if (t === 'рефрижератор') return '🚛'
+  // Пассажирский транспорт
+  if (t === 'автобус') return '🚌'
+  if (t === 'микроавтобус') return '🚐'
+  // Спецтехника
+  if (t === 'спецтехника') return '⚙️'
+  if (t === 'экскаватор') return '⛏️'
+  if (t === 'бульдозер') return '🚜'
+  if (t === 'кран') return '🏗️'
+  if (t === 'погрузчик') return '🚜'
+  if (t === 'самосвал') return '🚛'
+  if (t === 'автовышка') return '🏗️'
+  if (t === 'ямобур') return '⛏️'
+  // Сельхозтехника
+  if (t === 'сельхозтехника') return '🌾'
+  if (t === 'трактор') return '🚜'
+  if (t === 'комбайн') return '🌾'
+  // Строительная техника
+  if (t === 'строительная техника') return '🏗️'
+  if (t === 'бетономешалка') return '🏗️'
+  if (t === 'каток') return '🚜'
+  // Водный транспорт
+  if (t === 'водный транспорт') return '🚢'
+  if (t === 'катер') return '🚤'
+  if (t === 'баржа') return '🚢'
+  return '🚗'
+}
+
+// Map equipment type to marker color
+function getEquipmentColor(type?: string | null): string {
+  if (!type) return '#3b82f6'
+  const t = type.toLowerCase()
+  // Легковой — синий
+  if (['автомобиль', 'кроссовер', 'внедорожник', 'мототехника'].includes(t)) return '#3b82f6'
+  // Грузовой — оранжевый
+  if (['грузовик', 'фургон', 'прицеп', 'полуприцеп', 'рефрижератор'].includes(t)) return '#f97316'
+  // Пассажирский — фиолетовый
+  if (['автобус', 'микроавтобус'].includes(t)) return '#8b5cf6'
+  // Спецтехника — красный
+  if (['спецтехника', 'экскаватор', 'бульдозер', 'кран', 'погрузчик', 'самосвал', 'автовышка', 'ямобур'].includes(t)) return '#ef4444'
+  // Сельхоз — зелёный
+  if (['сельхозтехника', 'трактор', 'комбайн'].includes(t)) return '#22c55e'
+  // Строительная — серый
+  if (['строительная техника', 'бетономешалка', 'каток'].includes(t)) return '#6b7280'
+  // Водный — голубой
+  if (['водный транспорт', 'катер', 'баржа'].includes(t)) return '#06b6d4'
+  return '#3b82f6'
+}
+
 // Color scale for speed: green -> yellow -> orange -> red
 function speedToColor(speed: number): string {
   if (speed <= 0) return '#9ca3af'     // grey for stationary
@@ -415,25 +478,45 @@ export default function TrackerMap({ trackers, trackPoints, trackData, onMarkerC
     for (const tracker of trackers) {
       if (tracker.lastLatitude == null || tracker.lastLongitude == null) continue
 
-      const color = tracker.isActive ? '#22c55e' : '#ef4444'
+      const typeColor = getEquipmentColor(tracker.equipmentType)
+      const statusColor = tracker.isActive ? '#22c55e' : '#ef4444'
+      const typeIcon = getEquipmentIcon(tracker.equipmentType)
       const regNum = tracker.registrationNum || ''
 
-      // Create custom icon with directional arrow + registration number label
+      // Create custom icon with equipment type emoji + direction arrow + registration number
       const icon = L.divIcon({
         className: 'custom-tracker-icon',
         html: `
           <div style="position: relative; display: flex; flex-direction: column; align-items: center;">
             <div style="
-              width: 36px; height: 36px;
-              background: ${color};
+              position: relative;
+              width: 40px; height: 40px;
+              background: ${typeColor};
               border-radius: 50%;
               border: 3px solid white;
               box-shadow: 0 2px 8px rgba(0,0,0,0.4);
               display: flex; align-items: center; justify-content: center;
-              color: white; font-size: 16px; font-weight: bold;
-              transform: rotate(${tracker.lastCourse || 0}deg);
-              transition: transform 0.3s;
-            ">▲</div>
+              font-size: 18px;
+            ">
+              ${typeIcon}
+              <div style="
+                position: absolute; bottom: -2px; right: -2px;
+                width: 14px; height: 14px;
+                background: ${statusColor};
+                border-radius: 50%;
+                border: 2px solid white;
+                box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+              "></div>
+              <div style="
+                position: absolute; top: -4px; left: 50%;
+                transform: translateX(-50%) rotate(${tracker.lastCourse || 0}deg);
+                width: 0; height: 0;
+                border-left: 4px solid transparent;
+                border-right: 4px solid transparent;
+                border-bottom: 7px solid white;
+                filter: drop-shadow(0 1px 1px rgba(0,0,0,0.3));
+              "></div>
+            </div>
             ${regNum ? `<div style="
               margin-top: 2px;
               background: rgba(0,0,0,0.75);
@@ -448,9 +531,9 @@ export default function TrackerMap({ trackers, trackPoints, trackData, onMarkerC
             ">${regNum}</div>` : ''}
           </div>
         `,
-        iconSize: [36, regNum ? 52 : 36],
-        iconAnchor: [18, 18],
-        popupAnchor: [0, -20],
+        iconSize: [40, regNum ? 56 : 40],
+        iconAnchor: [20, 20],
+        popupAnchor: [0, -22],
       })
 
       // Build sensor data HTML — only show sensors with actual values
@@ -477,9 +560,9 @@ export default function TrackerMap({ trackers, trackPoints, trackData, onMarkerC
           <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 6px;">
             <div style="
               width: 28px; height: 28px; border-radius: 6px;
-              background: ${color}20; display: flex; align-items: center; justify-content: center;
+              background: ${typeColor}20; display: flex; align-items: center; justify-content: center;
             ">
-              <span style="font-size: 14px;">🚗</span>
+              <span style="font-size: 14px;">${typeIcon}</span>
             </div>
             <div>
               <div style="font-weight: 700; font-size: 13px; ${tracker.equipmentId ? 'color: #3b82f6; cursor: pointer; text-decoration: underline;' : ''}" ${tracker.equipmentId ? `data-equipment-id="${tracker.equipmentId}"` : ''}>${tracker.equipmentName || tracker.trackerName || 'Трекер'}</div>
