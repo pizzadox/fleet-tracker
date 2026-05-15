@@ -47,7 +47,8 @@ import {
   CheckCircle2, Clock, XCircle, AlertTriangle, Activity, Gauge,
   Navigation, Fuel, Thermometer, Zap, Cog, RefreshCw, Wifi, WifiOff,
   Satellite, ArrowLeft, ChevronDown, ChevronUp, Filter, ListFilter,
-  Route, Package, Weight, UserCircle, IdCard, ClipboardCheck, Map, Bell
+  Route, Package, Weight, UserCircle, IdCard, ClipboardCheck, Map, Bell,
+  Car, Bus, Bike, Tractor, Ship, Container, Wrench as Settings, CircuitBoard, Cable
 } from 'lucide-react'
 
 // ═══════════════════════════════════════════════════════════════
@@ -196,10 +197,81 @@ const STAGE_STATUS_MAP: Record<string, { label: string; color: string }> = {
   completed: { label: 'Завершён', color: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-400' },
 }
 
-const EQUIPMENT_TYPES = [
-  'автомобиль', 'спецтехника', 'прицеп', 'грузовик', 'автобус',
-  'мототехника', 'сельхозтехника', 'строительная техника', 'водный транспорт', 'другое'
-]
+interface EquipmentTypeInfo {
+  label: string
+  icon: React.ReactNode
+  color: string
+  darkColor: string
+  category: string
+}
+
+const EQUIPMENT_TYPE_MAP: Record<string, EquipmentTypeInfo> = {
+  // Легковой транспорт
+  'автомобиль': { label: 'Автомобиль', icon: <Car className="size-3.5" />, color: 'bg-blue-100 text-blue-700', darkColor: 'dark:bg-blue-900/40 dark:text-blue-400', category: 'Легковой транспорт' },
+  'кроссовер': { label: 'Кроссовер', icon: <Car className="size-3.5" />, color: 'bg-indigo-100 text-indigo-700', darkColor: 'dark:bg-indigo-900/40 dark:text-indigo-400', category: 'Легковой транспорт' },
+  'внедорожник': { label: 'Внедорожник', icon: <Car className="size-3.5" />, color: 'bg-teal-100 text-teal-700', darkColor: 'dark:bg-teal-900/40 dark:text-teal-400', category: 'Легковой транспорт' },
+  'мототехника': { label: 'Мототехника', icon: <Bike className="size-3.5" />, color: 'bg-orange-100 text-orange-700', darkColor: 'dark:bg-orange-900/40 dark:text-orange-400', category: 'Легковой транспорт' },
+  // Грузовой транспорт
+  'грузовик': { label: 'Грузовик', icon: <Truck className="size-3.5" />, color: 'bg-amber-100 text-amber-700', darkColor: 'dark:bg-amber-900/40 dark:text-amber-400', category: 'Грузовой транспорт' },
+  'фургон': { label: 'Фургон', icon: <Truck className="size-3.5" />, color: 'bg-yellow-100 text-yellow-700', darkColor: 'dark:bg-yellow-900/40 dark:text-yellow-400', category: 'Грузовой транспорт' },
+  'прицеп': { label: 'Прицеп', icon: <Container className="size-3.5" />, color: 'bg-stone-100 text-stone-700', darkColor: 'dark:bg-stone-900/40 dark:text-stone-400', category: 'Грузовой транспорт' },
+  'полуприцеп': { label: 'Полуприцеп', icon: <Container className="size-3.5" />, color: 'bg-neutral-100 text-neutral-700', darkColor: 'dark:bg-neutral-900/40 dark:text-neutral-400', category: 'Грузовой транспорт' },
+  'рефрижератор': { label: 'Рефрижератор', icon: <Truck className="size-3.5" />, color: 'bg-cyan-100 text-cyan-700', darkColor: 'dark:bg-cyan-900/40 dark:text-cyan-400', category: 'Грузовой транспорт' },
+  // Пассажирский транспорт
+  'автобус': { label: 'Автобус', icon: <Bus className="size-3.5" />, color: 'bg-purple-100 text-purple-700', darkColor: 'dark:bg-purple-900/40 dark:text-purple-400', category: 'Пассажирский транспорт' },
+  'микроавтобус': { label: 'Микроавтобус', icon: <Bus className="size-3.5" />, color: 'bg-violet-100 text-violet-700', darkColor: 'dark:bg-violet-900/40 dark:text-violet-400', category: 'Пассажирский транспорт' },
+  // Спецтехника
+  'спецтехника': { label: 'Спецтехника', icon: <Wrench className="size-3.5" />, color: 'bg-red-100 text-red-700', darkColor: 'dark:bg-red-900/40 dark:text-red-400', category: 'Спецтехника' },
+  'экскаватор': { label: 'Экскаватор', icon: <Tractor className="size-3.5" />, color: 'bg-yellow-100 text-yellow-700', darkColor: 'dark:bg-yellow-900/40 dark:text-yellow-400', category: 'Спецтехника' },
+  'бульдозер': { label: 'Бульдозер', icon: <Tractor className="size-3.5" />, color: 'bg-amber-100 text-amber-700', darkColor: 'dark:bg-amber-900/40 dark:text-amber-400', category: 'Спецтехника' },
+  'кран': { label: 'Кран', icon: <Tractor className="size-3.5" />, color: 'bg-orange-100 text-orange-700', darkColor: 'dark:bg-orange-900/40 dark:text-orange-400', category: 'Спецтехника' },
+  'погрузчик': { label: 'Погрузчик', icon: <Tractor className="size-3.5" />, color: 'bg-lime-100 text-lime-700', darkColor: 'dark:bg-lime-900/40 dark:text-lime-400', category: 'Спецтехника' },
+  'самосвал': { label: 'Самосвал', icon: <Truck className="size-3.5" />, color: 'bg-rose-100 text-rose-700', darkColor: 'dark:bg-rose-900/40 dark:text-rose-400', category: 'Спецтехника' },
+  'автовышка': { label: 'Автовышка', icon: <Tractor className="size-3.5" />, color: 'bg-fuchsia-100 text-fuchsia-700', darkColor: 'dark:bg-fuchsia-900/40 dark:text-fuchsia-400', category: 'Спецтехника' },
+  'ямобур': { label: 'Ямобур', icon: <Tractor className="size-3.5" />, color: 'bg-pink-100 text-pink-700', darkColor: 'dark:bg-pink-900/40 dark:text-pink-400', category: 'Спецтехника' },
+  // Сельхозтехника
+  'сельхозтехника': { label: 'Сельхозтехника', icon: <Tractor className="size-3.5" />, color: 'bg-green-100 text-green-700', darkColor: 'dark:bg-green-900/40 dark:text-green-400', category: 'Сельхозтехника' },
+  'трактор': { label: 'Трактор', icon: <Tractor className="size-3.5" />, color: 'bg-emerald-100 text-emerald-700', darkColor: 'dark:bg-emerald-900/40 dark:text-emerald-400', category: 'Сельхозтехника' },
+  'комбайн': { label: 'Комбайн', icon: <Tractor className="size-3.5" />, color: 'bg-lime-100 text-lime-700', darkColor: 'dark:bg-lime-900/40 dark:text-lime-400', category: 'Сельхозтехника' },
+  // Строительная техника
+  'строительная техника': { label: 'Строительная техника', icon: <Wrench className="size-3.5" />, color: 'bg-slate-100 text-slate-700', darkColor: 'dark:bg-slate-900/40 dark:text-slate-400', category: 'Строительная техника' },
+  'бетономешалка': { label: 'Бетономешалка', icon: <Truck className="size-3.5" />, color: 'bg-gray-100 text-gray-700', darkColor: 'dark:bg-gray-900/40 dark:text-gray-400', category: 'Строительная техника' },
+  'каток': { label: 'Каток', icon: <Tractor className="size-3.5" />, color: 'bg-zinc-100 text-zinc-700', darkColor: 'dark:bg-zinc-900/40 dark:text-zinc-400', category: 'Строительная техника' },
+  // Водный транспорт
+  'водный транспорт': { label: 'Водный транспорт', icon: <Ship className="size-3.5" />, color: 'bg-sky-100 text-sky-700', darkColor: 'dark:bg-sky-900/40 dark:text-sky-400', category: 'Водный транспорт' },
+  'катер': { label: 'Катер', icon: <Ship className="size-3.5" />, color: 'bg-blue-100 text-blue-700', darkColor: 'dark:bg-blue-900/40 dark:text-blue-400', category: 'Водный транспорт' },
+  'баржа': { label: 'Баржа', icon: <Ship className="size-3.5" />, color: 'bg-indigo-100 text-indigo-700', darkColor: 'dark:bg-indigo-900/40 dark:text-indigo-400', category: 'Водный транспорт' },
+  // Другое
+  'другое': { label: 'Другое', icon: <Package className="size-3.5" />, color: 'bg-gray-100 text-gray-600', darkColor: 'dark:bg-gray-900/40 dark:text-gray-400', category: 'Другое' },
+}
+
+// Backward compatibility: flat list of type keys
+const EQUIPMENT_TYPES = Object.keys(EQUIPMENT_TYPE_MAP)
+
+// Grouped types for Select with categories
+const EQUIPMENT_TYPE_GROUPS = (() => {
+  const groups: Record<string, Array<{ value: string; label: string }>> = {}
+  for (const [key, info] of Object.entries(EQUIPMENT_TYPE_MAP)) {
+    if (!groups[info.category]) groups[info.category] = []
+    groups[info.category].push({ value: key, label: info.label })
+  }
+  return groups
+})()
+
+// Helper to get type info with fallback
+function getTypeInfo(type: string): EquipmentTypeInfo {
+  return EQUIPMENT_TYPE_MAP[type] || { label: type, icon: <Package className="size-3.5" />, color: 'bg-gray-100 text-gray-600', darkColor: 'dark:bg-gray-900/40 dark:text-gray-400', category: 'Другое' }
+}
+
+// Type badge component
+function TypeBadge({ type }: { type: string }) {
+  const info = getTypeInfo(type)
+  return (
+    <span className={`inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-medium ${info.color} ${info.darkColor}`}>
+      {info.icon}{info.label}
+    </span>
+  )
+}
 
 const PHOTO_CATEGORIES: Record<string, string> = {
   general: 'Общие', document: 'Документы', damage: 'Повреждения', repair: 'Ремонт'
@@ -884,10 +956,15 @@ function EquipmentTab({ equipment, companies, eqSearch, setEqSearch, eqStatusFil
             </SelectContent>
           </Select>
           <Select value={eqTypeFilter} onValueChange={setEqTypeFilter}>
-            <SelectTrigger className="w-full sm:w-[140px] h-9 text-sm"><SelectValue placeholder="Тип" /></SelectTrigger>
+            <SelectTrigger className="w-full sm:w-[160px] h-9 text-sm"><SelectValue placeholder="Тип" /></SelectTrigger>
             <SelectContent>
               <SelectItem value="all">Все типы</SelectItem>
-              {EQUIPMENT_TYPES.map(t => <SelectItem key={t} value={t}>{t}</SelectItem>)}
+              {Object.entries(EQUIPMENT_TYPE_GROUPS).map(([category, types]) => (
+                <React.Fragment key={category}>
+                  <div className="px-2 py-1.5 text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">{category}</div>
+                  {types.map(t => <SelectItem key={t.value} value={t.value}>{t.label}</SelectItem>)}
+                </React.Fragment>
+              ))}
             </SelectContent>
           </Select>
         </div>
@@ -910,7 +987,7 @@ function EquipmentTab({ equipment, companies, eqSearch, setEqSearch, eqStatusFil
               <CardHeader className="pb-1.5 pt-3 px-3">
                 <div className="flex items-start justify-between gap-1.5">
                   <div className="flex items-center gap-2 min-w-0">
-                    <div className="flex items-center justify-center size-8 rounded-lg bg-muted shrink-0"><Truck className="size-3.5 text-muted-foreground" /></div>
+                    <div className={`flex items-center justify-center size-8 rounded-lg shrink-0 ${getTypeInfo(eq.type).color} ${getTypeInfo(eq.type).darkColor}`}>{getTypeInfo(eq.type).icon}</div>
                     <div className="min-w-0">
                       <CardTitle className="text-sm font-semibold truncate">{eq.name}</CardTitle>
                       <p className="text-[11px] text-muted-foreground truncate">{[eq.brand, eq.model].filter(Boolean).join(' ') || '—'}</p>
@@ -923,7 +1000,7 @@ function EquipmentTab({ equipment, companies, eqSearch, setEqSearch, eqStatusFil
                 <Separator />
                 <div className="grid grid-cols-2 gap-x-4 gap-y-0.5 text-[11px]">
                   <div><span className="text-muted-foreground">Гос. номер:</span> <span className="font-medium">{eq.registrationNum || '—'}</span></div>
-                  <div><span className="text-muted-foreground">Тип:</span> <span className="font-medium capitalize">{eq.type}</span></div>
+                  <div><span className="text-muted-foreground">Тип:</span> <TypeBadge type={eq.type} /></div>
                   <div><span className="text-muted-foreground">Владелец:</span> <span className="font-medium truncate">{eq.owner?.name || '—'}</span></div>
                   <div><span className="text-muted-foreground">Арендатор:</span> <span className="font-medium truncate">{eq.renter?.name || '—'}</span></div>
                 </div>
@@ -1144,7 +1221,7 @@ function EquipmentDetailSheet({ open, onOpenChange, equipment, loading, detailTa
                   <div className="px-4 sm:px-5 py-3 space-y-4">
                     <DetailSection title="Основные данные" icon={<Settings2 className="size-3.5" />}>
                       <DetailRow label="Наименование" value={eq.name} />
-                      <DetailRow label="Тип" value={eq.type} />
+                      <DetailRow label="Тип" value={<TypeBadge type={eq.type} />} />
                       <DetailRow label="Марка" value={eq.brand} />
                       <DetailRow label="Модель" value={eq.model} />
                       <DetailRow label="Год выпуска" value={eq.year?.toString()} />
@@ -1589,7 +1666,7 @@ function DetailSection({ title, icon, children }: { title: string; icon: React.R
   )
 }
 
-function DetailRow({ label, value }: { label: string; value?: string | null }) {
+function DetailRow({ label, value }: { label: string; value?: React.ReactNode | string | null }) {
   return (
     <div className="flex items-baseline justify-between gap-2 py-0.5 border-b border-dashed border-border/40">
       <span className="text-[11px] text-muted-foreground shrink-0">{label}</span>
@@ -1810,7 +1887,7 @@ function EquipmentFormDialog({ open, onOpenChange, editData, companies, step, se
                     <p className="text-[11px] font-medium text-muted-foreground">Данные техники (можно отредактировать)</p>
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                       <div className="sm:col-span-2"><Label className="text-xs">Наименование *</Label><Input value={f('name')} onChange={e => setF('name', e.target.value)} /></div>
-                      <div><Label className="text-xs">Тип</Label><Select value={f('type')} onValueChange={v => setF('type', v)}><SelectTrigger className="h-9 text-sm"><SelectValue /></SelectTrigger><SelectContent>{EQUIPMENT_TYPES.map(t => <SelectItem key={t} value={t}>{t}</SelectItem>)}</SelectContent></Select></div>
+                      <div><Label className="text-xs">Тип</Label><Select value={f('type')} onValueChange={v => setF('type', v)}><SelectTrigger className="h-9 text-sm"><SelectValue /></SelectTrigger><SelectContent>{Object.entries(EQUIPMENT_TYPE_GROUPS).map(([category, types]) => (<React.Fragment key={category}><div className="px-2 py-1.5 text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">{category}</div>{types.map(t => <SelectItem key={t.value} value={t.value}>{t.label}</SelectItem>)}</React.Fragment>))}</SelectContent></Select></div>
                       <div><Label className="text-xs">Гос. номер</Label><Input value={f('registrationNum')} onChange={e => setF('registrationNum', e.target.value)} placeholder="А000АА 00" /></div>
                       <div><Label className="text-xs">Марка</Label><Input value={f('brand')} onChange={e => setF('brand', e.target.value)} /></div>
                       <div><Label className="text-xs">Модель</Label><Input value={f('model')} onChange={e => setF('model', e.target.value)} /></div>
@@ -1828,7 +1905,7 @@ function EquipmentFormDialog({ open, onOpenChange, editData, companies, step, se
           {step === 0 && (
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div className="sm:col-span-2"><Label className="text-xs">Наименование *</Label><Input value={f('name')} onChange={e => setF('name', e.target.value)} placeholder="Грузовой автомобиль ГАЗель" autoFocus /></div>
-              <div><Label className="text-xs">Тип</Label><Select value={f('type')} onValueChange={v => setF('type', v)}><SelectTrigger className="h-9 text-sm"><SelectValue /></SelectTrigger><SelectContent>{EQUIPMENT_TYPES.map(t => <SelectItem key={t} value={t}>{t}</SelectItem>)}</SelectContent></Select></div>
+              <div><Label className="text-xs">Тип</Label><Select value={f('type')} onValueChange={v => setF('type', v)}><SelectTrigger className="h-9 text-sm"><SelectValue /></SelectTrigger><SelectContent>{Object.entries(EQUIPMENT_TYPE_GROUPS).map(([category, types]) => (<React.Fragment key={category}><div className="px-2 py-1.5 text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">{category}</div>{types.map(t => <SelectItem key={t.value} value={t.value}>{t.label}</SelectItem>)}</React.Fragment>))}</SelectContent></Select></div>
               <div><Label className="text-xs">Марка</Label><Input value={f('brand')} onChange={e => setF('brand', e.target.value)} /></div>
               <div><Label className="text-xs">Модель</Label><Input value={f('model')} onChange={e => setF('model', e.target.value)} /></div>
               <div><Label className="text-xs">Год выпуска</Label><Input type="number" value={f('year')} onChange={e => setF('year', e.target.value)} /></div>
@@ -3511,12 +3588,12 @@ function MapTab({ equipment, onSync, onOpenDetail }: {
                         <Card key={eq.id} className="border-l-4 border-l-amber-400 cursor-pointer hover:shadow-md transition-shadow" onClick={() => onOpenDetail?.(eq.id)}>
                           <CardContent className="p-3">
                             <div className="flex items-center gap-2">
-                              <div className="size-8 rounded-md bg-amber-100 dark:bg-amber-900/40 flex items-center justify-center">
-                                <Truck className="size-4 text-amber-600 dark:text-amber-400" />
+                              <div className={`size-8 rounded-md flex items-center justify-center ${getTypeInfo(eq.type).color} ${getTypeInfo(eq.type).darkColor}`}>
+                                {getTypeInfo(eq.type).icon}
                               </div>
                               <div className="flex-1 min-w-0">
                                 <p className="text-xs font-medium truncate hover:text-primary hover:underline transition-colors">{eq.name}</p>
-                                <p className="text-[10px] text-muted-foreground">{eq.type} • {eq.registrationNum || '—'}</p>
+                                <p className="text-[10px] text-muted-foreground">{eq.registrationNum || '—'} • <TypeBadge type={eq.type} /></p>
                               </div>
                               {statusBadge(eq.status, EQUIPMENT_STATUS_MAP)}
                             </div>
@@ -3560,7 +3637,7 @@ function MapTab({ equipment, onSync, onOpenDetail }: {
                         </div>
                         <div className="flex-1 min-w-0">
                           <p className="text-xs font-medium truncate cursor-pointer hover:text-primary hover:underline transition-colors" onClick={() => onOpenDetail?.(t.equipmentId!)}>{t.equipmentName}</p>
-                          <p className="text-[10px] text-muted-foreground">{t.registrationNum || '—'} • {t.equipmentType}</p>
+                          <p className="text-[10px] text-muted-foreground">{t.registrationNum || '—'} • <TypeBadge type={t.equipmentType || 'другое'} /></p>
                         </div>
                       </div>
                       <div className="grid grid-cols-2 gap-x-3 gap-y-1 text-[10px]">

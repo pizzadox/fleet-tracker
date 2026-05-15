@@ -272,3 +272,28 @@ Work Log:
 Stage Summary:
 - СКОРОСТЬ legend no longer duplicates on map re-renders
 - Card CSS: removed py-6 padding, removed sticky from map card
+
+---
+Task ID: 13
+Agent: Main
+Task: Enhance equipment types with icons, colors, categories and grouped selection
+
+Work Log:
+- Replaced flat EQUIPMENT_TYPES array with rich EQUIPMENT_TYPE_MAP object
+- Each type now has: label, icon (Lucide), color, darkColor, category
+- 7 categories: Легковой транспорт, Грузовой транспорт, Пассажирский транспорт, Спецтехника, Сельхозтехника, Строительная техника, Водный транспорт, Другое
+- 28 specific types with unique icons/colors (автомобиль, кроссовер, внедорожник, грузовик, фургон, прицеп, экскаватор, бульдозер, кран, трактор, комбайн, etc.)
+- Added getTypeInfo() helper with fallback for unknown types
+- Added TypeBadge component for consistent type display
+- Added EQUIPMENT_TYPE_GROUPS for categorized Select dropdowns
+- Updated EquipmentTab cards: colored icon per type instead of generic Truck icon
+- Updated EquipmentDetailSheet: type shown as TypeBadge with icon
+- Updated DetailRow to accept ReactNode values
+- Updated all Select dropdowns (filter + 2 form selects) with grouped categories
+- Updated MapTab: tracker cards and no-tracker cards use type icons and TypeBadge
+- Build verified successful
+
+Stage Summary:
+- Equipment types now have visual differentiation: icons, colors, categories
+- Select dropdowns show grouped types by category
+- All displays (cards, detail, map) show type-specific icons and badges
