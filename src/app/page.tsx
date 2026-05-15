@@ -886,10 +886,10 @@ export default function Home() {
       {/* ─── DIALOGS ──────────────────────────────────────────── */}
       <EquipmentDetailSheet open={eqDetailOpen} onOpenChange={setEqDetailOpen} equipment={selectedEq} loading={eqDetailLoading} detailTab={eqDetailTab} setDetailTab={setEqDetailTab} companies={companies} photoCategoryFilter={photoCategoryFilter} setPhotoCategoryFilter={setPhotoCategoryFilter} fullPhoto={fullPhoto} setFullPhoto={setFullPhoto} onEdit={(eq) => { setEqDetailOpen(false); setEqFormEdit(eq); setEqFormStep(0); setEqFormOpen(true) }} onDelete={(eq) => { setEqDetailOpen(false); setDeleteDialog({ open: true, type: 'equipment', id: eq.id, name: eq.name }) }} onAddRepair={(eqId) => { setRepairFormEdit(null); setRepairFormEquipmentId(eqId); setRepairFormOpen(true) }} onUploadPhoto={(eqId) => setPhotoUploadEq(eqId)} onRefresh={() => selectedEq && fetchEquipmentDetail(selectedEq.id)} onOpenRepairDetail={(r) => openRepairDetail(r)} onAddTrip={(eqId) => { setTripFormEdit(null); setTripFormEquipmentId(eqId); setTripFormOpen(true) }} onOpenTripDetail={openTripDetail} allEquipment={equipment} onRefreshAll={fetchEquipment} />
       <EquipmentFormDialog open={eqFormOpen} onOpenChange={setEqFormOpen} editData={eqFormEdit} companies={companies} step={eqFormStep} setStep={setEqFormStep} saving={eqFormSaving} setSaving={setEqFormSaving} onSaved={() => { setEqFormOpen(false); fetchAll() }} />
-      <RepairDetailDialog open={repairDetailOpen} onOpenChange={setRepairDetailOpen} repair={selectedRepair} loading={repairDetailLoading} fullPhoto={fullPhoto} setFullPhoto={setFullPhoto} onEdit={(r) => { setRepairDetailOpen(false); setRepairFormEdit(r); setRepairFormEquipmentId(r.equipmentId); setRepairFormOpen(true) }} onDelete={(r) => { setRepairDetailOpen(false); setDeleteDialog({ open: true, type: 'repair', id: r.id, name: r.description }) }} onComplete={async (r) => { try { const res = await fetch(`/api/repairs/${r.id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...r, status: 'completed', endDate: new Date().toISOString() }) }); if (!res.ok) throw new Error(); toast.success('Ремонт завершён'); fetchRepairDetail(r.id); fetchAll() } catch { toast.error('Ошибка завершения ремонта') } }} onAddStage={(repairId) => { setStageFormRepairId(repairId); setStageFormEdit(null); setStageFormOpen(true) }} onEditStage={(stage, repairId) => { setStageFormRepairId(repairId); setStageFormEdit(stage); setStageFormOpen(true) }} onDeleteStage={async (stageId, repairId) => { try { const res = await fetch(`/api/repairs/${repairId}/stages?stageId=${stageId}`, { method: 'DELETE' }); if (!res.ok) throw new Error(); toast.success('Этап удалён'); fetchRepairDetail(repairId) } catch { toast.error('Ошибка удаления этапа') } }} onUploadPhoto={(repairId) => setPhotoUploadRepair(repairId)} onRefresh={() => selectedRepair && fetchRepairDetail(selectedRepair.id)} employees={employees} />
+      <RepairDetailDialog open={repairDetailOpen} onOpenChange={setRepairDetailOpen} repair={selectedRepair} loading={repairDetailLoading} fullPhoto={fullPhoto} setFullPhoto={setFullPhoto} onEdit={(r) => { setRepairDetailOpen(false); setRepairFormEdit(r); setRepairFormEquipmentId(r.equipmentId); setRepairFormOpen(true) }} onDelete={(r) => { setRepairDetailOpen(false); setDeleteDialog({ open: true, type: 'repair', id: r.id, name: r.description }) }} onComplete={async (r) => { try { const res = await fetch(`/api/repairs/${r.id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...r, status: 'completed', endDate: new Date().toISOString() }) }); if (!res.ok) throw new Error(); toast.success('Ремонт завершён'); fetchRepairDetail(r.id); fetchAll() } catch { toast.error('Ошибка завершения ремонта') } }} onAddStage={(repairId) => { setStageFormRepairId(repairId); setStageFormEdit(null); setStageFormOpen(true) }} onEditStage={(stage, repairId) => { setStageFormRepairId(repairId); setStageFormEdit(stage); setStageFormOpen(true) }} onDeleteStage={async (stageId, repairId) => { try { const res = await fetch(`/api/repairs/${repairId}/stages?stageId=${stageId}`, { method: 'DELETE' }); if (!res.ok) throw new Error(); toast.success('Этап удалён'); fetchRepairDetail(repairId); fetchRepairs(); if (selectedEq) fetchEquipmentDetail(selectedEq.id) } catch { toast.error('Ошибка удаления этапа') } }} onUploadPhoto={(repairId) => setPhotoUploadRepair(repairId)} onRefresh={() => { if (selectedRepair) { fetchRepairDetail(selectedRepair.id); fetchRepairs(); if (selectedEq) fetchEquipmentDetail(selectedEq.id) } }} employees={employees} />
       <RepairFormDialog open={repairFormOpen} onOpenChange={setRepairFormOpen} editData={repairFormEdit} equipmentId={repairFormEquipmentId} equipmentList={equipment} saving={repairFormSaving} setSaving={setRepairFormSaving} onSaved={() => { setRepairFormOpen(false); fetchAll() }} employees={employees} />
       <CompanyFormDialog open={companyFormOpen} onOpenChange={setCompanyFormOpen} editData={companyFormEdit} saving={companyFormSaving} setSaving={setCompanyFormSaving} onSaved={() => { setCompanyFormOpen(false); fetchAll() }} />
-      <StageFormDialog open={stageFormOpen} onOpenChange={setStageFormOpen} repairId={stageFormRepairId} editData={stageFormEdit} saving={stageFormSaving} setSaving={setStageFormSaving} onSaved={() => { setStageFormOpen(false); if (selectedRepair) fetchRepairDetail(selectedRepair.id) }} />
+      <StageFormDialog open={stageFormOpen} onOpenChange={setStageFormOpen} repairId={stageFormRepairId} editData={stageFormEdit} saving={stageFormSaving} setSaving={setStageFormSaving} onSaved={() => { setStageFormOpen(false); if (selectedRepair) { fetchRepairDetail(selectedRepair.id); fetchRepairs(); if (selectedEq) fetchEquipmentDetail(selectedEq.id) } }} />
       <PhotoUploadDialog open={!!photoUploadEq} onOpenChange={(v) => { if (!v) setPhotoUploadEq(null) }} targetId={photoUploadEq || ''} targetType="equipment" onUploaded={() => { setPhotoUploadEq(null); if (selectedEq) fetchEquipmentDetail(selectedEq.id); fetchAll() }} />
       <RepairPhotoUploadDialog open={!!photoUploadRepair} onOpenChange={(v) => { if (!v) setPhotoUploadRepair(null) }} targetId={photoUploadRepair || ''} stages={selectedRepair?.stages || []} onUploaded={() => { setPhotoUploadRepair(null); if (selectedRepair) fetchRepairDetail(selectedRepair.id) }} />
       <TripDetailDialog open={tripDetailOpen} onOpenChange={setTripDetailOpen} trip={selectedTrip} loading={tripDetailLoading} crews={crews} onEdit={(t) => { setTripDetailOpen(false); setTripFormEdit(t); setTripFormEquipmentId(t.equipmentId); setTripFormOpen(true) }} onDelete={(t) => { setTripDetailOpen(false); setDeleteDialog({ open: true, type: 'trip', id: t.id, name: t.route }) }} onStart={async (t) => { try { const res = await fetch(`/api/trips/${t.id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status: 'in_progress' }) }); if (!res.ok) throw new Error(); toast.success('Рейс начат'); fetchTripDetail(t.id); fetchAll() } catch { toast.error('Ошибка') } }} onComplete={async (t) => { try { const res = await fetch(`/api/trips/${t.id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status: 'completed', endDate: new Date().toISOString() }) }); if (!res.ok) throw new Error(); toast.success('Рейс завершён'); fetchTripDetail(t.id); fetchAll() } catch { toast.error('Ошибка завершения рейса') } }} onRefresh={() => selectedTrip && fetchTripDetail(selectedTrip.id)} />
@@ -1462,24 +1462,37 @@ function EquipmentDetailSheet({ open, onOpenChange, equipment, loading, detailTa
                     {(!eq.repairs || eq.repairs.length === 0) ? (
                       <div className="text-center py-8 text-muted-foreground"><Wrench className="size-8 mx-auto mb-2 opacity-40" /><p className="text-xs">Нет записей о ремонтах</p></div>
                     ) : eq.repairs.map(r => (
-                      <Card key={r.id} className="cursor-pointer hover:shadow-sm transition-shadow" onClick={() => onOpenRepairDetail(r)}>
+                      <Card key={r.id} className="cursor-pointer hover:shadow-sm transition-shadow overflow-hidden" onClick={() => onOpenRepairDetail(r)}>
                         <CardContent className="p-3 space-y-1.5">
                           <div className="flex items-start justify-between gap-2">
-                            <p className="text-xs font-medium">{r.description}</p>
-                            {statusBadge(r.status, REPAIR_STATUS_MAP)}
+                            <p className="text-xs font-medium break-words min-w-0 flex-1">{r.description}</p>
+                            <span className="shrink-0">{statusBadge(r.status, REPAIR_STATUS_MAP)}</span>
                           </div>
-                          <div className="text-[10px] text-muted-foreground">
-                            <span>{formatDate(r.startDate)}</span>{r.cost != null && <span> • {formatPrice(r.cost)}</span>}
+                          <div className="text-[10px] text-muted-foreground flex flex-wrap gap-x-2">
+                            <span>{formatDate(r.startDate)}</span>{r.cost != null && <span>{formatPrice(r.cost)}</span>}
                           </div>
-                          {r.stages && r.stages.length > 0 && (
-                            <div className="space-y-0.5">
-                              <div className="flex items-center justify-between text-[10px] text-muted-foreground">
-                                <span>Этапы: {r.stages.filter(s => s.status === 'completed').length}/{r.stages.length}</span>
-                                <span>{getStageProgress(r.stages)}%</span>
-                              </div>
-                              <Progress value={getStageProgress(r.stages)} className="h-1" />
+                          {r.masters && r.masters.length > 0 && (
+                            <div className="flex flex-wrap gap-1">
+                              {r.masters.map(m => (
+                                <span key={m.id} className={`inline-flex items-center gap-0.5 rounded px-1.5 py-0.5 text-[10px] font-medium ${REPAIR_MASTER_ROLE_MAP[m.role]?.color || 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-400'}`}>
+                                  <User className="size-2.5" />{m.employee.fullName}
+                                </span>
+                              ))}
                             </div>
                           )}
+                          {r.stages && r.stages.length > 0 && (() => {
+                            const completed = r.stages.filter(s => s.status === 'completed').length
+                            const inProgress = r.stages.filter(s => s.status === 'in_progress').length
+                            return (
+                              <div className="space-y-0.5">
+                                <div className="flex items-center justify-between text-[10px] text-muted-foreground">
+                                  <span>Этапы: {completed}/{r.stages.length} {inProgress > 0 && <span className="text-amber-600 dark:text-amber-400">({inProgress} в работе)</span>}</span>
+                                  <span className="font-medium">{getStageProgress(r.stages)}%</span>
+                                </div>
+                                <Progress value={getStageProgress(r.stages)} className="h-1.5" />
+                              </div>
+                            )
+                          })()}
                         </CardContent>
                       </Card>
                     ))}
@@ -2229,26 +2242,26 @@ function RepairsTab({ repairs, equipment, onOpenDetail, onAdd, onDelete }: {
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
           {filtered.map(r => (
-            <Card key={r.id} className={`cursor-pointer hover:shadow-md transition-shadow border-l-3 ${r.status === 'in_progress' ? 'border-l-amber-500' : r.status === 'completed' ? 'border-l-emerald-500' : 'border-l-red-500'}`} onClick={() => onOpenDetail(r)}>
+            <Card key={r.id} className={`cursor-pointer hover:shadow-md transition-shadow border-l-3 overflow-hidden ${r.status === 'in_progress' ? 'border-l-amber-500' : r.status === 'completed' ? 'border-l-emerald-500' : 'border-l-red-500'}`} onClick={() => onOpenDetail(r)}>
               <CardHeader className="pb-1.5 pt-3 px-3">
                 <div className="flex items-start justify-between gap-1.5">
-                  <div className="flex items-center gap-2 min-w-0">
+                  <div className="flex items-center gap-2 min-w-0 overflow-hidden">
                     <div className="flex items-center justify-center size-8 rounded-lg bg-amber-100 dark:bg-amber-900/30 shrink-0"><Wrench className="size-3.5 text-amber-600 dark:text-amber-400" /></div>
-                    <div className="min-w-0">
-                      <CardTitle className="text-sm font-semibold truncate">{r.description}</CardTitle>
+                    <div className="min-w-0 overflow-hidden">
+                      <CardTitle className="text-sm font-semibold break-words line-clamp-2">{r.description}</CardTitle>
                       <p className="text-[11px] text-muted-foreground truncate">{r.equipment?.name}</p>
                     </div>
                   </div>
-                  {statusBadge(r.status, REPAIR_STATUS_MAP)}
+                  <span className="shrink-0">{statusBadge(r.status, REPAIR_STATUS_MAP)}</span>
                 </div>
               </CardHeader>
               <CardContent className="px-3 pb-3 pt-0 space-y-1.5">
                 <Separator />
-                <div className="grid grid-cols-2 gap-x-4 gap-y-0.5 text-[11px]">
-                  <div><span className="text-muted-foreground">Начало:</span> <span className="font-medium">{formatDate(r.startDate)}</span></div>
-                  <div><span className="text-muted-foreground">Стоимость:</span> <span className="font-medium">{formatPrice(r.cost)}</span></div>
-                  <div><span className="text-muted-foreground">Подрядчик:</span> <span className="font-medium truncate">{r.contractor || '—'}</span></div>
-                  <div><span className="text-muted-foreground">Причина:</span> <span className="font-medium truncate">{r.reason || '—'}</span></div>
+                <div className="grid grid-cols-2 gap-x-3 gap-y-0.5 text-[11px]">
+                  <div className="overflow-hidden"><span className="text-muted-foreground">Начало:</span> <span className="font-medium">{formatDate(r.startDate)}</span></div>
+                  <div className="overflow-hidden"><span className="text-muted-foreground">Стоимость:</span> <span className="font-medium">{formatPrice(r.cost)}</span></div>
+                  <div className="overflow-hidden"><span className="text-muted-foreground">Подрядчик:</span> <span className="font-medium truncate block">{r.contractor || '—'}</span></div>
+                  <div className="overflow-hidden"><span className="text-muted-foreground">Причина:</span> <span className="font-medium truncate block">{r.reason || '—'}</span></div>
                 </div>
                 {r.masters && r.masters.length > 0 && (
                   <div className="flex flex-wrap gap-1 mt-0.5">
@@ -2259,15 +2272,19 @@ function RepairsTab({ repairs, equipment, onOpenDetail, onAdd, onDelete }: {
                     ))}
                   </div>
                 )}
-                {r.stages && r.stages.length > 0 && (
-                  <div className="space-y-0.5">
-                    <div className="flex items-center justify-between text-[10px] text-muted-foreground">
-                      <span>Этапы: {r.stages.filter(s => s.status === 'completed').length}/{r.stages.length}</span>
-                      <span>{getStageProgress(r.stages)}%</span>
+                {r.stages && r.stages.length > 0 && (() => {
+                  const completed = r.stages.filter(s => s.status === 'completed').length
+                  const inProgress = r.stages.filter(s => s.status === 'in_progress').length
+                  return (
+                    <div className="space-y-0.5">
+                      <div className="flex items-center justify-between text-[10px] text-muted-foreground">
+                        <span>Этапы: {completed}/{r.stages.length} {inProgress > 0 && <span className="text-amber-600 dark:text-amber-400">({inProgress} в работе)</span>}</span>
+                        <span className="font-medium">{getStageProgress(r.stages)}%</span>
+                      </div>
+                      <Progress value={getStageProgress(r.stages)} className="h-1.5" />
                     </div>
-                    <Progress value={getStageProgress(r.stages)} className="h-1" />
-                  </div>
-                )}
+                  )
+                })()}
                 <div className="flex gap-1 pt-1" onClick={e => e.stopPropagation()}>
                   <Button size="sm" variant="ghost" className="h-7 text-[11px] gap-1 text-destructive hover:text-destructive" onClick={() => onDelete(r)}><Trash2 className="size-3" />Удалить</Button>
                 </div>

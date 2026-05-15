@@ -15,6 +15,14 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
           include: {
             photos: true,
             stages: { orderBy: { sortOrder: 'asc' } },
+            masters: {
+              include: {
+                employee: {
+                  select: { id: true, fullName: true, position: true, phone: true, status: true, licenseCat: true }
+                }
+              },
+              orderBy: { assignedAt: 'asc' }
+            },
           }
         },
         history: { orderBy: { date: 'desc' } },
