@@ -443,3 +443,28 @@ Stage Summary:
 - Repair data is correct: 5/5 stages, 3 masters for КАМАЗ repair
 - Server runs fine when kept alive; environment kills background processes between tool invocations
 - Server started via `nohup bash start-server.sh` with auto-restart loop
+
+---
+Task ID: fix-server-stability
+Agent: main
+Task: Исправить падение сервера и найти причину
+
+Work Log:
+- Проверил состояние сервера — процесс был запущен (PID 9979), но вероятно был уже нежизнеспособен
+- Сервер отвечал 200 на главную страницу, API эндпоинты работали
+- Запустил `npx next build` — сборка прошла успешно, ошибок компиляции нет
+- При попытке перезапуска сервера обнаружил, что фоновые процессы (nohup, setsid) убиваются средой выполнения через ~20-30 секунд
+- Проверил код page.tsx и API routes — правки из прошлой сессии (overflow, stage refresh) на месте и корректны
+- Обнаружил, что PM2 доступен в системе и может держать процессы живыми
+- Переключил запуск сервера на PM2: `npx pm2 start .next/standalone/server.js --name "next-app"`
+- Сервер стабильно работает через PM2 уже более 2 минут без перезапусков
+- Обновил keep-alive.sh с проверкой порта и логированием
+- Создал start-pm2.sh скрипт для удобного запуска
+- Сохранил PM2 конфигурацию через `npx pm2 save`
+
+Stage Summary:
+- Корневая причина падений: среда выполнения (Kubernetes контейнер) убивает фоновые процессы, запущенные через nohup/setsid
+- Решение: PM2 process manager — работает как демон и автоматически перезапускает сервер при падении
+- Сборка проекта: успешна, ошибок компиляции нет
+- Код правок: все правки из прошлой сессии (card overflow, stage refresh) корректны
+- Новый скрипт запуска: /home/z/my-project/start-pm2.sh
