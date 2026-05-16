@@ -2281,57 +2281,65 @@ function RepairsTab({ repairs, equipment, onOpenDetail, onAdd, onDelete }: {
           </CardContent>
         </Card>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-          {filtered.map(r => (
-            <Card key={r.id} className={`cursor-pointer hover:shadow-md transition-shadow border-l-3 overflow-hidden ${r.status === 'in_progress' ? 'border-l-amber-500' : r.status === 'completed' ? 'border-l-emerald-500' : 'border-l-red-500'}`} onClick={() => onOpenDetail(r)}>
-              <CardHeader className="pb-1.5 pt-3 px-3">
-                <div className="flex items-start justify-between gap-1.5">
-                  <div className="flex items-center gap-2 min-w-0 overflow-hidden">
-                    <div className="flex items-center justify-center size-8 rounded-lg bg-amber-100 dark:bg-amber-900/30 shrink-0"><Wrench className="size-3.5 text-amber-600 dark:text-amber-400" /></div>
-                    <div className="min-w-0 overflow-hidden">
-                      <CardTitle className="text-sm font-semibold break-words line-clamp-2">{r.description}</CardTitle>
-                      <p className="text-[11px] text-muted-foreground truncate">{r.equipment?.name}</p>
-                    </div>
-                  </div>
-                  <span className="shrink-0">{statusBadge(r.status, REPAIR_STATUS_MAP)}</span>
-                </div>
-              </CardHeader>
-              <CardContent className="px-3 pb-3 pt-0 space-y-1.5">
-                <Separator />
-                <div className="grid grid-cols-2 gap-x-3 gap-y-0.5 text-[11px]">
-                  <div className="overflow-hidden"><span className="text-muted-foreground">Начало:</span> <span className="font-medium">{formatDate(r.startDate)}</span></div>
-                  <div className="overflow-hidden"><span className="text-muted-foreground">Стоимость:</span> <span className="font-medium">{formatPrice(r.cost)}</span></div>
-                  <div className="overflow-hidden"><span className="text-muted-foreground">Подрядчик:</span> <span className="font-medium truncate block">{r.contractor || '—'}</span></div>
-                  <div className="overflow-hidden"><span className="text-muted-foreground">Причина:</span> <span className="font-medium truncate block">{r.reason || '—'}</span></div>
-                </div>
-                {r.masters && r.masters.length > 0 && (
-                  <div className="flex flex-wrap gap-1 mt-0.5">
-                    {r.masters.map(m => (
-                      <span key={m.id} className={`inline-flex items-center gap-0.5 rounded px-1.5 py-0.5 text-[10px] font-medium ${REPAIR_MASTER_ROLE_MAP[m.role]?.color || 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-400'}`}>
-                        <User className="size-2.5" />{m.employee.fullName}
-                      </span>
-                    ))}
-                  </div>
-                )}
-                {r.stages && r.stages.length > 0 && (() => {
-                  const completed = r.stages.filter(s => s.status === 'completed').length
-                  const inProgress = r.stages.filter(s => s.status === 'in_progress').length
+        <div className="border rounded-lg overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="w-full text-[11px]">
+              <thead>
+                <tr className="border-b bg-muted/50 text-muted-foreground">
+                  <th className="text-left py-1.5 px-2 font-medium w-8"></th>
+                  <th className="text-left py-1.5 px-2 font-medium">Описание</th>
+                  <th className="text-left py-1.5 px-2 font-medium hidden sm:table-cell">Техника</th>
+                  <th className="text-left py-1.5 px-2 font-medium">Статус</th>
+                  <th className="text-left py-1.5 px-2 font-medium hidden md:table-cell">Начало</th>
+                  <th className="text-left py-1.5 px-2 font-medium hidden md:table-cell">Стоимость</th>
+                  <th className="text-left py-1.5 px-2 font-medium hidden lg:table-cell">Подрядчик</th>
+                  <th className="text-left py-1.5 px-2 font-medium hidden sm:table-cell">Этапы</th>
+                  <th className="text-right py-1.5 px-2 font-medium w-16"></th>
+                </tr>
+              </thead>
+              <tbody>
+                {filtered.map(r => {
+                  const borderColor = r.status === 'in_progress' ? 'border-l-amber-500' : r.status === 'completed' ? 'border-l-emerald-500' : 'border-l-red-500'
                   return (
-                    <div className="space-y-0.5">
-                      <div className="flex items-center justify-between text-[10px] text-muted-foreground">
-                        <span>Этапы: {completed}/{r.stages.length} {inProgress > 0 && <span className="text-amber-600 dark:text-amber-400">({inProgress} в работе)</span>}</span>
-                        <span className="font-medium">{getStageProgress(r.stages)}%</span>
-                      </div>
-                      <Progress value={getStageProgress(r.stages)} className="h-1.5" />
-                    </div>
+                    <tr key={r.id} className={`border-b last:border-0 cursor-pointer hover:bg-accent/50 transition-colors border-l-2 ${borderColor}`} onClick={() => onOpenDetail(r)}>
+                      <td className="py-1.5 px-2">
+                        <div className="flex items-center justify-center size-6 rounded bg-amber-100 dark:bg-amber-900/30">
+                          <Wrench className="size-3 text-amber-600 dark:text-amber-400" />
+                        </div>
+                      </td>
+                      <td className="py-1.5 px-2">
+                        <div className="font-medium truncate max-w-[200px]">{r.description}</div>
+                        {r.reason && <div className="text-[10px] text-muted-foreground truncate max-w-[200px]">{r.reason}</div>}
+                      </td>
+                      <td className="py-1.5 px-2 hidden sm:table-cell text-muted-foreground truncate max-w-[120px]">{r.equipment?.name || '—'}</td>
+                      <td className="py-1.5 px-2">{statusBadge(r.status, REPAIR_STATUS_MAP)}</td>
+                      <td className="py-1.5 px-2 hidden md:table-cell">{formatDate(r.startDate)}</td>
+                      <td className="py-1.5 px-2 hidden md:table-cell">{formatPrice(r.cost)}</td>
+                      <td className="py-1.5 px-2 hidden lg:table-cell text-muted-foreground truncate max-w-[100px]">{r.contractor || '—'}</td>
+                      <td className="py-1.5 px-2 hidden sm:table-cell">
+                        {r.stages && r.stages.length > 0 ? (
+                          <div className="space-y-0.5">
+                            <div className="flex items-center justify-between text-[10px] text-muted-foreground">
+                              <span>{r.stages.filter(s => s.status === 'completed').length}/{r.stages.length}</span>
+                              <span className="font-medium">{getStageProgress(r.stages)}%</span>
+                            </div>
+                            <Progress value={getStageProgress(r.stages)} className="h-1" />
+                          </div>
+                        ) : (
+                          <span className="text-muted-foreground">—</span>
+                        )}
+                      </td>
+                      <td className="py-1.5 px-2 text-right" onClick={e => e.stopPropagation()}>
+                        <div className="flex items-center justify-end gap-0.5">
+                          <Button size="sm" variant="ghost" className="size-6 p-0 text-destructive hover:text-destructive" onClick={() => onDelete(r)}><Trash2 className="size-3" /></Button>
+                        </div>
+                      </td>
+                    </tr>
                   )
-                })()}
-                <div className="flex gap-1 pt-1" onClick={e => e.stopPropagation()}>
-                  <Button size="sm" variant="ghost" className="h-7 text-[11px] gap-1 text-destructive hover:text-destructive" onClick={() => onDelete(r)}><Trash2 className="size-3" />Удалить</Button>
-                </div>
-              </CardContent>
-            </Card>
-          ))}
+                })}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
     </div>
@@ -3238,45 +3246,57 @@ function TripsTab({ trips, equipment, crews, onOpenDetail, onAdd, onDelete, onAd
           </CardContent>
         </Card>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-          {filtered.map(t => (
-            <Card key={t.id} className={`cursor-pointer hover:shadow-md transition-shadow border-l-3 ${TRIP_STATUS_MAP[t.status]?.border || ''}`} onClick={() => onOpenDetail(t)}>
-              <CardHeader className="pb-1.5 pt-3 px-3">
-                <div className="flex items-start justify-between gap-1.5">
-                  <div className="flex items-center gap-2 min-w-0">
-                    <div className="flex items-center justify-center size-8 rounded-lg bg-sky-100 dark:bg-sky-900/30 shrink-0"><Route className="size-3.5 text-sky-600 dark:text-sky-400" /></div>
-                    <div className="min-w-0">
-                      <CardTitle className="text-sm font-semibold truncate">{t.route}</CardTitle>
-                      <p className="text-[11px] text-muted-foreground truncate">{t.equipment?.name} {t.equipment?.registrationNum ? `• ${t.equipment.registrationNum}` : ''}</p>
-                    </div>
-                  </div>
-                  {statusBadge(t.status, TRIP_STATUS_MAP)}
-                </div>
-              </CardHeader>
-              <CardContent className="px-3 pb-3 pt-0 space-y-1.5">
-                <Separator />
-                <div className="grid grid-cols-2 gap-x-4 gap-y-0.5 text-[11px]">
-                  <div><span className="text-muted-foreground">Начало:</span> <span className="font-medium">{formatDateTime(t.startDate)}</span></div>
-                  <div><span className="text-muted-foreground">Груз:</span> <span className="font-medium truncate">{t.cargo || '—'}</span></div>
-                  <div><span className="text-muted-foreground">Расстояние:</span> <span className="font-medium">{t.distance != null ? `${t.distance} км` : '—'}</span></div>
-                  <div><span className="text-muted-foreground">Экипаж:</span> <span className="font-medium truncate">{t.crew?.name || '—'}</span></div>
-                  {t.status === 'completed' && t.fuelConsumed != null && (
-                    <div><span className="text-muted-foreground">Топливо:</span> <span className="font-medium text-amber-600 dark:text-amber-400">{t.fuelConsumed} л</span></div>
-                  )}
-                  {t.status === 'completed' && t.mileageStart != null && t.mileageEnd != null && (
-                    <div><span className="text-muted-foreground">Пробег:</span> <span className="font-medium text-emerald-600 dark:text-emerald-400">{(t.mileageEnd - t.mileageStart).toLocaleString('ru-RU')} км</span></div>
-                  )}
-                  {t.endDate && (
-                    <div><span className="text-muted-foreground">Окончание:</span> <span className="font-medium">{formatDateTime(t.endDate)}</span></div>
-                  )}
-                </div>
-                {t.cost != null && <p className="text-[10px] text-muted-foreground">Стоимость: {formatPrice(t.cost)} {t.revenue != null ? `• Доход: ${formatPrice(t.revenue)}` : ''}</p>}
-                <div className="flex gap-1 pt-1" onClick={e => e.stopPropagation()}>
-                  <Button size="sm" variant="ghost" className="h-7 text-[11px] gap-1 text-destructive hover:text-destructive" onClick={() => onDelete(t)}><Trash2 className="size-3" />Удалить</Button>
-                </div>
-              </CardContent>
-            </Card>
-          ))}
+        <div className="border rounded-lg overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="w-full text-[11px]">
+              <thead>
+                <tr className="border-b bg-muted/50 text-muted-foreground">
+                  <th className="text-left py-1.5 px-2 font-medium w-8"></th>
+                  <th className="text-left py-1.5 px-2 font-medium">Маршрут</th>
+                  <th className="text-left py-1.5 px-2 font-medium hidden sm:table-cell">Техника</th>
+                  <th className="text-left py-1.5 px-2 font-medium">Статус</th>
+                  <th className="text-left py-1.5 px-2 font-medium hidden md:table-cell">Начало</th>
+                  <th className="text-left py-1.5 px-2 font-medium hidden lg:table-cell">Груз/Вес</th>
+                  <th className="text-left py-1.5 px-2 font-medium hidden md:table-cell">Расст.</th>
+                  <th className="text-left py-1.5 px-2 font-medium hidden lg:table-cell">Топливо</th>
+                  <th className="text-right py-1.5 px-2 font-medium w-12"></th>
+                </tr>
+              </thead>
+              <tbody>
+                {filtered.map(t => (
+                  <tr key={t.id} className={`border-b last:border-0 cursor-pointer hover:bg-accent/50 transition-colors border-l-2 ${TRIP_STATUS_MAP[t.status]?.border || ''}`} onClick={() => onOpenDetail(t)}>
+                    <td className="py-1.5 px-2">
+                      <div className="flex items-center justify-center size-6 rounded bg-sky-100 dark:bg-sky-900/30">
+                        <Route className="size-3 text-sky-600 dark:text-sky-400" />
+                      </div>
+                    </td>
+                    <td className="py-1.5 px-2">
+                      <div className="font-medium truncate max-w-[200px]">{t.route}</div>
+                      {t.cargo && <div className="text-[10px] text-muted-foreground truncate max-w-[200px]">{t.cargo}{t.cargoWeight != null ? ` • ${t.cargoWeight} т` : ''}</div>}
+                    </td>
+                    <td className="py-1.5 px-2 hidden sm:table-cell text-muted-foreground">
+                      <div className="truncate max-w-[120px]">{t.equipment?.name || '—'}</div>
+                      {t.equipment?.registrationNum && <div className="text-[10px] font-mono">{t.equipment.registrationNum}</div>}
+                    </td>
+                    <td className="py-1.5 px-2">{statusBadge(t.status, TRIP_STATUS_MAP)}</td>
+                    <td className="py-1.5 px-2 hidden md:table-cell">{formatDateTime(t.startDate)}</td>
+                    <td className="py-1.5 px-2 hidden lg:table-cell text-muted-foreground truncate max-w-[100px]">{t.cargo || '—'}{t.cargoWeight != null ? ` • ${t.cargoWeight}т` : ''}</td>
+                    <td className="py-1.5 px-2 hidden md:table-cell">{t.distance != null ? `${t.distance} км` : '—'}</td>
+                    <td className="py-1.5 px-2 hidden lg:table-cell">
+                      {t.status === 'completed' && t.fuelConsumed != null ? (
+                        <span className="text-amber-600 dark:text-amber-400 font-medium">{t.fuelConsumed} л</span>
+                      ) : '—'}
+                    </td>
+                    <td className="py-1.5 px-2 text-right" onClick={e => e.stopPropagation()}>
+                      <div className="flex items-center justify-end gap-0.5">
+                        <Button size="sm" variant="ghost" className="size-6 p-0 text-destructive hover:text-destructive" onClick={() => onDelete(t)}><Trash2 className="size-3" /></Button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
     </div>
@@ -3303,6 +3323,9 @@ function TripDetailDialog({ open, onOpenChange, trip, loading, crews, onEdit, on
   const [compareLoading, setCompareLoading] = useState(false)
   const [compareError, setCompareError] = useState<string | null>(null)
   const [applySuccess, setApplySuccess] = useState<string | null>(null)
+  const [discrepancyDialog, setDiscrepancyDialog] = useState<{
+    open: boolean; diffs: Array<{ field: string; current: string; tracker: string }>; onReplace: () => void
+  }>({ open: false, diffs: [], onReplace: () => {} })
 
   // Reset all data when trip changes — must be before any early return (Rules of Hooks)
   useEffect(() => {
@@ -3476,10 +3499,11 @@ function TripDetailDialog({ open, onOpenChange, trip, loading, crews, onEdit, on
     if (startSnap.fuelLevel != null) fieldsWithReplace.fuelStart = Number(startSnap.fuelLevel)
     if (startSnap.mileage != null) fieldsWithReplace.mileageStart = Math.round(Number(startSnap.mileage))
 
-    const msg = diffs.map(d => `${d.field}: сейчас ${d.current}, трекер: ${d.tracker}`).join('\n')
-    if (confirm(`Расхождения с данными трекера:\n\n${msg}\n\nЗаменить данными трекера?`)) {
-      applySensorFields(fieldsWithReplace)
-    }
+    setDiscrepancyDialog({
+      open: true,
+      diffs,
+      onReplace: () => { applySensorFields(fieldsWithReplace); setDiscrepancyDialog(d => ({ ...d, open: false })) },
+    })
   }
 
   // Apply end values — if fields already filled with different values, ask user
@@ -3556,10 +3580,11 @@ function TripDetailDialog({ open, onOpenChange, trip, loading, crews, onEdit, on
       fieldsWithReplace.distance = (fieldsWithReplace.mileageEnd as number) - t.mileageStart!
     }
 
-    const msg = diffs.map(d => `${d.field}: сейчас ${d.current}, трекер: ${d.tracker}`).join('\n')
-    if (confirm(`Расхождения с данными трекера:\n\n${msg}\n\nЗаменить данными трекера?`)) {
-      applySensorFields(fieldsWithReplace)
-    }
+    setDiscrepancyDialog({
+      open: true,
+      diffs,
+      onReplace: () => { applySensorFields(fieldsWithReplace); setDiscrepancyDialog(d => ({ ...d, open: false })) },
+    })
   }
 
   return (
@@ -3881,6 +3906,43 @@ function TripDetailDialog({ open, onOpenChange, trip, loading, crews, onEdit, on
           <Button variant="destructive" size="sm" className="h-8 gap-1 text-xs" onClick={() => onDelete(t)}><Trash2 className="size-3.5" />Удалить</Button>
         </DialogFooter>
       </DialogContent>
+      {/* Discrepancy resolution dialog */}
+      <AlertDialog open={discrepancyDialog.open} onOpenChange={(v) => setDiscrepancyDialog(d => ({ ...d, open: v }))}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center gap-2"><AlertTriangle className="size-4 text-amber-500" />Расхождения с данными трекера</AlertDialogTitle>
+            <AlertDialogDescription asChild>
+              <div className="space-y-2">
+                <p className="text-sm">Обнаружены расхождения между текущими значениями и данными трекера:</p>
+                <div className="rounded-md border overflow-hidden">
+                  <table className="w-full text-xs">
+                    <thead>
+                      <tr className="border-b bg-muted/50">
+                        <th className="text-left py-1.5 px-2 font-medium">Показатель</th>
+                        <th className="text-right py-1.5 px-2 font-medium">Сейчас</th>
+                        <th className="text-right py-1.5 px-2 font-medium">Трекер</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {discrepancyDialog.diffs.map((d, i) => (
+                        <tr key={i} className="border-b last:border-0">
+                          <td className="py-1.5 px-2 font-medium">{d.field}</td>
+                          <td className="py-1.5 px-2 text-right text-muted-foreground">{d.current}</td>
+                          <td className="py-1.5 px-2 text-right font-semibold text-amber-600 dark:text-amber-400">{d.tracker}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => setDiscrepancyDialog(d => ({ ...d, open: false }))}>Оставить текущие</AlertDialogCancel>
+            <AlertDialogAction onClick={discrepancyDialog.onReplace} className="bg-amber-600 text-white hover:bg-amber-700">Заменить данными трекера</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </Dialog>
   )
 }
@@ -4213,56 +4275,67 @@ function EmployeesTab({ employees, crews, empSearch, setEmpSearch, empPositionFi
           </CardContent>
         </Card>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-          {filtered.map(emp => {
-            const posInfo = EMPLOYEE_POSITION_MAP[emp.position]
-            const statusInfo = EMPLOYEE_STATUS_MAP[emp.status]
-            const crew = emp.crewId ? crews.find(c => c.id === emp.crewId) : null
-            // Check for expiring license (within 30 days)
-            const licenseExpiring = emp.licenseExpiry && new Date(emp.licenseExpiry) <= new Date(Date.now() + 30 * 24 * 60 * 60 * 1000) && new Date(emp.licenseExpiry) >= new Date()
-            const licenseExpired = emp.licenseExpiry && new Date(emp.licenseExpiry) < new Date()
-            return (
-              <Card key={emp.id} className={`cursor-pointer hover:shadow-md transition-shadow border-l-3 ${statusInfo?.border || 'border-l-gray-300'}`} onClick={() => onOpenDetail(emp)}>
-                <CardHeader className="pb-1.5 pt-3 px-3">
-                  <div className="flex items-start justify-between gap-1.5">
-                    <div className="flex items-center gap-2 min-w-0">
-                      <div className={`flex items-center justify-center size-9 rounded-lg shrink-0 ${getPositionColor(emp.position)}`}>
-                        {getPositionIcon(emp.position)}
-                      </div>
-                      <div className="min-w-0">
-                        <CardTitle className="text-sm font-semibold truncate">{emp.fullName}</CardTitle>
-                        <p className="text-[11px] text-muted-foreground">
-                          <span className={`inline-flex items-center gap-0.5 rounded px-1 py-0 text-[10px] font-medium ${getPositionColor(emp.position)}`}>{posInfo?.label || emp.position}</span>
-                          {crew && <span className="ml-1">• {crew.name}</span>}
-                        </p>
-                      </div>
-                    </div>
-                    {statusInfo && <span className={`inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-medium shrink-0 ${statusInfo.color}`}>{statusInfo.label}</span>}
-                  </div>
-                </CardHeader>
-                <CardContent className="px-3 pb-3 pt-0 space-y-1">
-                  <Separator />
-                  <div className="grid grid-cols-2 gap-x-4 gap-y-0.5 text-[11px]">
-                    {emp.phone && <div><span className="text-muted-foreground">Телефон:</span> <span className="font-medium">{emp.phone}</span></div>}
-                    {emp.licenseNum && <div><span className="text-muted-foreground">ВУ:</span> <span className="font-medium">{emp.licenseNum}</span></div>}
-                    {emp.licenseCat && <div><span className="text-muted-foreground">Кат. ВУ:</span> <span className="font-medium">{emp.licenseCat}</span></div>}
-                    {emp.salary != null && <div><span className="text-muted-foreground">Зарплата:</span> <span className="font-medium">{formatPrice(emp.salary)}</span></div>}
-                    {emp.equipment && <div className="col-span-2"><span className="text-muted-foreground">Техника:</span> <span className="font-medium inline-flex items-center gap-0.5"><Truck className="size-3" />{emp.equipment.name}{emp.equipment.registrationNum ? ` (${emp.equipment.registrationNum})` : ''}</span></div>}
-                  </div>
-                  {licenseExpired && (
-                    <div className="flex items-center gap-1 text-[10px] text-red-600 dark:text-red-400 font-medium mt-1"><AlertTriangle className="size-3" />ВУ истекло!</div>
-                  )}
-                  {licenseExpiring && !licenseExpired && (
-                    <div className="flex items-center gap-1 text-[10px] text-amber-600 dark:text-amber-400 font-medium mt-1"><Clock className="size-3" />ВУ истекает скоро</div>
-                  )}
-                  <div className="flex gap-1 pt-1" onClick={e => e.stopPropagation()}>
-                    <Button size="sm" variant="ghost" className="h-6 text-[10px] gap-0.5" onClick={() => onEdit(emp)}><Edit className="size-3" />Изменить</Button>
-                    <Button size="sm" variant="ghost" className="h-6 text-[10px] gap-0.5 text-destructive hover:text-destructive" onClick={() => onDelete(emp)}><Trash2 className="size-3" />Удалить</Button>
-                  </div>
-                </CardContent>
-              </Card>
-            )
-          })}
+        <div className="border rounded-lg overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="w-full text-[11px]">
+              <thead>
+                <tr className="border-b bg-muted/50 text-muted-foreground">
+                  <th className="text-left py-1.5 px-2 font-medium w-8"></th>
+                  <th className="text-left py-1.5 px-2 font-medium">ФИО</th>
+                  <th className="text-left py-1.5 px-2 font-medium hidden sm:table-cell">Должность</th>
+                  <th className="text-left py-1.5 px-2 font-medium">Статус</th>
+                  <th className="text-left py-1.5 px-2 font-medium hidden sm:table-cell">Телефон</th>
+                  <th className="text-left py-1.5 px-2 font-medium hidden md:table-cell">ВУ</th>
+                  <th className="text-left py-1.5 px-2 font-medium hidden lg:table-cell">Кат.</th>
+                  <th className="text-left py-1.5 px-2 font-medium hidden md:table-cell">Техника</th>
+                  <th className="text-right py-1.5 px-2 font-medium w-16"></th>
+                </tr>
+              </thead>
+              <tbody>
+                {filtered.map(emp => {
+                  const statusInfo = EMPLOYEE_STATUS_MAP[emp.status]
+                  const posInfo = EMPLOYEE_POSITION_MAP[emp.position]
+                  const licenseExpiring = emp.licenseExpiry && new Date(emp.licenseExpiry) <= new Date(Date.now() + 30 * 24 * 60 * 60 * 1000) && new Date(emp.licenseExpiry) >= new Date()
+                  const licenseExpired = emp.licenseExpiry && new Date(emp.licenseExpiry) < new Date()
+                  return (
+                    <tr key={emp.id} className={`border-b last:border-0 cursor-pointer hover:bg-accent/50 transition-colors border-l-2 ${statusInfo?.border || 'border-l-gray-300'}`} onClick={() => onOpenDetail(emp)}>
+                      <td className="py-1.5 px-2">
+                        <div className={`flex items-center justify-center size-6 rounded ${getPositionColor(emp.position)}`}>
+                          {getPositionIcon(emp.position)}
+                        </div>
+                      </td>
+                      <td className="py-1.5 px-2">
+                        <div className="font-medium truncate max-w-[200px]">{emp.fullName}</div>
+                        <div className="flex items-center gap-1 mt-0.5">
+                          <span className={`sm:hidden inline-flex items-center gap-0.5 rounded px-1 py-0 text-[9px] font-medium ${getPositionColor(emp.position)}`}>{posInfo?.label || emp.position}</span>
+                          {licenseExpired && <span className="inline-flex items-center gap-0.5 text-[9px] text-red-600 dark:text-red-400 font-medium"><AlertTriangle className="size-2.5" />ВУ истекло!</span>}
+                          {licenseExpiring && !licenseExpired && <span className="inline-flex items-center gap-0.5 text-[9px] text-amber-600 dark:text-amber-400 font-medium"><Clock className="size-2.5" />ВУ истекает</span>}
+                        </div>
+                      </td>
+                      <td className="py-1.5 px-2 hidden sm:table-cell">
+                        <span className={`inline-flex items-center gap-0.5 rounded px-1 py-0 text-[10px] font-medium ${getPositionColor(emp.position)}`}>{posInfo?.label || emp.position}</span>
+                      </td>
+                      <td className="py-1.5 px-2">{statusBadge(emp.status, EMPLOYEE_STATUS_MAP)}</td>
+                      <td className="py-1.5 px-2 hidden sm:table-cell text-muted-foreground">{emp.phone || '—'}</td>
+                      <td className="py-1.5 px-2 hidden md:table-cell">
+                        <span className="font-mono">{emp.licenseNum || '—'}</span>
+                        {licenseExpired && <AlertTriangle className="inline size-2.5 text-red-500 ml-0.5" />}
+                        {licenseExpiring && !licenseExpired && <Clock className="inline size-2.5 text-amber-500 ml-0.5" />}
+                      </td>
+                      <td className="py-1.5 px-2 hidden lg:table-cell">{emp.licenseCat || '—'}</td>
+                      <td className="py-1.5 px-2 hidden md:table-cell text-muted-foreground truncate max-w-[120px]">{emp.equipment?.name || '—'}</td>
+                      <td className="py-1.5 px-2 text-right" onClick={e => e.stopPropagation()}>
+                        <div className="flex items-center justify-end gap-0.5">
+                          <Button size="sm" variant="ghost" className="size-6 p-0" onClick={() => onEdit(emp)}><Edit className="size-3" /></Button>
+                          <Button size="sm" variant="ghost" className="size-6 p-0 text-destructive hover:text-destructive" onClick={() => onDelete(emp)}><Trash2 className="size-3" /></Button>
+                        </div>
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
     </div>
