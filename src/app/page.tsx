@@ -3278,6 +3278,8 @@ function TripDetailDialog({ open, onOpenChange, trip, loading, crews, onEdit, on
   const [trackData, setTrackData] = useState<Record<string, unknown> | null>(null)
   const [trackLoading, setTrackLoading] = useState(false)
   const [trackError, setTrackError] = useState<string | null>(null)
+  const [trackDateFrom, setTrackDateFrom] = useState<string>('')
+  const [trackDateTo, setTrackDateTo] = useState<string>('')
   const [sensorData, setSensorData] = useState<Record<string, unknown> | null>(null)
   const [sensorLoading, setSensorLoading] = useState(false)
   const [sensorError, setSensorError] = useState<string | null>(null)
@@ -3287,6 +3289,8 @@ function TripDetailDialog({ open, onOpenChange, trip, loading, crews, onEdit, on
   useEffect(() => {
     setTrackData(null)
     setTrackError(null)
+    setTrackDateFrom('')
+    setTrackDateTo('')
     setSensorData(null)
     setSensorError(null)
     setApplySuccess(null)
@@ -3318,13 +3322,21 @@ function TripDetailDialog({ open, onOpenChange, trip, loading, crews, onEdit, on
   const calcDistKm = (t.mileageStart != null && t.mileageEnd != null) ? t.mileageEnd - t.mileageStart : null
   const displayDist = t.distance ?? calcDistKm
 
-  // Load track data for completed trips
+  // Load track data from Axenta for the trip period (or custom dates)
   const loadTrack = async () => {
-    if (!t.endDate) return
     setTrackLoading(true)
     setTrackError(null)
     try {
-      const res = await fetch(`/api/trips/${t.id}?action=track`)
+      // Build URL with optional date overrides
+      const params = new URLSearchParams({ action: 'track' })
+      const from = trackDateFrom || (t.startDate ? new Date(t.startDate).toISOString().slice(0, 16) : '')
+      const to = trackDateTo || (t.endDate ? new Date(t.endDate).toISOString().slice(0, 16) : '')
+      if (!from || !to) {
+        throw new Error('Укажите период для загрузки трека')
+      }
+      params.set('from', new Date(from).toISOString())
+      params.set('to', new Date(to).toISOString())
+      const res = await fetch(`/api/trips/${t.id}?${params}`)
       if (!res.ok) {
         const errData = await res.json().catch(() => null)
         throw new Error(errData?.error || 'Ошибка загрузки трека')
@@ -3687,16 +3699,43 @@ function TripDetailDialog({ open, onOpenChange, trip, loading, crews, onEdit, on
               </div>
 
               {/* ── ТРЕК НА КАРТЕ ── */}
-              {isCompleted && t.endDate && (
+              {t.startDate && (
                 <div className="space-y-2">
                   <div className="flex items-center justify-between">
                     <h4 className="text-xs font-semibold flex items-center gap-1.5"><Map className="size-3.5" />Трек на карте</h4>
-                    {!trackData && !trackLoading && (
-                      <Button variant="outline" size="sm" className="h-7 text-[10px] gap-1" onClick={loadTrack}>
-                        <Navigation className="size-3" />Загрузить трек
+                    {trackData && !trackLoading && (
+                      <Button variant="ghost" size="sm" className="h-7 text-[10px] gap-1" onClick={() => { setTrackData(null); setTrackError(null) }}>
+                        <X className="size-3" />Скрыть
                       </Button>
                     )}
                   </div>
+                  {!trackData && !trackLoading && (
+                    <div className="space-y-2">
+                      <div className="grid grid-cols-2 gap-2">
+                        <div>
+                          <Label className="text-[10px] text-muted-foreground">От</Label>
+                          <Input
+                            type="datetime-local"
+                            className="h-7 text-[11px]"
+                            value={trackDateFrom || (t.startDate ? new Date(t.startDate).toISOString().slice(0, 16) : '')}
+                            onChange={e => setTrackDateFrom(e.target.value)}
+                          />
+                        </div>
+                        <div>
+                          <Label className="text-[10px] text-muted-foreground">До</Label>
+                          <Input
+                            type="datetime-local"
+                            className="h-7 text-[11px]"
+                            value={trackDateTo || (t.endDate ? new Date(t.endDate).toISOString().slice(0, 16) : '')}
+                            onChange={e => setTrackDateTo(e.target.value)}
+                          />
+                        </div>
+                      </div>
+                      <Button variant="outline" size="sm" className="h-7 text-[10px] gap-1 w-full" onClick={loadTrack} disabled={trackLoading}>
+                        <Navigation className="size-3" />Загрузить трек из Axenta
+                      </Button>
+                    </div>
+                  )}
                   {trackLoading && (
                     <div className="flex items-center justify-center h-32 bg-muted/30 rounded-lg">
                       <Loader2 className="size-4 animate-spin text-muted-foreground" />

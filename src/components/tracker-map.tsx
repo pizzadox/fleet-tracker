@@ -313,7 +313,7 @@ function buildVehiclePopup(tracker: TrackerInfo): string {
           <span style="font-size: 14px;">${typeIcon}</span>
         </div>
         <div>
-          <div style="font-weight: 700; font-size: 13px; ${tracker.equipmentId ? 'color: #3b82f6; cursor: pointer; text-decoration: underline;' : ''}" ${tracker.equipmentId ? `data-equipment-id="${tracker.equipmentId}"` : ''}>${tracker.equipmentName || tracker.trackerName || 'Трекер'}</div>
+          <div style="font-weight: 700; font-size: 13px; ${tracker.equipmentId ? 'color: #3b82f6; cursor: pointer; text-decoration: underline; ' : ''}" ${tracker.equipmentId ? `data-equipment-id="${tracker.equipmentId}" title="Открыть карточку техники"` : ''}>${tracker.equipmentName || tracker.trackerName || 'Трекер'}</div>
           ${regNum ? `<div style="color: #6b7280; font-size: 11px;">${regNum}</div>` : ''}
         </div>
         <div style="margin-left: auto;">
@@ -490,9 +490,21 @@ export default function TrackerMap({
         .bindPopup(buildVehiclePopup(tracker), { className: 'tracker-popup', maxWidth: 340 })
         .bindTooltip(buildVehicleTooltip(tracker), { direction: 'top', offset: [0, -24], className: 'tracker-tooltip' })
 
+      // Handle equipment click via popup link instead of marker click
+      // so the popup shows first, and the card only opens when user
+      // explicitly clicks the equipment name inside the popup.
       if (onEquipmentClick && tracker.equipmentId) {
-        marker.on('click', () => {
-          onEquipmentClick(tracker.equipmentId!)
+        marker.on('popupopen', () => {
+          const popupEl = marker.getPopup()?.getElement()
+          if (!popupEl) return
+          const link = popupEl.querySelector('[data-equipment-id]')
+          if (link && !link.dataset.bound) {
+            link.dataset.bound = 'true'
+            link.addEventListener('click', (e: Event) => {
+              e.stopPropagation()
+              onEquipmentClick(tracker.equipmentId!)
+            })
+          }
         })
       }
 

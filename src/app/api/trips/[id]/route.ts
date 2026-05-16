@@ -20,8 +20,16 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
         include: { equipment: { select: { id: true, name: true, registrationNum: true } } },
       })
       if (!trip) return NextResponse.json({ error: 'Рейс не найден' }, { status: 404 })
-      if (!trip.startDate || !trip.endDate) {
-        return NextResponse.json({ error: 'У рейса нет дат начала/окончания' }, { status: 400 })
+
+      // Allow overriding dates via query params so that tracks can be loaded
+      // for trips without endDate (e.g. in_progress) or with custom date range
+      const overrideFrom = searchParams.get('from')
+      const overrideTo = searchParams.get('to')
+      const trackStartDate = overrideFrom ? new Date(overrideFrom) : trip.startDate
+      const trackEndDate = overrideTo ? new Date(overrideTo) : trip.endDate
+
+      if (!trackStartDate || !trackEndDate) {
+        return NextResponse.json({ error: 'Укажите период для загрузки трека' }, { status: 400 })
       }
 
       const tracker = await db.glonassTracker.findFirst({
@@ -43,8 +51,8 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
         headers: { 'Authorization': `Token ${settings.apiKey}`, 'Content-Type': 'application/json' },
         body: JSON.stringify({
           objectId: Number(objectId),
-          startDate: new Date(trip.startDate).toISOString(),
-          endDate: new Date(trip.endDate).toISOString(),
+          startDate: new Date(trackStartDate).toISOString(),
+          endDate: new Date(trackEndDate).toISOString(),
           trackType: 'single', detectTrips: true, withStops: true, withParkings: true, withRefuels: true, withPlums: true,
         }),
         signal: AbortSignal.timeout(30000),
