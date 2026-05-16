@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useRef, useCallback } from 'react'
+import { useEffect, useRef, useCallback, useState } from 'react'
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
 
@@ -11,6 +11,18 @@ L.Icon.Default.mergeOptions({
   iconUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-icon.png',
   shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-shadow.png',
 })
+
+// ─── Refresh interval options ─────────────────────────────────────
+export const REFRESH_OPTIONS = [
+  { value: 0, label: 'Выкл' },
+  { value: 10, label: '10 сек' },
+  { value: 30, label: '30 сек' },
+  { value: 60, label: '1 мин' },
+  { value: 120, label: '2 мин' },
+  { value: 300, label: '5 мин' },
+] as const
+
+export type RefreshInterval = typeof REFRESH_OPTIONS[number]['value']
 
 interface SensorData {
   id: string
@@ -88,9 +100,12 @@ interface TrackerMapProps {
   trackData?: TrackData | null
   onMarkerClick?: (trackerId: string) => void
   onEquipmentClick?: (equipmentId: string) => void
-  autoRefreshMs?: number  // auto-refresh interval in ms (0 = disabled)
-  onRefresh?: () => void  // callback to trigger data refresh
+  refreshInterval?: RefreshInterval  // selected refresh interval in seconds
+  onRefresh?: () => void             // callback to trigger data refresh
+  onRefreshIntervalChange?: (val: RefreshInterval) => void
 }
+
+// ─── Formatters ───────────────────────────────────────────────────
 
 function formatDateTime(d?: string | null): string {
   if (!d) return '—'
@@ -145,6 +160,8 @@ function formatSensorValue(s: SensorData): string {
   const val = s.value != null ? s.value : (s.stringValue || '—')
   return `${val}${s.unit ? ' ' + s.unit : ''}`
 }
+
+// ─── Equipment type helpers ───────────────────────────────────────
 
 function getEquipmentIcon(type?: string | null): string {
   if (!type) return '🚗'
@@ -326,7 +343,20 @@ function buildVehicleTooltip(tracker: TrackerInfo): string {
   return `<div style="font-family:system-ui;font-size:11px;"><strong>${tracker.equipmentName || tracker.trackerName || 'Трекер'}</strong>${regNum ? `<br/><span style="color:#6b7280">${regNum}</span>` : ''}</div>`
 }
 
-export default function TrackerMap({ trackers, trackPoints, trackData, onMarkerClick, onEquipmentClick, autoRefreshMs, onRefresh }: TrackerMapProps) {
+// ═══════════════════════════════════════════════════════════════════
+// MAIN MAP COMPONENT
+// ═══════════════════════════════════════════════════════════════════
+
+export default function TrackerMap({
+  trackers,
+  trackPoints,
+  trackData,
+  onMarkerClick,
+  onEquipmentClick,
+  refreshInterval = 60,
+  onRefresh,
+  onRefreshIntervalChange,
+}: TrackerMapProps) {
   const mapRef = useRef<HTMLDivElement>(null)
   const mapInstanceRef = useRef<L.Map | null>(null)
   const legendRef = useRef<L.Control | null>(null)
@@ -337,6 +367,10 @@ export default function TrackerMap({ trackers, trackPoints, trackData, onMarkerC
   const markerByIdRef = useRef<Map<string, L.Marker>>(new Map())
   // Auto-refresh timer ref
   const refreshTimerRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  // Track whether the map has been initially fit to bounds
+  const hasFitBoundsRef = useRef(false)
+  // Last track data signature to avoid re-rendering tracks unnecessarily
+  const lastTrackSignatureRef = useRef<string>('')
 
   // ─── Initialize map once ──────────────────────────────────────
   useEffect(() => {
@@ -368,26 +402,28 @@ export default function TrackerMap({ trackers, trackPoints, trackData, onMarkerC
       mapInstanceRef.current = null
       markersLayerRef.current = null
       tracksLayerRef.current = null
+      hasFitBoundsRef.current = false
     }
   }, [])
 
-  // ─── Auto-refresh ─────────────────────────────────────────────
+  // ─── Auto-refresh with selected interval ──────────────────────
   useEffect(() => {
     if (refreshTimerRef.current) {
       clearInterval(refreshTimerRef.current)
       refreshTimerRef.current = null
     }
-    if (autoRefreshMs && autoRefreshMs > 0 && onRefresh) {
+    const ms = refreshInterval * 1000
+    if (ms > 0 && onRefresh) {
       refreshTimerRef.current = setInterval(() => {
         onRefresh()
-      }, autoRefreshMs)
+      }, ms)
     }
     return () => {
       if (refreshTimerRef.current) clearInterval(refreshTimerRef.current)
     }
-  }, [autoRefreshMs, onRefresh])
+  }, [refreshInterval, onRefresh])
 
-  // ─── Update vehicle markers without destroying map ────────────
+  // ─── Update vehicle markers without resetting view ────────────
   const updateMarkers = useCallback(() => {
     const map = mapInstanceRef.current
     const markersLayer = markersLayerRef.current
@@ -431,13 +467,16 @@ export default function TrackerMap({ trackers, trackPoints, trackData, onMarkerC
       }
     }
 
-    // Fit bounds to markers if there are any
-    const allMarkers = Array.from(existingMarkers.values())
-    if (allMarkers.length > 0) {
-      try {
-        const group = L.featureGroup(allMarkers)
-        map.fitBounds(group.getBounds(), { padding: [30, 30], maxZoom: 14 })
-      } catch { /* skip if bounds invalid */ }
+    // Only fit bounds on first load (when no markers existed before)
+    if (!hasFitBoundsRef.current) {
+      const allMarkers = Array.from(existingMarkers.values())
+      if (allMarkers.length > 0) {
+        try {
+          const group = L.featureGroup(allMarkers)
+          map.fitBounds(group.getBounds(), { padding: [30, 30], maxZoom: 14 })
+          hasFitBoundsRef.current = true
+        } catch { /* skip if bounds invalid */ }
+      }
     }
   }, [trackers, onEquipmentClick])
 
@@ -451,6 +490,12 @@ export default function TrackerMap({ trackers, trackPoints, trackData, onMarkerC
         .bindPopup(buildVehiclePopup(tracker), { className: 'tracker-popup', maxWidth: 340 })
         .bindTooltip(buildVehicleTooltip(tracker), { direction: 'top', offset: [0, -24], className: 'tracker-tooltip' })
 
+      if (onEquipmentClick && tracker.equipmentId) {
+        marker.on('click', () => {
+          onEquipmentClick(tracker.equipmentId!)
+        })
+      }
+
       layer.addLayer(marker)
       return marker
     } catch {
@@ -463,11 +508,16 @@ export default function TrackerMap({ trackers, trackPoints, trackData, onMarkerC
     updateMarkers()
   }, [updateMarkers])
 
-  // ─── Update tracks without destroying map ─────────────────────
+  // ─── Update tracks — only when trackData actually changes ─────
   useEffect(() => {
     const map = mapInstanceRef.current
     const tracksLayer = tracksLayerRef.current
     if (!map || !tracksLayer) return
+
+    // Create a signature to avoid unnecessary re-renders
+    const signature = JSON.stringify({ trackData, trackPoints })
+    if (signature === lastTrackSignatureRef.current) return
+    lastTrackSignatureRef.current = signature
 
     // Clear all existing track layers
     tracksLayer.clearLayers()
@@ -583,7 +633,7 @@ export default function TrackerMap({ trackers, trackPoints, trackData, onMarkerC
         }
       }
 
-      // Fit bounds to track data
+      // Fit bounds to track data only (user explicitly loaded a track)
       if (allBounds.length > 0) {
         const combined = allBounds.reduce((acc, b) => acc.extend(b), L.latLngBounds(allBounds[0]))
         map.fitBounds(combined, { padding: [40, 40] })
@@ -618,23 +668,10 @@ export default function TrackerMap({ trackers, trackPoints, trackData, onMarkerC
       map.fitBounds(polyline.getBounds(), { padding: [30, 30] })
     }
 
-    // Handle equipment click via event delegation
-    if (onEquipmentClick) {
-      const handleClick = (e: Event) => {
-        const target = e.target as HTMLElement
-        const btn = target.closest('[data-equipment-id]') as HTMLElement | null
-        if (btn) {
-          const equipmentId = btn.getAttribute('data-equipment-id')
-          if (equipmentId) onEquipmentClick(equipmentId)
-        }
-      }
-      map.getContainer().addEventListener('click', handleClick)
-    }
-
     // Invalidate size after render
     setTimeout(() => map.invalidateSize(), 100)
 
-  }, [trackData, trackPoints, onEquipmentClick])
+  }, [trackData, trackPoints])
 
   return <div ref={mapRef} className="w-full h-full" />
 }

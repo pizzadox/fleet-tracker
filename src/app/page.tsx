@@ -11,6 +11,16 @@ import dynamic from 'next/dynamic'
 
 const TrackerMap = dynamic(() => import('@/components/tracker-map'), { ssr: false })
 
+// Refresh interval options for map auto-update
+const REFRESH_OPTIONS = [
+  { value: 0, label: 'Выкл' },
+  { value: 10, label: '10 сек' },
+  { value: 30, label: '30 сек' },
+  { value: 60, label: '1 мин' },
+  { value: 120, label: '2 мин' },
+  { value: 300, label: '5 мин' },
+] as const
+
 // ─── shadcn/ui ────────────────────────────────────────────────
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -4378,6 +4388,7 @@ function MapTab({ equipment, onSync, onOpenDetail }: {
   onOpenDetail?: (equipmentId: string) => void
 }) {
   const [syncing, setSyncing] = useState(false)
+  const [refreshInterval, setRefreshInterval] = useState<ReturnType<typeof REFRESH_OPTIONS[number]['value']>>(60) // seconds, default 1 min
   const [filter, setFilter] = useState<'all' | 'online' | 'offline' | 'notracker'>('all')
   const [subTab, setSubTab] = useState<'map' | 'notifications'>('map')
   const [notifRules, setNotifRules] = useState<Array<{
@@ -4849,8 +4860,19 @@ function MapTab({ equipment, onSync, onOpenDetail }: {
               Синхронизировать
             </Button>
             <span className="text-[9px] text-muted-foreground flex items-center gap-1">
-              <span className="size-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
-              Автообновление 60 сек
+              <span className={`size-1.5 rounded-full ${refreshInterval > 0 ? 'bg-emerald-500 animate-pulse' : 'bg-muted-foreground/40'}`}></span>
+              <Select value={String(refreshInterval)} onValueChange={v => setRefreshInterval(Number(v) as any)}>
+                <SelectTrigger className="h-5 w-auto border-0 p-0 text-[9px] text-muted-foreground gap-0.5 shadow-none focus:ring-0" style={{ minWidth: 0 }}>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent className="min-w-[100px]">
+                  {REFRESH_OPTIONS.map(opt => (
+                    <SelectItem key={opt.value} value={String(opt.value)} className="text-[11px]">
+                      {refreshInterval > 0 && opt.value === refreshInterval ? '🔄 ' : ''}{opt.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </span>
           </div>
 
@@ -5006,7 +5028,7 @@ function MapTab({ equipment, onSync, onOpenDetail }: {
                       <p className="text-xs mt-1">Подключите ГЛОНАСС трекеры к технике для отображения на карте</p>
                     </div>
                   ) : (
-                    <TrackerMap trackers={mapTrackers} trackPoints={trackPoints} trackData={mapTrackData} onEquipmentClick={onOpenDetail} autoRefreshMs={60000} onRefresh={onSync} />
+                    <TrackerMap trackers={mapTrackers} trackPoints={trackPoints} trackData={mapTrackData} onEquipmentClick={onOpenDetail} refreshInterval={refreshInterval} onRefresh={onSync} />
                   )}
                 </div>
               </CardContent>
