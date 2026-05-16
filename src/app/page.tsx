@@ -929,7 +929,7 @@ export default function Home() {
       <StageFormDialog open={stageFormOpen} onOpenChange={setStageFormOpen} repairId={stageFormRepairId} editData={stageFormEdit} saving={stageFormSaving} setSaving={setStageFormSaving} onSaved={() => { setStageFormOpen(false); if (selectedRepair) { fetchRepairDetail(selectedRepair.id); fetchRepairs(); if (selectedEq) fetchEquipmentDetail(selectedEq.id) } }} />
       <PhotoUploadDialog open={!!photoUploadEq} onOpenChange={(v) => { if (!v) setPhotoUploadEq(null) }} targetId={photoUploadEq || ''} targetType="equipment" onUploaded={() => { setPhotoUploadEq(null); if (selectedEq) fetchEquipmentDetail(selectedEq.id); fetchAll() }} />
       <RepairPhotoUploadDialog open={!!photoUploadRepair} onOpenChange={(v) => { if (!v) setPhotoUploadRepair(null) }} targetId={photoUploadRepair || ''} stages={selectedRepair?.stages || []} onUploaded={() => { setPhotoUploadRepair(null); if (selectedRepair) fetchRepairDetail(selectedRepair.id) }} />
-      <TripDetailDialog open={tripDetailOpen} onOpenChange={setTripDetailOpen} trip={selectedTrip} loading={tripDetailLoading} crews={crews} onEdit={(t) => { setTripDetailOpen(false); setTripFormEdit(t); setTripFormEquipmentId(t.equipmentId); setTripFormOpen(true) }} onDelete={(t) => { setTripDetailOpen(false); setDeleteDialog({ open: true, type: 'trip', id: t.id, name: t.route }) }} onStart={async (t) => { try { const res = await fetch(`/api/trips/${t.id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status: 'in_progress' }) }); if (!res.ok) throw new Error(); toast.success('Рейс начат'); fetchTripDetail(t.id); fetchAll() } catch { toast.error('Ошибка') } }} onComplete={async (t) => { try { const res = await fetch(`/api/trips/${t.id}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'complete' }) }); if (!res.ok) { const errData = await res.json().catch(() => null); throw new Error(errData?.error || 'Ошибка') } toast.success('Рейс завершён'); fetchTripDetail(t.id); fetchAll() } catch (e: any) { toast.error(e.message || 'Ошибка завершения рейса') } }} onRefresh={() => selectedTrip && fetchTripDetail(selectedTrip.id)} />
+      <TripDetailDialog open={tripDetailOpen} onOpenChange={setTripDetailOpen} trip={selectedTrip} loading={tripDetailLoading} crews={crews} onEdit={(t) => { setTripDetailOpen(false); setTripFormEdit(t); setTripFormEquipmentId(t.equipmentId); setTripFormOpen(true) }} onDelete={(t) => { setTripDetailOpen(false); setDeleteDialog({ open: true, type: 'trip', id: t.id, name: t.route }) }} onStart={async (t) => { try { const res = await fetch(`/api/trips/${t.id}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'start' }) }); if (!res.ok) { const errData = await res.json().catch(() => null); throw new Error(errData?.error || 'Ошибка') } toast.success('Рейс начат, данные трекера заполнены'); fetchTripDetail(t.id); fetchAll() } catch (e: any) { toast.error(e.message || 'Ошибка') } }} onComplete={async (t) => { try { const res = await fetch(`/api/trips/${t.id}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'complete' }) }); if (!res.ok) { const errData = await res.json().catch(() => null); throw new Error(errData?.error || 'Ошибка') } toast.success('Рейс завершён, данные трекера заполнены'); fetchTripDetail(t.id); fetchAll() } catch (e: any) { toast.error(e.message || 'Ошибка завершения рейса') } }} onRefresh={() => selectedTrip && fetchTripDetail(selectedTrip.id)} />
       <TripFormDialog open={tripFormOpen} onOpenChange={setTripFormOpen} editData={tripFormEdit} equipmentId={tripFormEquipmentId} equipmentList={equipment} crews={crews} saving={tripFormSaving} setSaving={setTripFormSaving} onSaved={() => { setTripFormOpen(false); fetchAll() }} />
       <CrewFormDialog open={crewFormOpen} onOpenChange={setCrewFormOpen} editData={crewFormEdit} saving={crewFormSaving} setSaving={setCrewFormSaving} onSaved={() => { setCrewFormOpen(false); fetchAll() }} employees={employees} />
       <EmployeeDetailSheet open={empDetailOpen} onOpenChange={setEmpDetailOpen} employee={selectedEmp} loading={empDetailLoading} crews={crews} onEdit={(emp) => { setEmpDetailOpen(false); setEmpFormEdit(emp); setEmpFormOpen(true) }} onDelete={(emp) => { setEmpDetailOpen(false); setDeleteDialog({ open: true, type: 'employee', id: emp.id, name: emp.fullName }) }} onRefresh={() => selectedEmp && fetchEmployeeDetail(selectedEmp.id)} />
@@ -3507,22 +3507,6 @@ function TripDetailDialog({ open, onOpenChange, trip, loading, crews, onEdit, on
               <DetailSection title="Топливо и пробег" icon={<Fuel className="size-3.5" />}>
                 <DetailRow label="Топливо на старте (л)" value={t.fuelStart?.toString()} />
                 <DetailRow label="Топливо на финише (л)" value={t.fuelEnd?.toString()} />
-                {isCompleted && t.fuelConsumed != null && (
-                  <DetailRow label="Израсходовано (л)" value={
-                    <span className="font-semibold text-amber-600 dark:text-amber-400">{t.fuelConsumed} л</span> as any
-                  } />
-                )}
-                {isCompleted && t.avgFuelRate != null && (
-                  <DetailRow label="Средний расход (л/100км)" value={`${t.avgFuelRate}`} />
-                )}
-                {isCompleted && t.refuelVolume != null && t.refuelVolume > 0 && (
-                  <DetailRow label="Заправки (л)" value={`${t.refuelVolume}`} />
-                )}
-                {isCompleted && t.plumVolume != null && t.plumVolume > 0 && (
-                  <DetailRow label="Сливы (л)" value={
-                    <span className="font-semibold text-red-600 dark:text-red-400">{t.plumVolume}</span> as any
-                  } />
-                )}
                 <DetailRow label="Пробег на старте (км)" value={t.mileageStart?.toLocaleString('ru-RU')} />
                 <DetailRow label="Пробег на финише (км)" value={t.mileageEnd?.toLocaleString('ru-RU')} />
                 {(t.mileageStart != null && t.mileageEnd != null) && (
@@ -3532,22 +3516,26 @@ function TripDetailDialog({ open, onOpenChange, trip, loading, crews, onEdit, on
                 )}
               </DetailSection>
 
-              {/* ── АНАЛИТИКА ТРЕКЕРА (для завершённых рейсов) ── */}
-              {isCompleted && (
-                <DetailSection title="Аналитика трекера" icon={<Gauge className="size-3.5" />}>
-                  {t.avgSpeed != null && <DetailRow label="Средняя скорость (км/ч)" value={t.avgSpeed.toString()} />}
-                  {t.maxSpeed != null && <DetailRow label="Макс. скорость (км/ч)" value={t.maxSpeed.toString()} />}
-                  {t.engineHours != null && <DetailRow label="Моточасы" value={t.engineHours.toString()} />}
+              {/* ── АНАЛИТИКА ТРЕКЕРА ── */}
+              {(t.avgSpeed != null || t.maxSpeed != null || t.engineHours != null || t.idleTime != null || t.fuelConsumed != null || t.distance != null || t.tripDuration != null || t.parkingsDuration != null) && (
+                <DetailSection title="Статистика рейса" icon={<Gauge className="size-3.5" />}>
+                  {t.distance != null && <DetailRow label="Расстояние" value={<span className="font-semibold text-emerald-600 dark:text-emerald-400">{t.distance.toFixed(1)} км</span> as any} />}
+                  {t.tripDuration != null && <DetailRow label="Время в пути" value={fmtDur(t.tripDuration)} />}
+                  {t.parkingsDuration != null && <DetailRow label="Время стоянок" value={fmtDur(t.parkingsDuration)} />}
+                  {t.avgSpeed != null && <DetailRow label="Средняя скорость" value={`${t.avgSpeed} км/ч`} />}
+                  {t.maxSpeed != null && <DetailRow label="Макс. скорость" value={`${t.maxSpeed} км/ч`} />}
+                  {t.engineHours != null && <DetailRow label="Моточасы" value={fmtDur(t.engineHours)} />}
                   {t.idleTime != null && <DetailRow label="Холостой ход" value={fmtDur(t.idleTime)} />}
-                  {!t.avgSpeed && !t.maxSpeed && !t.engineHours && !t.fuelConsumed && !trackerSnapshot && (
-                    <p className="text-xs text-muted-foreground col-span-2">Данные трекера отсутствуют. Завершите рейс с подключённым трекером для получения аналитики.</p>
-                  )}
+                  {t.fuelConsumed != null && <DetailRow label="Расход топлива" value={<span className="font-semibold text-amber-600 dark:text-amber-400">{t.fuelConsumed} л</span> as any} />}
+                  {t.avgFuelRate != null && <DetailRow label="Средний расход" value={`${t.avgFuelRate} л/100км`} />}
+                  {t.refuelVolume != null && t.refuelVolume > 0 && <DetailRow label="Заправки" value={`${t.refuelVolume} л`} />}
+                  {t.plumVolume != null && t.plumVolume > 0 && <DetailRow label="Сливы" value={<span className="font-semibold text-red-600 dark:text-red-400">{t.plumVolume} л</span> as any} />}
                 </DetailSection>
               )}
 
               {/* ── ДАННЫЕ ДАТЧИКОВ ИЗ СНАПШОТА ── */}
-              {isCompleted && trackerSnapshot && (trackerSnapshot as any).sensors && (trackerSnapshot as any).sensors.length > 0 && (
-                <DetailSection title="Датчики (на момент завершения)" icon={<CircuitBoard className="size-3.5" />}>
+              {trackerSnapshot && (trackerSnapshot as any).sensors && (trackerSnapshot as any).sensors.length > 0 && (
+                <DetailSection title={`Датчики (${isCompleted ? 'на момент завершения' : 'на момент старта'})`} icon={<CircuitBoard className="size-3.5" />}>
                   <div className="col-span-2">
                     <div className="grid grid-cols-2 gap-1">
                       {(trackerSnapshot as any).sensors.map((s: any, i: number) => (

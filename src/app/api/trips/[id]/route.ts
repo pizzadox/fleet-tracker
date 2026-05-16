@@ -32,10 +32,11 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
         return NextResponse.json({ error: 'Укажите период для загрузки трека' }, { status: 400 })
       }
 
+      // Find any tracker (not just active ones) — some trackers may be offline but still have Axenta ID
       const tracker = await db.glonassTracker.findFirst({
-        where: { equipmentId: trip.equipmentId, isActive: true },
+        where: { equipmentId: trip.equipmentId },
       })
-      if (!tracker) return NextResponse.json({ error: 'У техники нет активного трекера' }, { status: 404 })
+      if (!tracker) return NextResponse.json({ error: 'У техники нет привязанного трекера' }, { status: 404 })
 
       const settings = await db.axentaSettings.findFirst()
       if (!settings?.isActive || !settings.apiUrl || !settings.apiKey) {
@@ -262,10 +263,63 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
 }
 
 // ═══════════════════════════════════════════════════════════════
-// POST /api/trips/[id] — Завершение рейса с захватом данных трекера
-//   Body: { action: 'complete' }
+// POST /api/trips/[id] — Действия с рейсом
+//   Body: { action: 'start' }   — Начать рейс с автозаполнением данных трекера
+//   Body: { action: 'complete' } — Завершить рейс с захватом данных трекера
 // PUT /api/trips/[id] — Обычное обновление рейса
 // ═══════════════════════════════════════════════════════════════
+
+async function handleStart(id: string) {
+  const trip = await db.trip.findUnique({
+    where: { id },
+    include: {
+      equipment: { select: { id: true, name: true, registrationNum: true, brand: true, model: true } },
+      crew: { select: { id: true, name: true, members: { select: { fullName: true, role: true } } } },
+    },
+  })
+  if (!trip) return NextResponse.json({ error: 'Рейс не найден' }, { status: 404 })
+  if (trip.status !== 'planned') return NextResponse.json({ error: 'Начать можно только запланированный рейс' }, { status: 400 })
+
+  const now = new Date()
+  const updateData: Record<string, unknown> = { status: 'in_progress', startDate: now }
+
+  // Try to get tracker data for auto-fill
+  const tracker = await db.glonassTracker.findFirst({
+    where: { equipmentId: trip.equipmentId },
+    include: { sensorData: true },
+  })
+
+  if (tracker) {
+    // Auto-fill start values from tracker
+    if (tracker.lastFuelLevel != null) updateData.fuelStart = tracker.lastFuelLevel
+    if (tracker.lastMileage != null) updateData.mileageStart = Math.round(tracker.lastMileage)
+
+    // Snapshot tracker data at start
+    const snapshot: Record<string, unknown> = {
+      trackerId: tracker.id, trackerName: tracker.trackerName, imei: tracker.imei,
+      capturedAt: now.toISOString(), fuelLevel: tracker.lastFuelLevel, mileage: tracker.lastMileage,
+      engineTemp: tracker.lastEngineTemp, speed: tracker.lastSpeed, ignition: tracker.lastIgnition,
+      latitude: tracker.lastLatitude, longitude: tracker.lastLongitude, address: tracker.lastAddress,
+      sensors: tracker.sensorData.map(s => ({ type: s.sensorType, name: s.sensorName, value: s.value, unit: s.unit })),
+    }
+    updateData.trackerSnapshot = JSON.stringify(snapshot)
+  }
+
+  const updatedTrip = await db.trip.update({
+    where: { id },
+    data: updateData,
+    include: {
+      equipment: { select: { id: true, name: true, registrationNum: true, brand: true, model: true } },
+      crew: { select: { id: true, name: true, members: { select: { fullName: true, role: true } } } },
+    },
+  })
+
+  await db.equipmentHistory.create({
+    data: { equipmentId: trip.equipmentId, event: 'trip_started', description: `Рейс начат: ${trip.route}`, date: now },
+  })
+
+  return NextResponse.json(updatedTrip)
+}
 
 async function handleComplete(id: string) {
   const trip = await db.trip.findUnique({
@@ -282,9 +336,9 @@ async function handleComplete(id: string) {
   const now = new Date()
   const updateData: Record<string, unknown> = { status: 'completed', endDate: now }
 
-  // Try to get tracker data
+  // Try to get tracker data (any tracker, not just active)
   const tracker = await db.glonassTracker.findFirst({
-    where: { equipmentId: trip.equipmentId, isActive: true },
+    where: { equipmentId: trip.equipmentId },
     include: { sensorData: true },
   })
 
@@ -374,6 +428,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   try {
     const { id } = await params
     const body = await request.json()
+    if (body?.action === 'start') return await handleStart(id)
     if (body?.action === 'complete') return await handleComplete(id)
     return NextResponse.json({ error: 'Unknown action' }, { status: 400 })
   } catch (error) {
