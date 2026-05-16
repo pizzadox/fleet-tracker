@@ -63,7 +63,7 @@ import {
   Route, Package, Weight, UserCircle, IdCard, ClipboardCheck, Map, Bell,
   Car, Bus, Bike, Tractor, Ship, Container, Wrench as Settings, CircuitBoard, Cable,
   UserPlus, UserCheck, Download, Cpu, BarChart3, Compass, Mountain,
-  ArrowDownToLine, ArrowUpFromLine
+  ArrowDownToLine, ArrowUpFromLine, Save, Printer
 } from 'lucide-react'
 
 // ═══════════════════════════════════════════════════════════════
@@ -3326,6 +3326,8 @@ function TripDetailDialog({ open, onOpenChange, trip, loading, crews, onEdit, on
   const [discrepancyDialog, setDiscrepancyDialog] = useState<{
     open: boolean; diffs: Array<{ field: string; current: string; tracker: string }>; onReplace: () => void
   }>({ open: false, diffs: [], onReplace: () => {} })
+  const [tripSaved, setTripSaved] = useState(false)
+  const [savingTrip, setSavingTrip] = useState(false)
 
   // Reset all data when trip changes — must be before any early return (Rules of Hooks)
   useEffect(() => {
@@ -3336,6 +3338,7 @@ function TripDetailDialog({ open, onOpenChange, trip, loading, crews, onEdit, on
     setCompareData(null)
     setCompareError(null)
     setApplySuccess(null)
+    setTripSaved(false)
   }, [trip?.id])
 
   // Auto-load track and sensor comparison when dialog opens or trip changes
@@ -3417,6 +3420,91 @@ function TripDetailDialog({ open, onOpenChange, trip, loading, crews, onEdit, on
       setTrackError(e.message || 'Ошибка загрузки трека')
     }
     setTrackLoading(false)
+  }
+
+  // Reload sensor comparison data
+  const reloadSensors = async () => {
+    if (!trip) return
+    setCompareLoading(true)
+    setCompareError(null)
+    try {
+      const res = await fetch(`/api/trips/${trip.id}?action=sensor-compare`)
+      if (res.ok) {
+        const data = await res.json()
+        setCompareData(data)
+      } else {
+        const errData = await res.json().catch(() => null)
+        setCompareError(errData?.error || 'Не удалось загрузить данные')
+      }
+    } catch (e: any) {
+      setCompareError(e.message || 'Ошибка загрузки')
+    }
+    setCompareLoading(false)
+  }
+
+  // Save all trip data (sensor snapshots, fuel, mileage, stats) to DB
+  const saveTripData = async () => {
+    if (!trip || !compareData) return
+    setSavingTrip(true)
+    try {
+      const startSnap = compareData.startSnapshot as Record<string, unknown> | null
+      const endSnap = compareData.endSnapshot as Record<string, unknown> | null
+      const stats = compareData.tripStats as Record<string, unknown> | null
+      const fields: Record<string, unknown> = {}
+
+      // Start snapshot data
+      if (startSnap) {
+        if (startSnap.fuelLevel != null && t.fuelStart == null) fields.fuelStart = Number(startSnap.fuelLevel)
+        if (startSnap.mileage != null && t.mileageStart == null) fields.mileageStart = Math.round(Number(startSnap.mileage))
+        fields.trackerSnapshotStart = JSON.stringify(startSnap)
+      }
+      // End snapshot data
+      if (endSnap) {
+        if (endSnap.fuelLevel != null && t.fuelEnd == null) fields.fuelEnd = Number(endSnap.fuelLevel)
+        if (endSnap.mileage != null && t.mileageEnd == null) fields.mileageEnd = Math.round(Number(endSnap.mileage))
+        if (t.status === 'completed') fields.trackerSnapshot = JSON.stringify(endSnap)
+      }
+      // Stats
+      if (stats) {
+        if (stats.mileage != null && t.distance == null) fields.distance = Number(stats.mileage)
+        if (stats.avgSpeed != null && t.avgSpeed == null) fields.avgSpeed = Number(stats.avgSpeed)
+        if (stats.maxSpeed != null && t.maxSpeed == null) fields.maxSpeed = Number(stats.maxSpeed)
+        if (stats.fuelConsumption != null && t.fuelConsumed == null) fields.fuelConsumed = Number(stats.fuelConsumption)
+        if (stats.avgFuelConsumption != null && t.avgFuelRate == null) fields.avgFuelRate = Number(stats.avgFuelConsumption)
+        if (stats.refuelVolume != null && t.refuelVolume == null) fields.refuelVolume = Number(stats.refuelVolume)
+        if (stats.plumVolume != null && t.plumVolume == null) fields.plumVolume = Number(stats.plumVolume)
+        if (stats.tripsDuration != null && t.tripDuration == null) fields.tripDuration = Number(stats.tripsDuration)
+        if (stats.parkingsDuration != null && t.parkingsDuration == null) fields.parkingsDuration = Number(stats.parkingsDuration)
+        if (stats.engineHours != null && t.engineHours == null) fields.engineHours = Number(stats.engineHours)
+        if (stats.idleTime != null && t.idleTime == null) fields.idleTime = Number(stats.idleTime)
+      }
+      // Derived calculations
+      if (fields.fuelEnd != null && (fields.fuelStart != null || t.fuelStart != null)) {
+        const fs = (fields.fuelStart as number) ?? t.fuelStart!
+        fields.fuelConsumed = Math.round((fs - (fields.fuelEnd as number)) * 100) / 100
+        if (fields.fuelConsumed < 0) fields.fuelConsumed = 0
+      }
+      if (fields.mileageEnd != null && (fields.mileageStart != null || t.mileageStart != null)) {
+        const ms = (fields.mileageStart as number) ?? t.mileageStart!
+        fields.distance = (fields.mileageEnd as number) - ms
+      }
+
+      if (Object.keys(fields).length > 0) {
+        const res = await fetch(`/api/trips/${t.id}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(fields),
+        })
+        if (!res.ok) throw new Error()
+      }
+
+      setTripSaved(true)
+      toast.success('Данные рейса сохранены')
+      onRefresh()
+    } catch {
+      toast.error('Ошибка сохранения данных')
+    }
+    setSavingTrip(false)
   }
 
   if (!trip) return null
@@ -3673,8 +3761,8 @@ function TripDetailDialog({ open, onOpenChange, trip, loading, crews, onEdit, on
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
                   <h4 className="text-xs font-semibold flex items-center gap-1.5"><CircuitBoard className="size-3.5" />Показания датчиков (старт / финиш)</h4>
-                  <Button variant="ghost" size="sm" className="h-7 text-[10px] gap-1" onClick={() => { setCompareData(null); setCompareError(null) }} disabled={!compareData}>
-                    <RefreshCw className="size-3" />
+                  <Button variant="ghost" size="sm" className="h-7 text-[10px] gap-1" onClick={reloadSensors} disabled={compareLoading}>
+                    <RefreshCw className={`size-3 ${compareLoading ? 'animate-spin' : ''}`} />
                   </Button>
                 </div>
 
@@ -3903,6 +3991,17 @@ function TripDetailDialog({ open, onOpenChange, trip, loading, crews, onEdit, on
           )}
           <Button variant="outline" size="sm" className="h-8 gap-1 text-xs" onClick={() => onEdit(t)}><Edit className="size-3.5" />Редактировать</Button>
           <Button variant="outline" size="sm" className="h-8 gap-1 text-xs" onClick={onRefresh}><Activity className="size-3.5" />Обновить</Button>
+          {compareData && (
+            <Button variant="outline" size="sm" className="h-8 gap-1 text-xs" onClick={saveTripData} disabled={savingTrip || tripSaved}>
+              {savingTrip ? <Loader2 className="size-3.5 animate-spin" /> : tripSaved ? <CheckCircle2 className="size-3.5 text-emerald-500" /> : <Save className="size-3.5" />}
+              {tripSaved ? 'Сохранено' : 'Сохранить'}
+            </Button>
+          )}
+          {tripSaved && (
+            <Button variant="default" size="sm" className="h-8 gap-1 text-xs" onClick={() => window.open(`/api/trips/${t.id}/print`, '_blank')}>
+              <Printer className="size-3.5" />Распечатать
+            </Button>
+          )}
           <Button variant="destructive" size="sm" className="h-8 gap-1 text-xs" onClick={() => onDelete(t)}><Trash2 className="size-3.5" />Удалить</Button>
         </DialogFooter>
       </DialogContent>
