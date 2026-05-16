@@ -108,7 +108,7 @@ prisma/
 
 ```bash
 # Клонирование репозитория
-git clone https://github.com/USERNAME/fleet-tracker.git
+git clone https://github.com/pizzadox/fleet-tracker.git
 cd fleet-tracker
 
 # Установка зависимостей
