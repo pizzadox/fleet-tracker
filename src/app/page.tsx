@@ -363,6 +363,21 @@ const REPAIR_MASTER_ROLE_MAP: Record<string, { label: string; color: string }> =
 // HELPERS
 // ═══════════════════════════════════════════════════════════════
 
+// Convert Date to local datetime string for <input type="datetime-local">
+// toISOString() returns UTC which is WRONG for input values — we need local time
+function toLocalDatetime(d: Date | string): string {
+  const date = new Date(d)
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`
+}
+
+// Convert Date to local date string for <input type="date">
+function toLocalDate(d: Date | string): string {
+  const date = new Date(d)
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`
+}
+
 function formatDate(d?: string | null): string {
   if (!d) return '—'
   try { return new Date(d).toLocaleDateString('ru-RU') } catch { return '—' }
@@ -1296,8 +1311,8 @@ function EquipmentDetailSheet({ open, onOpenChange, equipment, loading, detailTa
       default:
         return
     }
-    setHistoryDateFrom(from.toISOString().slice(0, 16))
-    setHistoryDateTo(to.toISOString().slice(0, 16))
+    setHistoryDateFrom(toLocalDatetime(from))
+    setHistoryDateTo(toLocalDatetime(to))
   }
 
   // Fetch historical data for a tracker
@@ -1933,12 +1948,12 @@ function EquipmentFormDialog({ open, onOpenChange, editData, companies, step, se
         enginePower: editData.enginePower || '', mileage: editData.mileage?.toString() || '',
         fuelType: editData.fuelType || '', loadCapacity: editData.loadCapacity || '',
         passengerSeats: editData.passengerSeats?.toString() || '',
-        purchaseDate: editData.purchaseDate ? new Date(editData.purchaseDate).toISOString().split('T')[0] : '',
+        purchaseDate: editData.purchaseDate ? toLocalDate(editData.purchaseDate) : '',
         purchasePrice: editData.purchasePrice?.toString() || '', currentPrice: editData.currentPrice?.toString() || '',
         insuranceNumber: editData.insuranceNumber || '',
-        insuranceExpiry: editData.insuranceExpiry ? new Date(editData.insuranceExpiry).toISOString().split('T')[0] : '',
-        inspectionDate: editData.inspectionDate ? new Date(editData.inspectionDate).toISOString().split('T')[0] : '',
-        inspectionExpiry: editData.inspectionExpiry ? new Date(editData.inspectionExpiry).toISOString().split('T')[0] : '',
+        insuranceExpiry: editData.insuranceExpiry ? toLocalDate(editData.insuranceExpiry) : '',
+        inspectionDate: editData.inspectionDate ? toLocalDate(editData.inspectionDate) : '',
+        inspectionExpiry: editData.inspectionExpiry ? toLocalDate(editData.inspectionExpiry) : '',
         status: editData.status || 'active', notes: editData.notes || '',
         ownerId: editData.ownerId || '', renterId: editData.renterId || '',
       })
@@ -2619,19 +2634,19 @@ function RepairFormDialog({ open, onOpenChange, editData, equipmentId, equipment
     if (editData) {
       setForm({
         equipmentId: editData.equipmentId, description: editData.description || '', reason: editData.reason || '',
-        startDate: editData.startDate ? new Date(editData.startDate).toISOString().split('T')[0] : new Date().toISOString().split('T')[0],
-        endDate: editData.endDate ? new Date(editData.endDate).toISOString().split('T')[0] : '',
+        startDate: editData.startDate ? toLocalDate(editData.startDate) : toLocalDate(new Date()),
+        endDate: editData.endDate ? toLocalDate(editData.endDate) : '',
         status: editData.status || 'in_progress', cost: editData.cost?.toString() || '',
         contractor: editData.contractor || '', contractorPhone: editData.contractorPhone || '',
         workPerformed: editData.workPerformed || '', spareParts: editData.spareParts || '',
-        nextInspection: editData.nextInspection ? new Date(editData.nextInspection).toISOString().split('T')[0] : '',
+        nextInspection: editData.nextInspection ? toLocalDate(editData.nextInspection) : '',
         notes: editData.notes || '',
       })
       // Pre-fill existing masters
       setSelectedMasters(editData.masters?.map(m => ({ employeeId: m.employeeId, role: m.role })) || [])
       setStages([])
     } else {
-      setForm({ equipmentId: equipmentId || '', startDate: new Date().toISOString().split('T')[0], status: 'in_progress' })
+      setForm({ equipmentId: equipmentId || '', startDate: toLocalDate(new Date()), status: 'in_progress' })
       setSelectedMasters([])
       setStages([])
     }
@@ -2949,7 +2964,7 @@ function StageFormDialog({ open, onOpenChange, repairId, editData, saving, setSa
 
   useEffect(() => {
     if (editData) {
-      setForm({ name: editData.name || '', description: editData.description || '', status: editData.status || 'pending', startDate: editData.startDate ? new Date(editData.startDate).toISOString().split('T')[0] : '', endDate: editData.endDate ? new Date(editData.endDate).toISOString().split('T')[0] : '', performer: editData.performer || '', cost: editData.cost?.toString() || '', sortOrder: editData.sortOrder?.toString() || '0' })
+      setForm({ name: editData.name || '', description: editData.description || '', status: editData.status || 'pending', startDate: editData.startDate ? toLocalDate(editData.startDate) : '', endDate: editData.endDate ? toLocalDate(editData.endDate) : '', performer: editData.performer || '', cost: editData.cost?.toString() || '', sortOrder: editData.sortOrder?.toString() || '0' })
     } else { setForm({ status: 'pending', sortOrder: '0' }) }
   }, [editData, open])
 
@@ -3329,8 +3344,8 @@ function TripDetailDialog({ open, onOpenChange, trip, loading, crews, onEdit, on
     try {
       // Build URL with optional date overrides
       const params = new URLSearchParams({ action: 'track' })
-      const from = trackDateFrom || (t.startDate ? new Date(t.startDate).toISOString().slice(0, 16) : '')
-      const to = trackDateTo || (t.endDate ? new Date(t.endDate).toISOString().slice(0, 16) : '')
+      const from = trackDateFrom || (t.startDate ? toLocalDatetime(t.startDate) : '')
+      const to = trackDateTo || (t.endDate ? toLocalDatetime(t.endDate) : '')
       if (!from || !to) {
         throw new Error('Укажите период для загрузки трека')
       }
@@ -3717,7 +3732,7 @@ function TripDetailDialog({ open, onOpenChange, trip, loading, crews, onEdit, on
                           <Input
                             type="datetime-local"
                             className="h-7 text-[11px]"
-                            value={trackDateFrom || (t.startDate ? new Date(t.startDate).toISOString().slice(0, 16) : '')}
+                            value={trackDateFrom || (t.startDate ? toLocalDatetime(t.startDate) : '')}
                             onChange={e => setTrackDateFrom(e.target.value)}
                           />
                         </div>
@@ -3726,7 +3741,7 @@ function TripDetailDialog({ open, onOpenChange, trip, loading, crews, onEdit, on
                           <Input
                             type="datetime-local"
                             className="h-7 text-[11px]"
-                            value={trackDateTo || (t.endDate ? new Date(t.endDate).toISOString().slice(0, 16) : '')}
+                            value={trackDateTo || (t.endDate ? toLocalDatetime(t.endDate) : '')}
                             onChange={e => setTrackDateTo(e.target.value)}
                           />
                         </div>
@@ -3797,16 +3812,16 @@ function TripFormDialog({ open, onOpenChange, editData, equipmentId, equipmentLi
       setForm({
         equipmentId: editData.equipmentId, route: editData.route || '', startPoint: editData.startPoint || '', endPoint: editData.endPoint || '',
         cargo: editData.cargo || '', cargoWeight: editData.cargoWeight?.toString() || '', distance: editData.distance?.toString() || '',
-        startDate: editData.startDate ? new Date(editData.startDate).toISOString().slice(0, 16) : new Date().toISOString().slice(0, 16),
-        endDate: editData.endDate ? new Date(editData.endDate).toISOString().slice(0, 16) : '',
-        plannedEndDate: editData.plannedEndDate ? new Date(editData.plannedEndDate).toISOString().slice(0, 16) : '',
+        startDate: editData.startDate ? toLocalDatetime(editData.startDate) : toLocalDatetime(new Date()),
+        endDate: editData.endDate ? toLocalDatetime(editData.endDate) : '',
+        plannedEndDate: editData.plannedEndDate ? toLocalDatetime(editData.plannedEndDate) : '',
         status: editData.status || 'planned', crewId: editData.crewId || '',
         fuelStart: editData.fuelStart?.toString() || '', fuelEnd: editData.fuelEnd?.toString() || '',
         mileageStart: editData.mileageStart?.toString() || '', mileageEnd: editData.mileageEnd?.toString() || '',
         cost: editData.cost?.toString() || '', revenue: editData.revenue?.toString() || '', notes: editData.notes || '',
       })
     } else {
-      setForm({ equipmentId: equipmentId || '', startDate: new Date().toISOString().slice(0, 16), status: 'planned' })
+      setForm({ equipmentId: equipmentId || '', startDate: toLocalDatetime(new Date()), status: 'planned' })
     }
   }, [editData, equipmentId, open])
 
@@ -4315,12 +4330,12 @@ function EmployeeFormDialog({ open, onOpenChange, editData, crews, equipment, sa
         position: editData.position || 'driver',
         phone: editData.phone || '',
         email: editData.email || '',
-        birthDate: editData.birthDate ? new Date(editData.birthDate).toISOString().split('T')[0] : '',
-        hireDate: editData.hireDate ? new Date(editData.hireDate).toISOString().split('T')[0] : '',
-        fireDate: editData.fireDate ? new Date(editData.fireDate).toISOString().split('T')[0] : '',
+        birthDate: editData.birthDate ? toLocalDate(editData.birthDate) : '',
+        hireDate: editData.hireDate ? toLocalDate(editData.hireDate) : '',
+        fireDate: editData.fireDate ? toLocalDate(editData.fireDate) : '',
         licenseNum: editData.licenseNum || '',
         licenseCat: editData.licenseCat || '',
-        licenseExpiry: editData.licenseExpiry ? new Date(editData.licenseExpiry).toISOString().split('T')[0] : '',
+        licenseExpiry: editData.licenseExpiry ? toLocalDate(editData.licenseExpiry) : '',
         passportSeries: editData.passportSeries || '',
         passportNum: editData.passportNum || '',
         address: editData.address || '',
@@ -4331,7 +4346,7 @@ function EmployeeFormDialog({ open, onOpenChange, editData, crews, equipment, sa
         equipmentId: editData.equipmentId || '',
       })
     } else {
-      setForm({ position: 'driver', status: 'active', hireDate: new Date().toISOString().split('T')[0] })
+      setForm({ position: 'driver', status: 'active', hireDate: toLocalDate(new Date()) })
     }
   }, [editData, open])
 
@@ -4495,8 +4510,8 @@ function MapTab({ equipment, onSync, onOpenDetail }: {
         from = new Date(now.getFullYear(), now.getMonth() - 1, now.getDate())
         break
     }
-    setTrackDateFrom(from.toISOString().slice(0, 16))
-    setTrackDateTo(now.toISOString().slice(0, 16))
+    setTrackDateFrom(toLocalDatetime(from))
+    setTrackDateTo(toLocalDatetime(now))
   }
 
   // Fetch track for selected equipment
@@ -4662,8 +4677,8 @@ function MapTab({ equipment, onSync, onOpenDetail }: {
         from = new Date(now.getFullYear(), now.getMonth() - 1, now.getDate())
         break
     }
-    setReportDateFrom(from.toISOString().slice(0, 16))
-    setReportDateTo(now.toISOString().slice(0, 16))
+    setReportDateFrom(toLocalDatetime(from))
+    setReportDateTo(toLocalDatetime(now))
   }
 
   const exportReport = async () => {
