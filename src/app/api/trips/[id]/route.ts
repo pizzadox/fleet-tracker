@@ -140,6 +140,15 @@ async function fetchAxentaTrackSnapshots(
       return { sensors, fuelLevel, mileage, engineTemp, ignition }
     }
 
+    // Sensor type detection helpers (used by top-level sensors and object state parsing)
+    const isFuelSensorType = (type: string, name: string) =>
+      type === 'fuel_level_sensor' || type === 'absolute_fuel_impulse_sensor' ||
+      name?.toLowerCase().includes('бак') || name?.toLowerCase().includes('топлив')
+    const isMileageSensorType = (type: string, name: string) =>
+      type === 'odometer' || name?.toLowerCase().includes('пробег')
+    const isEngineTempType = (type: string, name: string) =>
+      type === 'temperature' || name?.toLowerCase().includes('температур') || name?.toLowerCase().includes('ож')
+
     // Build snapshot from point + sensors data
     const buildSnapshot = (point: ReturnType<typeof parsePoint>, sensorData: ReturnType<typeof parseSensors>, capturedAt: string): Record<string, unknown> => ({
       trackerId: tracker.id,
@@ -232,6 +241,259 @@ async function fetchAxentaTrackSnapshots(
     const startSensorData = parseSensors(startSensorsArr)
     const endSensorData = parseSensors(endSensorsArr)
 
+    // ── Fetch sensor metadata and extract top-level sensors data from track API ──
+    // The track API response includes a top-level `sensors` key with sensor graph data.
+    // Trip objects themselves do NOT contain sensor data — only position/speed.
+    // This top-level `sensors` key is the KEY missing piece for fuel/mileage values.
+    let sensorTypeMap = new Map<string, { type: string; name: string; unit: string }>()
+
+    try {
+      const sensorsMetaRes = await fetch(`${settings.apiUrl}/api/objects/${objectId}/sensors/`, {
+        headers: { 'Authorization': `Token ${token}` },
+        signal: AbortSignal.timeout(8000),
+      })
+      if (sensorsMetaRes.ok) {
+        const sensorsMeta = await sensorsMetaRes.json()
+        const metaArr = Array.isArray(sensorsMeta) ? sensorsMeta : (sensorsMeta.results || [])
+        for (const sm of metaArr) {
+          const sid = String(sm.id)
+          sensorTypeMap.set(`sensor_${sid}`, { type: sm.type || '', name: sm.name || '', unit: sm.unit || '' })
+          sensorTypeMap.set(sid, { type: sm.type || '', name: sm.name || '', unit: sm.unit || '' })
+        }
+        console.log('[fetchAxentaTrackSnapshots] Sensor metadata loaded:', sensorTypeMap.size / 2, 'sensors')
+      }
+    } catch (metaErr) {
+      console.error('[fetchAxentaTrackSnapshots] Sensor metadata fetch error:', metaErr)
+    }
+
+    const topLevelSensors = tracksData.sensors
+    if (topLevelSensors) {
+      console.log('[fetchAxentaTrackSnapshots] Top-level sensors:', Array.isArray(topLevelSensors) ? `array[${topLevelSensors.length}]` : `object keys: ${Object.keys(topLevelSensors).slice(0, 10).join(',')}`)
+    }
+
+    // Helper: find closest data point to a target time in a sensor's data array
+    const findClosestValue = (points: any[], targetTime: Date): number | null => {
+      if (!Array.isArray(points) || points.length === 0) return null
+      const targetMs = targetTime.getTime()
+      let closestVal: number | null = null
+      let closestDiff = Infinity
+      for (const pt of points) {
+        const ptTime = pt.date ? new Date(pt.date).getTime() : (pt.time ? new Date(pt.time).getTime() : null)
+        if (ptTime == null) continue
+        const diff = Math.abs(ptTime - targetMs)
+        if (diff < closestDiff && pt.value != null) {
+          closestDiff = diff
+          closestVal = Number(pt.value)
+        }
+      }
+      return closestVal
+    }
+
+    // Helper: enrich sensorData from a set of parsed sensor values
+    const enrichFromSensorValues = (
+      sensorValues: Map<string, { startVal: number | null; endVal: number | null; meta: { type: string; name: string; unit: string } }>
+    ) => {
+      for (const [, sv] of sensorValues) {
+        const { startVal, endVal, meta } = sv
+        if (isFuelSensorType(meta.type, meta.name)) {
+          if (startSensorData.fuelLevel == null && startVal != null) startSensorData.fuelLevel = startVal
+          if (endSensorData.fuelLevel == null && endVal != null) endSensorData.fuelLevel = endVal
+        }
+        if (isMileageSensorType(meta.type, meta.name)) {
+          if (startSensorData.mileage == null && startVal != null) startSensorData.mileage = startVal
+          if (endSensorData.mileage == null && endVal != null) endSensorData.mileage = endVal
+        }
+        if (isEngineTempType(meta.type, meta.name)) {
+          if (startSensorData.engineTemp == null && startVal != null) startSensorData.engineTemp = startVal
+          if (endSensorData.engineTemp == null && endVal != null) endSensorData.engineTemp = endVal
+        }
+        // Add to sensors arrays if not already present
+        const sKey = meta.name || meta.type
+        if (startVal != null && !startSensorData.sensors.some(s => (s.name || s.type) === sKey)) {
+          startSensorData.sensors.push({ type: meta.type, name: meta.name, value: startVal, unit: meta.unit })
+        }
+        if (endVal != null && !endSensorData.sensors.some(s => (s.name || s.type) === sKey)) {
+          endSensorData.sensors.push({ type: meta.type, name: meta.name, value: endVal, unit: meta.unit })
+        }
+      }
+    }
+
+    if (topLevelSensors && sensorTypeMap.size > 0) {
+      try {
+        // Format 1: Object with sensor IDs as keys → array of {date, value} points
+        if (typeof topLevelSensors === 'object' && !Array.isArray(topLevelSensors)) {
+          const sensorValues = new Map<string, { startVal: number | null; endVal: number | null; meta: { type: string; name: string; unit: string } }>()
+          for (const [sensorKey, points] of Object.entries(topLevelSensors as Record<string, unknown>)) {
+            if (!Array.isArray(points)) continue
+            const meta = sensorTypeMap.get(sensorKey)
+            if (!meta) continue
+            sensorValues.set(sensorKey, { startVal: findClosestValue(points, startTime), endVal: findClosestValue(points, endTime), meta })
+          }
+          enrichFromSensorValues(sensorValues)
+        }
+        // Format 2: Array of sensor objects — could be metadata or graph data
+        else if (Array.isArray(topLevelSensors)) {
+          const sensorValues = new Map<string, { startVal: number | null; endVal: number | null; meta: { type: string; name: string; unit: string } }>()
+          let hasGraphData = false
+
+          for (const sensor of topLevelSensors) {
+            const sensorId = String(sensor.id || sensor.sensorId || '')
+            const meta = sensorTypeMap.get(sensorId) || sensorTypeMap.get(`sensor_${sensorId}`)
+            // Also build meta from the sensor object itself if not in map
+            const effectiveMeta = meta || { type: sensor.type || '', name: sensor.name || '', unit: sensor.unit || '' }
+
+            const points = sensor.data || sensor.points || sensor.values || sensor.graph || []
+            if (Array.isArray(points) && points.length > 0) {
+              hasGraphData = true
+              sensorValues.set(sensorId, { startVal: findClosestValue(points, startTime), endVal: findClosestValue(points, endTime), meta: effectiveMeta })
+            }
+          }
+
+          if (hasGraphData) {
+            enrichFromSensorValues(sensorValues)
+          } else {
+            // Top-level sensors is just metadata (no graph data) — try to fetch graph data via sensor API
+            console.log('[fetchAxentaTrackSnapshots] Top-level sensors has no graph data, fetching from sensor graph API...')
+            try {
+              // Collect fuel/mileage/temp sensor IDs from metadata
+              const fuelSensorIds: string[] = []
+              const mileageSensorIds: string[] = []
+              const tempSensorIds: string[] = []
+              for (const sensor of topLevelSensors) {
+                const sid = String(sensor.id || sensor.sensorId || '')
+                const sType = sensor.type || ''
+                const sName = sensor.name || ''
+                if (isFuelSensorType(sType, sName)) fuelSensorIds.push(sid)
+                else if (isMileageSensorType(sType, sName)) mileageSensorIds.push(sid)
+                else if (isEngineTempType(sType, sName)) tempSensorIds.push(sid)
+              }
+              const relevantIds = [...fuelSensorIds, ...mileageSensorIds, ...tempSensorIds]
+              console.log('[fetchAxentaTrackSnapshots] Sensor graph API — fuel IDs:', fuelSensorIds, 'mileage IDs:', mileageSensorIds, 'temp IDs:', tempSensorIds)
+
+              // Try fetching graph data for each relevant sensor
+              for (const sid of relevantIds) {
+                try {
+                  const graphRes = await fetch(
+                    `${settings.apiUrl}/api/objects/${objectId}/sensors/${sid}/graph/?from=${encodeURIComponent(startISO)}&to=${encodeURIComponent(endISO)}`,
+                    { headers: { 'Authorization': `Token ${token}` }, signal: AbortSignal.timeout(8000) }
+                  )
+                  if (!graphRes.ok) continue
+                  const graphData = await graphRes.json()
+                  // The graph data could be an array of {date, value} or wrapped in a result key
+                  const graphPoints = Array.isArray(graphData) ? graphData : (graphData.data || graphData.results || graphData.values || graphData.points || [])
+                  if (!Array.isArray(graphPoints) || graphPoints.length === 0) continue
+
+                  const meta = sensorTypeMap.get(sid) || sensorTypeMap.get(`sensor_${sid}`)
+                  if (!meta) continue
+
+                  const startVal = findClosestValue(graphPoints, startTime)
+                  const endVal = findClosestValue(graphPoints, endTime)
+                  console.log('[fetchAxentaTrackSnapshots] Sensor graph API — sensor', sid, '(' + meta.name + '): startVal=', startVal, 'endVal=', endVal, 'points:', graphPoints.length)
+
+                  if (isFuelSensorType(meta.type, meta.name)) {
+                    if (startSensorData.fuelLevel == null && startVal != null) startSensorData.fuelLevel = startVal
+                    if (endSensorData.fuelLevel == null && endVal != null) endSensorData.fuelLevel = endVal
+                  }
+                  if (isMileageSensorType(meta.type, meta.name)) {
+                    if (startSensorData.mileage == null && startVal != null) startSensorData.mileage = startVal
+                    if (endSensorData.mileage == null && endVal != null) endSensorData.mileage = endVal
+                  }
+                  if (isEngineTempType(meta.type, meta.name)) {
+                    if (startSensorData.engineTemp == null && startVal != null) startSensorData.engineTemp = startVal
+                    if (endSensorData.engineTemp == null && endVal != null) endSensorData.engineTemp = endVal
+                  }
+                  const sKey = meta.name || meta.type
+                  if (startVal != null && !startSensorData.sensors.some(s => (s.name || s.type) === sKey)) {
+                    startSensorData.sensors.push({ type: meta.type, name: meta.name, value: startVal, unit: meta.unit })
+                  }
+                  if (endVal != null && !endSensorData.sensors.some(s => (s.name || s.type) === sKey)) {
+                    endSensorData.sensors.push({ type: meta.type, name: meta.name, value: endVal, unit: meta.unit })
+                  }
+                } catch (graphErr) {
+                  console.error('[fetchAxentaTrackSnapshots] Sensor graph API error for sensor', sid, ':', graphErr)
+                }
+              }
+            } catch (graphApiErr) {
+              console.error('[fetchAxentaTrackSnapshots] Sensor graph API error:', graphApiErr)
+            }
+          }
+        }
+
+        console.log('[fetchAxentaTrackSnapshots] After top-level sensors — start fuel:', startSensorData.fuelLevel,
+          'end fuel:', endSensorData.fuelLevel, 'start mileage:', startSensorData.mileage, 'end mileage:', endSensorData.mileage)
+      } catch (tlErr) {
+        console.error('[fetchAxentaTrackSnapshots] Top-level sensors parse error:', tlErr)
+      }
+    }
+
+    // ── Fallback: Try to get sensor values from Axenta messages API ──
+    // If we still have no fuel/mileage data, fetch the first and last messages for the trip period
+    // which should contain sensor values at those points in time
+    if (startSensorData.fuelLevel == null && sensorTypeMap.size > 0) {
+      try {
+        // Fetch first message near start time
+        const firstMsgUrl = `${settings.apiUrl}/api/objects/${objectId}/messages/?startDate=${encodeURIComponent(startISO)}&endDate=${encodeURIComponent(new Date(startTime.getTime() + 600000).toISOString())}&limit=1`
+        const firstMsgRes = await fetch(firstMsgUrl, {
+          headers: { 'Authorization': `Token ${token}` },
+          signal: AbortSignal.timeout(8000),
+        })
+        if (firstMsgRes.ok) {
+          const firstMsgData = await firstMsgRes.json()
+          const msgs = Array.isArray(firstMsgData) ? firstMsgData : (firstMsgData.results || firstMsgData.messages || [])
+          if (msgs.length > 0 && msgs[0].sensors && sensorTypeMap.size > 0) {
+            for (const [sensorKey, rawVal] of Object.entries(msgs[0].sensors as Record<string, unknown>)) {
+              const meta = sensorTypeMap.get(String(sensorKey)) || sensorTypeMap.get(String(sensorKey).replace('sensor_', ''))
+              if (!meta || rawVal == null) continue
+              const val = Number(rawVal)
+              if (isNaN(val)) continue
+              if (isFuelSensorType(meta.type, meta.name) && startSensorData.fuelLevel == null) startSensorData.fuelLevel = val
+              if (isMileageSensorType(meta.type, meta.name) && startSensorData.mileage == null) startSensorData.mileage = val
+              if (isEngineTempType(meta.type, meta.name) && startSensorData.engineTemp == null) startSensorData.engineTemp = val
+            }
+            console.log('[fetchAxentaTrackSnapshots] First message sensor values — fuel:', startSensorData.fuelLevel, 'mileage:', startSensorData.mileage)
+          } else {
+            console.log('[fetchAxentaTrackSnapshots] Messages API: no messages with sensors found near start (msgs:', msgs.length, ')')
+          }
+        } else {
+          console.log('[fetchAxentaTrackSnapshots] Messages API start: status', firstMsgRes.status)
+        }
+      } catch (msgErr) {
+        console.error('[fetchAxentaTrackSnapshots] Messages API error (start):', msgErr)
+      }
+    }
+    if (endSensorData.fuelLevel == null && sensorTypeMap.size > 0) {
+      try {
+        // Fetch last message near end time
+        const lastMsgUrl = `${settings.apiUrl}/api/objects/${objectId}/messages/?startDate=${encodeURIComponent(new Date(endTime.getTime() - 600000).toISOString())}&endDate=${encodeURIComponent(endISO)}&limit=1`
+        const lastMsgRes = await fetch(lastMsgUrl, {
+          headers: { 'Authorization': `Token ${token}` },
+          signal: AbortSignal.timeout(8000),
+        })
+        if (lastMsgRes.ok) {
+          const lastMsgData = await lastMsgRes.json()
+          const msgs = Array.isArray(lastMsgData) ? lastMsgData : (lastMsgData.results || lastMsgData.messages || [])
+          if (msgs.length > 0 && msgs[0].sensors && sensorTypeMap.size > 0) {
+            for (const [sensorKey, rawVal] of Object.entries(msgs[0].sensors as Record<string, unknown>)) {
+              const meta = sensorTypeMap.get(String(sensorKey)) || sensorTypeMap.get(String(sensorKey).replace('sensor_', ''))
+              if (!meta || rawVal == null) continue
+              const val = Number(rawVal)
+              if (isNaN(val)) continue
+              if (isFuelSensorType(meta.type, meta.name) && endSensorData.fuelLevel == null) endSensorData.fuelLevel = val
+              if (isMileageSensorType(meta.type, meta.name) && endSensorData.mileage == null) endSensorData.mileage = val
+              if (isEngineTempType(meta.type, meta.name) && endSensorData.engineTemp == null) endSensorData.engineTemp = val
+            }
+            console.log('[fetchAxentaTrackSnapshots] Last message sensor values — fuel:', endSensorData.fuelLevel, 'mileage:', endSensorData.mileage)
+          } else {
+            console.log('[fetchAxentaTrackSnapshots] Messages API: no messages with sensors found near end (msgs:', msgs.length, ')')
+          }
+        } else {
+          console.log('[fetchAxentaTrackSnapshots] Messages API end: status', lastMsgRes.status)
+        }
+      } catch (msgErr) {
+        console.error('[fetchAxentaTrackSnapshots] Messages API error (end):', msgErr)
+      }
+    }
+
     // If there are multiple trips, also get data from the last trip
     let lastTripEndPt = lastPt
     let lastTripEndSensors = endSensorData
@@ -260,22 +522,37 @@ async function fetchAxentaTrackSnapshots(
       (endSnapshot as any).ignition = true  // In a trip segment = ignition was on
     }
 
-    // Also try to get current sensor values from the Axenta objects API
-    // This gives us current state which we can use as reference for sensors that the track API doesn't provide
+    // Also get current sensor values from the Axenta object state API for reference
+    // NOTE: We do NOT fill fuel/mileage/engineTemp from current state here because it would
+    // prevent the sensor-compare action from using saved snapshot data (which is more accurate).
+    // The sensor-compare action handles the full fallback chain: Axenta historical → saved → trip fields → currentData
     try {
-      const objectsRes = await fetch(`${settings.apiUrl}/api/objects/`, {
+      const objDetailsRes = await fetch(`${settings.apiUrl}/api/objects/${objectId}/?full=true`, {
         headers: { 'Authorization': `Token ${token}` },
         signal: AbortSignal.timeout(8000),
       })
-      if (objectsRes.ok) {
-        const objectsData = await objectsRes.json()
-        const obj = Array.isArray(objectsData) ? objectsData.find((o: any) => o.id === Number(objectId)) : null
-        if (obj?.lastMessage?.pos) {
-          const pos = obj.lastMessage.pos
-          // If altitude is null in track but available in current state, use it as reference
-          if (startSnapshot.altitude == null && pos.z != null) {
-            // Don't override with current - just note it for debugging
+      if (objDetailsRes.ok) {
+        const objDetails = await objDetailsRes.json()
+        const lastMsg = objDetails.lastMessage
+
+        if (lastMsg?.sensors && sensorTypeMap.size > 0) {
+          // Log current sensor values for debugging (do NOT fill snapshot values from current state)
+          let currentFuel: number | null = null
+          let currentMileage: number | null = null
+          let currentEngineTemp: number | null = null
+
+          for (const [sensorKey, rawVal] of Object.entries(lastMsg.sensors as Record<string, unknown>)) {
+            const meta = sensorTypeMap.get(String(sensorKey)) || sensorTypeMap.get(String(sensorKey).replace('sensor_', ''))
+            if (!meta || rawVal == null) continue
+            const val = Number(rawVal)
+            if (isNaN(val)) continue
+
+            if (isFuelSensorType(meta.type, meta.name) && currentFuel == null) currentFuel = val
+            if (isMileageSensorType(meta.type, meta.name) && currentMileage == null) currentMileage = val
+            if (isEngineTempType(meta.type, meta.name) && currentEngineTemp == null) currentEngineTemp = val
           }
+
+          console.log('[fetchAxentaTrackSnapshots] Object state API (reference only) — fuel:', currentFuel, 'mileage:', currentMileage, 'temp:', currentEngineTemp)
         }
       }
     } catch { /* ignore */ }
@@ -660,13 +937,25 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
           latitude: null, longitude: null, altitude: null, course: null, address: null,
           sensors: startSensors,
         }
+      } else {
+        // Snapshot exists but may have null fuel/mileage — fill from trip fields before currentData
+        if ((startSnapshot as any).fuelLevel == null && trip.fuelStart != null) {
+          (startSnapshot as any).fuelLevel = trip.fuelStart
+        }
+        if ((startSnapshot as any).mileage == null && trip.mileageStart != null) {
+          (startSnapshot as any).mileage = trip.mileageStart
+        }
       }
 
       // Fill remaining gaps from current tracker data (LAST resort — only for truly null fields)
       if (currentData) {
-        for (const f of ['course', 'address']) {
+        for (const f of ['fuelLevel', 'mileage', 'engineTemp', 'course', 'address']) {
           if ((startSnapshot as any)[f] == null && (currentData as any)[f] != null) {
             (startSnapshot as any)[f] = (currentData as any)[f]
+            // Mark fuel/mileage as approximate since they come from current state, not historical data
+            if (f === 'fuelLevel' || f === 'mileage') {
+              (startSnapshot as any)._approximate = true
+            }
           }
         }
         // Merge sensors from current data if not present
@@ -735,6 +1024,14 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
           latitude: null, longitude: null, address: null,
           sensors: endSensors,
         }
+      } else if (endSnapshot) {
+        // Snapshot exists but may have null fuel/mileage — fill from trip fields before currentData
+        if ((endSnapshot as any).fuelLevel == null && trip.fuelEnd != null) {
+          (endSnapshot as any).fuelLevel = trip.fuelEnd
+        }
+        if ((endSnapshot as any).mileage == null && trip.mileageEnd != null) {
+          (endSnapshot as any).mileage = trip.mileageEnd
+        }
       }
 
       // 4. For in-progress trips: if Axenta didn't provide end data, use current tracker
@@ -788,9 +1085,13 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
 
       // Fill remaining gaps in end snapshot from current tracker data (LAST resort)
       if (endSnapshot && currentData) {
-        for (const f of ['course', 'address', 'altitude']) {
+        for (const f of ['fuelLevel', 'mileage', 'engineTemp', 'course', 'address', 'altitude']) {
           if ((endSnapshot as any)[f] == null && (currentData as any)[f] != null) {
             (endSnapshot as any)[f] = (currentData as any)[f]
+            // Mark fuel/mileage as approximate since they come from current state, not historical data
+            if (f === 'fuelLevel' || f === 'mileage') {
+              (endSnapshot as any)._approximate = true
+            }
           }
         }
         // Merge sensors
