@@ -210,7 +210,7 @@ interface Trip {
   avgSpeed?: number | null; maxSpeed?: number | null; fuelConsumed?: number | null;
   tripDuration?: number | null; engineHours?: number | null; avgFuelRate?: number | null;
   refuelVolume?: number | null; plumVolume?: number | null; idleTime?: number | null;
-  parkingsDuration?: number | null; trackerSnapshot?: string | null;
+  parkingsDuration?: number | null; trackerSnapshot?: string | null; trackerSnapshotStart?: string | null;
   createdAt: string; updatedAt: string;
   equipment?: { id: string; name: string; registrationNum?: string | null; brand?: string | null; model?: string | null };
   crew?: { id: string; name: string; members?: { fullName: string; role: string }[] } | null;
@@ -3295,32 +3295,107 @@ function TripDetailDialog({ open, onOpenChange, trip, loading, crews, onEdit, on
   const [trackError, setTrackError] = useState<string | null>(null)
   const [trackDateFrom, setTrackDateFrom] = useState<string>('')
   const [trackDateTo, setTrackDateTo] = useState<string>('')
-  const [sensorData, setSensorData] = useState<Record<string, unknown> | null>(null)
-  const [sensorLoading, setSensorLoading] = useState(false)
-  const [sensorError, setSensorError] = useState<string | null>(null)
+  const [compareData, setCompareData] = useState<Record<string, unknown> | null>(null)
+  const [compareLoading, setCompareLoading] = useState(false)
+  const [compareError, setCompareError] = useState<string | null>(null)
   const [applySuccess, setApplySuccess] = useState<string | null>(null)
 
-  // Reset track and sensor data when trip changes — must be before any early return (Rules of Hooks)
+  // Reset all data when trip changes — must be before any early return (Rules of Hooks)
   useEffect(() => {
     setTrackData(null)
     setTrackError(null)
     setTrackDateFrom('')
     setTrackDateTo('')
-    setSensorData(null)
-    setSensorError(null)
+    setCompareData(null)
+    setCompareError(null)
     setApplySuccess(null)
   }, [trip?.id])
+
+  // Auto-load track and sensor comparison when dialog opens or trip changes
+  useEffect(() => {
+    if (!open || !trip?.id || !trip.startDate) return
+    let cancelled = false
+
+    const autoLoad = async () => {
+      // Auto-load track
+      setTrackLoading(true)
+      setTrackError(null)
+      try {
+        const from = trackDateFrom || toLocalDatetime(trip.startDate)
+        const to = trackDateTo || (trip.endDate ? toLocalDatetime(trip.endDate) : toLocalDatetime(new Date()))
+        if (from) {
+          const params = new URLSearchParams({ action: 'track' })
+          params.set('from', new Date(from).toISOString())
+          params.set('to', new Date(to).toISOString())
+          const res = await fetch(`/api/trips/${trip.id}?${params}`)
+          if (!cancelled) {
+            if (res.ok) {
+              const data = await res.json()
+              setTrackData(data)
+            } else {
+              const errData = await res.json().catch(() => null)
+              setTrackError(errData?.error || 'Не удалось загрузить трек')
+            }
+          }
+        }
+      } catch (e: any) {
+        if (!cancelled) setTrackError(e.message || 'Ошибка загрузки трека')
+      }
+      if (!cancelled) setTrackLoading(false)
+
+      // Auto-load sensor comparison
+      setCompareLoading(true)
+      setCompareError(null)
+      try {
+        const res = await fetch(`/api/trips/${trip.id}?action=sensor-compare`)
+        if (!cancelled) {
+          if (res.ok) {
+            const data = await res.json()
+            setCompareData(data)
+          } else {
+            const errData = await res.json().catch(() => null)
+            setCompareError(errData?.error || 'Не удалось загрузить данные')
+          }
+        }
+      } catch (e: any) {
+        if (!cancelled) setCompareError(e.message || 'Ошибка загрузки')
+      }
+      if (!cancelled) setCompareLoading(false)
+    }
+
+    autoLoad()
+    return () => { cancelled = true }
+  }, [trip?.id, open])
+
+  // Reload track when date range changes manually
+  const reloadTrack = async () => {
+    if (!trip) return
+    setTrackLoading(true)
+    setTrackError(null)
+    try {
+      const from = trackDateFrom || (trip.startDate ? toLocalDatetime(trip.startDate) : '')
+      const to = trackDateTo || (trip.endDate ? toLocalDatetime(trip.endDate) : toLocalDatetime(new Date()))
+      if (!from) throw new Error('Укажите дату начала')
+      const params = new URLSearchParams({ action: 'track' })
+      params.set('from', new Date(from).toISOString())
+      params.set('to', new Date(to).toISOString())
+      const res = await fetch(`/api/trips/${trip.id}?${params}`)
+      if (!res.ok) {
+        const errData = await res.json().catch(() => null)
+        throw new Error(errData?.error || 'Ошибка загрузки трека')
+      }
+      const data = await res.json()
+      setTrackData(data)
+    } catch (e: any) {
+      setTrackError(e.message || 'Ошибка загрузки трека')
+    }
+    setTrackLoading(false)
+  }
 
   if (!trip) return null
   const t = trip
   const crew = crews.find(c => c.id === t.crewId)
   const isCompleted = t.status === 'completed'
-
-  // Parse tracker snapshot
-  let trackerSnapshot: Record<string, unknown> | null = null
-  if (t.trackerSnapshot) {
-    try { trackerSnapshot = JSON.parse(t.trackerSnapshot) } catch { /* ignore */ }
-  }
 
   // Duration formatter
   const fmtDur = (sec: number | null | undefined) => {
@@ -3336,52 +3411,6 @@ function TripDetailDialog({ open, onOpenChange, trip, loading, crews, onEdit, on
   // Calculated distance from mileage
   const calcDistKm = (t.mileageStart != null && t.mileageEnd != null) ? t.mileageEnd - t.mileageStart : null
   const displayDist = t.distance ?? calcDistKm
-
-  // Load track data from Axenta for the trip period (or custom dates)
-  const loadTrack = async () => {
-    setTrackLoading(true)
-    setTrackError(null)
-    try {
-      // Build URL with optional date overrides
-      const params = new URLSearchParams({ action: 'track' })
-      const from = trackDateFrom || (t.startDate ? toLocalDatetime(t.startDate) : '')
-      const to = trackDateTo || (t.endDate ? toLocalDatetime(t.endDate) : '')
-      if (!from || !to) {
-        throw new Error('Укажите период для загрузки трека')
-      }
-      params.set('from', new Date(from).toISOString())
-      params.set('to', new Date(to).toISOString())
-      const res = await fetch(`/api/trips/${t.id}?${params}`)
-      if (!res.ok) {
-        const errData = await res.json().catch(() => null)
-        throw new Error(errData?.error || 'Ошибка загрузки трека')
-      }
-      const data = await res.json()
-      setTrackData(data)
-    } catch (e: any) {
-      setTrackError(e.message || 'Ошибка загрузки трека')
-    }
-    setTrackLoading(false)
-  }
-
-  // Load sensor data from tracker
-  const loadSensors = async () => {
-    setSensorLoading(true)
-    setSensorError(null)
-    setApplySuccess(null)
-    try {
-      const res = await fetch(`/api/trips/${t.id}?action=sensors`)
-      if (!res.ok) {
-        const errData = await res.json().catch(() => null)
-        throw new Error(errData?.error || 'Ошибка загрузки датчиков')
-      }
-      const data = await res.json()
-      setSensorData(data)
-    } catch (e: any) {
-      setSensorError(e.message || 'Ошибка загрузки датчиков')
-    }
-    setSensorLoading(false)
-  }
 
   // Apply sensor data to trip fields
   const applySensorFields = async (fields: Record<string, unknown>) => {
@@ -3400,14 +3429,14 @@ function TripDetailDialog({ open, onOpenChange, trip, loading, crews, onEdit, on
     }
   }
 
-  // Apply start values (fuel + mileage at start)
+  // Apply start values from comparison data
   const applyStartValues = () => {
-    if (!sensorData) return
-    const cur = sensorData.current as Record<string, unknown> | undefined
-    if (!cur) return
+    if (!compareData) return
+    const startSnap = compareData.startSnapshot as Record<string, unknown> | null
+    if (!startSnap) return
     const fields: Record<string, unknown> = {}
-    if (cur.fuelLevel != null && t.fuelStart == null) fields.fuelStart = Number(cur.fuelLevel)
-    if (cur.mileage != null && t.mileageStart == null) fields.mileageStart = Math.round(Number(cur.mileage))
+    if (startSnap.fuelLevel != null && t.fuelStart == null) fields.fuelStart = Number(startSnap.fuelLevel)
+    if (startSnap.mileage != null && t.mileageStart == null) fields.mileageStart = Math.round(Number(startSnap.mileage))
     if (Object.keys(fields).length === 0) {
       toast.info('Нет данных для заполнения или поля уже заполнены')
       return
@@ -3415,14 +3444,14 @@ function TripDetailDialog({ open, onOpenChange, trip, loading, crews, onEdit, on
     applySensorFields(fields)
   }
 
-  // Apply end values (fuel + mileage at end) + trip stats
+  // Apply end values from comparison data + trip stats
   const applyEndValues = () => {
-    if (!sensorData) return
-    const cur = sensorData.current as Record<string, unknown> | undefined
-    const stats = sensorData.tripStats as Record<string, unknown> | null | undefined
+    if (!compareData) return
+    const endSnap = compareData.endSnapshot as Record<string, unknown> | null
+    const stats = compareData.tripStats as Record<string, unknown> | null
     const fields: Record<string, unknown> = {}
-    if (cur?.fuelLevel != null && t.fuelEnd == null) fields.fuelEnd = Number(cur.fuelLevel)
-    if (cur?.mileage != null && t.mileageEnd == null) fields.mileageEnd = Math.round(Number(cur.mileage))
+    if (endSnap?.fuelLevel != null && t.fuelEnd == null) fields.fuelEnd = Number(endSnap.fuelLevel)
+    if (endSnap?.mileage != null && t.mileageEnd == null) fields.mileageEnd = Math.round(Number(endSnap.mileage))
     if (stats) {
       if (stats.mileage != null && t.distance == null) fields.distance = Number(stats.mileage)
       if (stats.avgSpeed != null && t.avgSpeed == null) fields.avgSpeed = Number(stats.avgSpeed)
@@ -3436,7 +3465,6 @@ function TripDetailDialog({ open, onOpenChange, trip, loading, crews, onEdit, on
       if (stats.engineHours != null && t.engineHours == null) fields.engineHours = Number(stats.engineHours)
       if (stats.idleTime != null && t.idleTime == null) fields.idleTime = Number(stats.idleTime)
     }
-    // Calculate derived values
     if (fields.fuelEnd != null && t.fuelStart != null && !fields.fuelConsumed) {
       fields.fuelConsumed = Math.round((t.fuelStart! - (fields.fuelEnd as number)) * 100) / 100
       if (fields.fuelConsumed < 0) fields.fuelConsumed = 0
@@ -3533,130 +3561,133 @@ function TripDetailDialog({ open, onOpenChange, trip, loading, crews, onEdit, on
                 </DetailSection>
               )}
 
-              {/* ── ДАННЫЕ ДАТЧИКОВ ИЗ СНАПШОТА ── */}
-              {trackerSnapshot && (trackerSnapshot as any).sensors && (trackerSnapshot as any).sensors.length > 0 && (
-                <DetailSection title={`Датчики (${isCompleted ? 'на момент завершения' : 'на момент старта'})`} icon={<CircuitBoard className="size-3.5" />}>
-                  <div className="col-span-2">
-                    <div className="grid grid-cols-2 gap-1">
-                      {(trackerSnapshot as any).sensors.map((s: any, i: number) => (
-                        <div key={i} className="flex items-center gap-1.5 text-[10px] py-0.5 px-1.5 rounded bg-muted/50">
-                          <span className="text-muted-foreground">{s.name || s.type}</span>
-                          <span className="font-medium ml-auto">{s.value != null ? `${s.value}${s.unit ? ' ' + s.unit : ''}` : '—'}</span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                </DetailSection>
-              )}
-
-              {/* ── ЗАГРУЗКА ДАННЫХ ДАТЧИКОВ ИЗ ТРЕКЕРА ── */}
+              {/* ── СРАВНЕНИЕ ДАТЧИКОВ СТАРТ/ФИНИШ ── */}
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
-                  <h4 className="text-xs font-semibold flex items-center gap-1.5"><CircuitBoard className="size-3.5" />Данные датчиков</h4>
-                  {!sensorData && !sensorLoading && (
-                    <Button variant="outline" size="sm" className="h-7 text-[10px] gap-1" onClick={loadSensors}>
-                      <Download className="size-3" />Загрузить из трекера
-                    </Button>
-                  )}
+                  <h4 className="text-xs font-semibold flex items-center gap-1.5"><CircuitBoard className="size-3.5" />Показания датчиков (старт / финиш)</h4>
+                  <Button variant="ghost" size="sm" className="h-7 text-[10px] gap-1" onClick={() => { setCompareData(null); setCompareError(null) }} disabled={!compareData}>
+                    <RefreshCw className="size-3" />
+                  </Button>
                 </div>
 
-                {sensorLoading && (
-                  <div className="flex items-center justify-center h-24 bg-muted/30 rounded-lg">
+                {compareLoading && (
+                  <div className="flex items-center justify-center h-16 bg-muted/30 rounded-lg">
                     <Loader2 className="size-4 animate-spin text-muted-foreground" />
                     <span className="ml-2 text-xs text-muted-foreground">Загрузка данных датчиков...</span>
                   </div>
                 )}
 
-                {sensorError && (
-                  <div className="flex items-center gap-2 p-3 bg-red-50 dark:bg-red-900/20 rounded-lg text-xs text-red-600 dark:text-red-400">
-                    <AlertTriangle className="size-3.5 shrink-0" />{sensorError}
+                {compareError && (
+                  <div className="flex items-center gap-2 p-2 bg-yellow-50 dark:bg-yellow-900/20 rounded-lg text-xs text-yellow-600 dark:text-yellow-400">
+                    <AlertTriangle className="size-3.5 shrink-0" />{compareError}
                   </div>
                 )}
 
                 {applySuccess && (
-                  <div className="flex items-center gap-2 p-2.5 bg-emerald-50 dark:bg-emerald-900/20 rounded-lg text-xs text-emerald-600 dark:text-emerald-400">
+                  <div className="flex items-center gap-2 p-2 bg-emerald-50 dark:bg-emerald-900/20 rounded-lg text-xs text-emerald-600 dark:text-emerald-400">
                     <CheckCircle2 className="size-3.5 shrink-0" />{applySuccess}
                   </div>
                 )}
 
-                {sensorData && !sensorLoading && (
+                {compareData && !compareLoading && (
                   <div className="space-y-3">
-                    {/* Tracker info */}
-                    {sensorData.tracker && (
-                      <div className="flex items-center gap-2 text-[10px] px-2 py-1 bg-muted/30 rounded">
-                        <span className="text-muted-foreground">Трекер:</span>
-                        <span className="font-medium">{(sensorData.tracker as any).name}</span>
-                        {(sensorData.tracker as any).imei && <span className="text-muted-foreground">IMEI: {(sensorData.tracker as any).imei}</span>}
-                        <span className={`ml-auto px-1.5 py-0.5 rounded ${(sensorData.tracker as any).isActive ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400' : 'bg-gray-100 text-gray-600 dark:bg-gray-900/30 dark:text-gray-400'}`}>
-                          {(sensorData.tracker as any).isActive ? 'Онлайн' : 'Офлайн'}
-                        </span>
-                      </div>
-                    )}
-
-                    {/* Current sensor values */}
-                    {sensorData.current && (
-                      <div className="rounded-lg border p-2.5 space-y-2">
-                        <h5 className="text-[11px] font-semibold text-muted-foreground flex items-center gap-1">
-                          <Activity className="size-3" />Текущие показания
-                          {sensorData.current.lastSeenAt && (
-                            <span className="font-normal ml-auto">
-                              обновлено {new Date(sensorData.current.lastSeenAt as string).toLocaleString('ru-RU')}
-                            </span>
-                          )}
-                        </h5>
-                        <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5">
-                          {(() => {
-                            const cur = sensorData.current as Record<string, unknown>
-                            const items: { label: string; value: string | null; icon: React.ReactNode; highlight?: boolean }[] = [
-                              { label: 'Топливо', value: cur.fuelLevel != null ? `${Number(cur.fuelLevel).toFixed(1)} л` : null, icon: <Fuel className="size-3" /> },
-                              { label: 'Пробег', value: cur.mileage != null ? `${Math.round(Number(cur.mileage)).toLocaleString('ru-RU')} км` : null, icon: <Gauge className="size-3" /> },
-                              { label: 'Скорость', value: cur.speed != null ? `${Number(cur.speed).toFixed(0)} км/ч` : null, icon: <Navigation className="size-3" /> },
-                              { label: 'Зажигание', value: cur.ignition != null ? (cur.ignition ? 'Вкл' : 'Выкл') : null, icon: <Zap className="size-3" />, highlight: cur.ignition === true },
-                              { label: 'Темп. двигателя', value: cur.engineTemp != null ? `${Number(cur.engineTemp).toFixed(1)} °C` : null, icon: <Thermometer className="size-3" /> },
-                              { label: 'Курс', value: cur.course != null ? `${Number(cur.course).toFixed(0)}°` : null, icon: <Compass className="size-3" /> },
-                              { label: 'Высота', value: cur.altitude != null ? `${Number(cur.altitude).toFixed(0)} м` : null, icon: <Mountain className="size-3" /> },
-                              { label: 'Адрес', value: (cur.address as string) || null, icon: <MapPin className="size-3" /> },
-                            ]
-                            return items.filter(it => it.value != null).map((it, i) => (
-                              <div key={i} className={`flex items-center gap-1.5 text-[10px] py-1 px-2 rounded ${it.highlight ? 'bg-emerald-50 dark:bg-emerald-900/20 font-medium' : 'bg-muted/50'}`}>
-                                <span className="text-muted-foreground shrink-0">{it.icon}</span>
-                                <span className="text-muted-foreground truncate">{it.label}</span>
-                                <span className="font-medium ml-auto truncate">{it.value}</span>
-                              </div>
-                            ))
-                          })()}
+                    {/* Main metrics comparison */}
+                    {Array.isArray(compareData.mainComparison) && (compareData.mainComparison as any[]).length > 0 && (() => {
+                      const main = (compareData.mainComparison as any[]).filter((m: any) => m.start != null || m.end != null)
+                      const changed = main.filter((m: any) => m.changed)
+                      return main.length > 0 ? (
+                        <div className="rounded-lg border p-2.5 space-y-2">
+                          <h5 className="text-[11px] font-semibold text-muted-foreground flex items-center gap-1">
+                            <Activity className="size-3" />Основные показатели
+                            {changed.length > 0 && (
+                              <span className="ml-auto font-normal text-amber-600 dark:text-amber-400">{changed.length} изм.</span>
+                            )}
+                          </h5>
+                          <div className="overflow-x-auto">
+                            <table className="w-full text-[10px]">
+                              <thead>
+                                <tr className="border-b text-muted-foreground">
+                                  <th className="text-left py-1 px-1.5 font-medium">Показатель</th>
+                                  <th className="text-right py-1 px-1.5 font-medium">Старт</th>
+                                  <th className="text-right py-1 px-1.5 font-medium">Финиш</th>
+                                  <th className="text-right py-1 px-1.5 font-medium">Разница</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {main.map((m: any, i: number) => (
+                                  <tr key={i} className={`border-b last:border-0 ${m.changed ? 'bg-amber-50/50 dark:bg-amber-900/10' : ''}`}>
+                                    <td className="py-1 px-1.5 text-muted-foreground">{m.label}</td>
+                                    <td className="py-1 px-1.5 text-right font-mono">
+                                      {m.start != null ? (typeof m.start === 'boolean' ? (m.start ? 'Вкл' : 'Выкл') : `${Number(m.start).toFixed(m.unit === 'км' ? 0 : 1)}${m.unit ? ' ' + m.unit : ''}`) : '—'}
+                                    </td>
+                                    <td className="py-1 px-1.5 text-right font-mono">
+                                      {m.end != null ? (typeof m.end === 'boolean' ? (m.end ? 'Вкл' : 'Выкл') : `${Number(m.end).toFixed(m.unit === 'км' ? 0 : 1)}${m.unit ? ' ' + m.unit : ''}`) : '—'}
+                                    </td>
+                                    <td className={`py-1 px-1.5 text-right font-mono font-semibold ${m.changed ? (m.diff != null && m.diff > 0 ? 'text-red-600 dark:text-red-400' : 'text-emerald-600 dark:text-emerald-400') : ''}`}>
+                                      {m.diff != null ? `${m.diff > 0 ? '+' : ''}${m.diff.toFixed(m.unit === 'км' ? 0 : 1)}${m.unit ? ' ' + m.unit : ''}` : '—'}
+                                    </td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
                         </div>
-                      </div>
-                    )}
+                      ) : null
+                    })()}
 
-                    {/* All sensors list */}
-                    {sensorData.sensors && Array.isArray(sensorData.sensors) && (sensorData.sensors as any[]).length > 0 && (
-                      <div className="rounded-lg border p-2.5 space-y-2">
-                        <h5 className="text-[11px] font-semibold text-muted-foreground flex items-center gap-1">
-                          <Cpu className="size-3" />Все датчики ({(sensorData.sensors as any[]).length})
-                        </h5>
-                        <div className="grid grid-cols-2 gap-1">
-                          {(sensorData.sensors as any[]).map((s: any, i: number) => (
-                            <div key={i} className="flex items-center gap-1.5 text-[10px] py-0.5 px-1.5 rounded bg-muted/50">
-                              <span className="text-muted-foreground truncate">{s.name || s.type}</span>
-                              <span className="font-medium ml-auto shrink-0">
-                                {s.value != null ? `${Number(s.value).toFixed(s.unit === 'л' || s.unit === 'L' ? 1 : 0)}${s.unit ? ' ' + s.unit : ''}` : '—'}
-                              </span>
-                            </div>
-                          ))}
+                    {/* Detailed sensor comparison */}
+                    {Array.isArray(compareData.sensorComparison) && (compareData.sensorComparison as any[]).length > 0 && (() => {
+                      const sensors = (compareData.sensorComparison as any[]).filter((s: any) => s.start != null || s.end != null)
+                      const changed = sensors.filter((s: any) => s.changed)
+                      return sensors.length > 0 ? (
+                        <div className="rounded-lg border p-2.5 space-y-2">
+                          <h5 className="text-[11px] font-semibold text-muted-foreground flex items-center gap-1">
+                            <Cpu className="size-3" />Датчики ({sensors.length})
+                            {changed.length > 0 && (
+                              <span className="ml-auto font-normal text-amber-600 dark:text-amber-400">{changed.length} изм.</span>
+                            )}
+                          </h5>
+                          <div className="overflow-x-auto">
+                            <table className="w-full text-[10px]">
+                              <thead>
+                                <tr className="border-b text-muted-foreground">
+                                  <th className="text-left py-1 px-1.5 font-medium">Датчик</th>
+                                  <th className="text-right py-1 px-1.5 font-medium">Старт</th>
+                                  <th className="text-right py-1 px-1.5 font-medium">Финиш</th>
+                                  <th className="text-right py-1 px-1.5 font-medium">Разница</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {sensors.map((s: any, i: number) => (
+                                  <tr key={i} className={`border-b last:border-0 ${s.changed ? 'bg-amber-50/50 dark:bg-amber-900/10' : ''}`}>
+                                    <td className="py-1 px-1.5 text-muted-foreground">{s.name}</td>
+                                    <td className="py-1 px-1.5 text-right font-mono">
+                                      {s.start != null ? `${Number(s.start).toFixed(s.unit === 'л' || s.unit === 'L' || s.unit === 'km/h' ? 1 : 0)}${s.unit ? ' ' + s.unit : ''}` : '—'}
+                                    </td>
+                                    <td className="py-1 px-1.5 text-right font-mono">
+                                      {s.end != null ? `${Number(s.end).toFixed(s.unit === 'л' || s.unit === 'L' || s.unit === 'km/h' ? 1 : 0)}${s.unit ? ' ' + s.unit : ''}` : '—'}
+                                    </td>
+                                    <td className={`py-1 px-1.5 text-right font-mono font-semibold ${s.changed ? (s.diff != null && s.diff > 0 ? 'text-red-600 dark:text-red-400' : 'text-emerald-600 dark:text-emerald-400') : ''}`}>
+                                      {s.diff != null ? `${s.diff > 0 ? '+' : ''}${s.diff.toFixed(s.unit === 'л' || s.unit === 'L' || s.unit === 'km/h' ? 1 : 0)}${s.unit ? ' ' + s.unit : ''}` : '—'}
+                                    </td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
                         </div>
-                      </div>
-                    )}
+                      ) : null
+                    })()}
 
                     {/* Trip stats from Axenta */}
-                    {sensorData.tripStats && (
+                    {compareData.tripStats && (
                       <div className="rounded-lg border p-2.5 space-y-2">
                         <h5 className="text-[11px] font-semibold text-muted-foreground flex items-center gap-1">
                           <BarChart3 className="size-3" />Статистика за период рейса
                         </h5>
                         <div className="grid grid-cols-2 gap-1.5">
                           {(() => {
-                            const st = sensorData.tripStats as Record<string, unknown>
+                            const st = compareData.tripStats as Record<string, unknown>
                             const items: { label: string; value: string | null }[] = [
                               { label: 'Пробег', value: st.mileage != null ? `${Number(st.mileage).toFixed(1)} км` : null },
                               { label: 'Ср. скорость', value: st.avgSpeed != null ? `${Number(st.avgSpeed).toFixed(1)} км/ч` : null },
@@ -3683,62 +3714,51 @@ function TripDetailDialog({ open, onOpenChange, trip, loading, crews, onEdit, on
 
                     {/* Apply buttons */}
                     <div className="flex flex-wrap gap-1.5">
-                      {(t.status === 'planned' || t.status === 'in_progress') && (
+                      {(t.status === 'planned' || t.status === 'in_progress') && compareData?.startSnapshot && (
                         <Button variant="outline" size="sm" className="h-7 text-[10px] gap-1" onClick={applyStartValues}>
-                          <ArrowDownToLine className="size-3" />Заполнить начало рейса
+                          <ArrowDownToLine className="size-3" />Заполнить начало
                         </Button>
                       )}
-                      {(t.status === 'in_progress' || t.status === 'completed') && (
+                      {(t.status === 'in_progress' || t.status === 'completed') && compareData?.endSnapshot && (
                         <Button variant="outline" size="sm" className="h-7 text-[10px] gap-1" onClick={applyEndValues}>
-                          <ArrowUpFromLine className="size-3" />Заполнить финиш рейса
+                          <ArrowUpFromLine className="size-3" />Заполнить финиш
                         </Button>
                       )}
-                      <Button variant="ghost" size="sm" className="h-7 text-[10px] gap-1" onClick={() => { setSensorData(null); setSensorError(null); setApplySuccess(null) }}>
-                        <X className="size-3" />Скрыть
-                      </Button>
                     </div>
                   </div>
                 )}
               </div>
 
-              {/* ── ТРЕК НА КАРТЕ ── */}
+              {/* ── ТРЕК НА КАРТЕ (АВТОМАТИЧЕСКАЯ ЗАГРУЗКА) ── */}
               {t.startDate && (
                 <div className="space-y-2">
                   <div className="flex items-center justify-between">
                     <h4 className="text-xs font-semibold flex items-center gap-1.5"><Map className="size-3.5" />Трек на карте</h4>
-                    {trackData && !trackLoading && (
-                      <Button variant="ghost" size="sm" className="h-7 text-[10px] gap-1" onClick={() => { setTrackData(null); setTrackError(null) }}>
-                        <X className="size-3" />Скрыть
-                      </Button>
-                    )}
+                    <Button variant="ghost" size="sm" className="h-7 text-[10px] gap-1" onClick={reloadTrack} disabled={trackLoading}>
+                      <RefreshCw className={`size-3 ${trackLoading ? 'animate-spin' : ''}`} />
+                    </Button>
                   </div>
-                  {!trackData && !trackLoading && (
-                    <div className="space-y-2">
-                      <div className="grid grid-cols-2 gap-2">
-                        <div>
-                          <Label className="text-[10px] text-muted-foreground">От</Label>
-                          <Input
-                            type="datetime-local"
-                            className="h-7 text-[11px]"
-                            value={trackDateFrom || (t.startDate ? toLocalDatetime(t.startDate) : '')}
-                            onChange={e => setTrackDateFrom(e.target.value)}
-                          />
-                        </div>
-                        <div>
-                          <Label className="text-[10px] text-muted-foreground">До</Label>
-                          <Input
-                            type="datetime-local"
-                            className="h-7 text-[11px]"
-                            value={trackDateTo || (t.endDate ? toLocalDatetime(t.endDate) : '')}
-                            onChange={e => setTrackDateTo(e.target.value)}
-                          />
-                        </div>
-                      </div>
-                      <Button variant="outline" size="sm" className="h-7 text-[10px] gap-1 w-full" onClick={loadTrack} disabled={trackLoading}>
-                        <Navigation className="size-3" />Загрузить трек из Axenta
-                      </Button>
+                  {/* Date range for track */}
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <Label className="text-[10px] text-muted-foreground">От</Label>
+                      <Input
+                        type="datetime-local"
+                        className="h-7 text-[11px]"
+                        value={trackDateFrom || (t.startDate ? toLocalDatetime(t.startDate) : '')}
+                        onChange={e => setTrackDateFrom(e.target.value)}
+                      />
                     </div>
-                  )}
+                    <div>
+                      <Label className="text-[10px] text-muted-foreground">До {!t.endDate && <span className="text-amber-500">(сейчас)</span>}</Label>
+                      <Input
+                        type="datetime-local"
+                        className="h-7 text-[11px]"
+                        value={trackDateTo || (t.endDate ? toLocalDatetime(t.endDate) : toLocalDatetime(new Date()))}
+                        onChange={e => setTrackDateTo(e.target.value)}
+                      />
+                    </div>
+                  </div>
                   {trackLoading && (
                     <div className="flex items-center justify-center h-32 bg-muted/30 rounded-lg">
                       <Loader2 className="size-4 animate-spin text-muted-foreground" />
@@ -3746,7 +3766,7 @@ function TripDetailDialog({ open, onOpenChange, trip, loading, crews, onEdit, on
                     </div>
                   )}
                   {trackError && (
-                    <div className="flex items-center gap-2 p-3 bg-red-50 dark:bg-red-900/20 rounded-lg text-xs text-red-600 dark:text-red-400">
+                    <div className="flex items-center gap-2 p-2 bg-yellow-50 dark:bg-yellow-900/20 rounded-lg text-xs text-yellow-600 dark:text-yellow-400">
                       <AlertTriangle className="size-3.5 shrink-0" />{trackError}
                     </div>
                   )}
@@ -3774,7 +3794,6 @@ function TripDetailDialog({ open, onOpenChange, trip, loading, crews, onEdit, on
             <Button variant="outline" size="sm" className="h-8 gap-1 text-xs" onClick={() => onComplete(t)}><CheckCircle2 className="size-3.5" />Завершить</Button>
           )}
           <Button variant="outline" size="sm" className="h-8 gap-1 text-xs" onClick={() => onEdit(t)}><Edit className="size-3.5" />Редактировать</Button>
-          <Button variant="outline" size="sm" className="h-8 gap-1 text-xs" onClick={loadSensors} disabled={sensorLoading}><CircuitBoard className="size-3.5" />Датчики</Button>
           <Button variant="outline" size="sm" className="h-8 gap-1 text-xs" onClick={onRefresh}><Activity className="size-3.5" />Обновить</Button>
           <Button variant="destructive" size="sm" className="h-8 gap-1 text-xs" onClick={() => onDelete(t)}><Trash2 className="size-3.5" />Удалить</Button>
         </DialogFooter>

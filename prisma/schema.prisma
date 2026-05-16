@@ -315,7 +315,8 @@ model Trip {
   plumVolume      Float?   // Сливы (л)
   idleTime        Int?     // Холостой ход (секунды)
   parkingsDuration Int?    // Время стоянок (секунды)
-  trackerSnapshot String?  // JSON-снапшот данных трекера на момент завершения
+  trackerSnapshot     String?  // JSON-снапшот данных трекера на момент завершения
+  trackerSnapshotStart String? // JSON-снапшот данных трекера на момент старта
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
