@@ -63,7 +63,11 @@ import {
   Route, Package, Weight, UserCircle, IdCard, ClipboardCheck, Map, Bell,
   Car, Bus, Bike, Tractor, Ship, Container, Wrench as Settings, CircuitBoard, Cable,
   UserPlus, UserCheck, Download, Cpu, BarChart3, Compass, Mountain,
-  ArrowDownToLine, ArrowUpFromLine, Save, Printer
+  ArrowDownToLine, ArrowUpFromLine, Save, Printer,
+  TrendingUp, TrendingDown, Copy, Timer, Droplets, Zap as Lightning,
+  Hash, Calculator, StickyNote, CircleDot, FileBadge, Fuel as FuelIcon,
+  Armchair, Anchor, TimerReset, MoveRight, Tag, BadgeCheck,
+  ScanLine, Receipt, Truck as TruckIcon, Flame
 } from 'lucide-react'
 
 // ═══════════════════════════════════════════════════════════════
@@ -418,6 +422,21 @@ function getStageProgress(stages: RepairStage[]): number {
   return Math.round((completed / stages.length) * 100)
 }
 
+function formatDaysUntil(d?: string | null): { text: string; className: string } | null {
+  if (!d) return null
+  const days = Math.ceil((new Date(d).getTime() - Date.now()) / (1000 * 60 * 60 * 24))
+  if (days < 0) return { text: `Истекло ${Math.abs(days)} дн. назад (${formatDate(d)})`, className: 'text-red-600 dark:text-red-400 font-medium' }
+  if (days < 30) return { text: `${days} дн. (${formatDate(d)})`, className: 'text-amber-600 dark:text-amber-400 font-medium' }
+  return { text: `${days} дн. (${formatDate(d)})`, className: '' }
+}
+
+function formatDurationShort(seconds: number): string {
+  const h = Math.floor(seconds / 3600)
+  const m = Math.floor((seconds % 3600) / 60)
+  if (h > 24) { const d = Math.floor(h / 24); return `${d}д ${h % 24}ч` }
+  return h > 0 ? `${h}ч ${m}мин` : `${m}мин`
+}
+
 // Debounce hook
 function useDebounce<T>(value: T, delay: number): T {
   const [debouncedValue, setDebouncedValue] = useState(value)
@@ -515,6 +534,8 @@ export default function Home() {
   const [showAlerts, setShowAlerts] = useState(false)
   const [lastSyncTime, setLastSyncTime] = useState<Date | null>(null)
   const [autoRefreshEnabled, setAutoRefreshEnabled] = useState(true)
+  const [globalSearchOpen, setGlobalSearchOpen] = useState(false)
+  const [globalSearchQuery, setGlobalSearchQuery] = useState('')
 
   // ═══════════════════════════════════════════════════════════════
   // DATA FETCHING
@@ -585,6 +606,52 @@ export default function Home() {
   }, [fetchEquipment, fetchCompanies, fetchRepairs, fetchTrips, fetchCrews, fetchEmployees])
 
   useEffect(() => { fetchAll() }, [fetchAll])
+
+  // Global search shortcut (Ctrl+K)
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
+        e.preventDefault()
+        setGlobalSearchOpen(true)
+      }
+      if (e.key === 'Escape') setGlobalSearchOpen(false)
+    }
+    window.addEventListener('keydown', handler)
+    return () => window.removeEventListener('keydown', handler)
+  }, [])
+
+  // Global search results
+  const globalSearchResults = useMemo(() => {
+    if (!globalSearchQuery.trim()) return []
+    const q = globalSearchQuery.toLowerCase()
+    const results: Array<{ type: string; id: string; label: string; sub: string; icon: React.ReactNode; action: () => void }> = []
+    for (const eq of equipment) {
+      if (eq.name.toLowerCase().includes(q) || (eq.registrationNum || '').toLowerCase().includes(q) || (eq.vin || '').toLowerCase().includes(q)) {
+        results.push({ type: 'Техника', id: eq.id, label: eq.name, sub: [eq.registrationNum, eq.brand, eq.model].filter(Boolean).join(' • '), icon: <Truck className="size-3.5" />, action: () => { setGlobalSearchOpen(false); openEquipmentDetail(eq) } })
+      }
+    }
+    for (const r of repairs) {
+      if (r.description.toLowerCase().includes(q) || (r.equipment?.name || '').toLowerCase().includes(q)) {
+        results.push({ type: 'Ремонт', id: r.id, label: r.description, sub: `${r.equipment?.name || ''} • ${formatDate(r.startDate)}`, icon: <Wrench className="size-3.5" />, action: () => { setGlobalSearchOpen(false); openRepairDetail(r) } })
+      }
+    }
+    for (const t of trips) {
+      if (t.route.toLowerCase().includes(q) || (t.cargo || '').toLowerCase().includes(q)) {
+        results.push({ type: 'Рейс', id: t.id, label: t.route, sub: `${t.equipment?.name || ''} • ${formatDate(t.startDate)}`, icon: <Route className="size-3.5" />, action: () => { setGlobalSearchOpen(false); openTripDetail(t) } })
+      }
+    }
+    for (const emp of employees) {
+      if (emp.fullName.toLowerCase().includes(q) || (emp.phone || '').toLowerCase().includes(q)) {
+        results.push({ type: 'Сотрудник', id: emp.id, label: emp.fullName, sub: `${EMPLOYEE_POSITION_MAP[emp.position]?.label || emp.position} • ${emp.phone || ''}`, icon: <Users className="size-3.5" />, action: () => { setGlobalSearchOpen(false); openEmployeeDetail(emp) } })
+      }
+    }
+    for (const c of companies) {
+      if (c.name.toLowerCase().includes(q) || (c.inn || '').toLowerCase().includes(q)) {
+        results.push({ type: 'Компания', id: c.id, label: c.name, sub: `${COMPANY_TYPES[c.type] || c.type} • ИНН: ${c.inn || '—'}`, icon: <Building2 className="size-3.5" />, action: () => { setGlobalSearchOpen(false); setMainTab('companies') } })
+      }
+    }
+    return results.slice(0, 12)
+  }, [globalSearchQuery, equipment, repairs, trips, employees, companies])
 
   useEffect(() => {
     const loadSettings = async () => {
@@ -718,14 +785,30 @@ export default function Home() {
   }
 
   // ─── Stats with memo ─────────────────────────────────────────
-  const stats = useMemo(() => ({
-    total: equipment.length,
-    active: equipment.filter(e => e.status === 'active').length,
-    repair: equipment.filter(e => e.status === 'repair').length,
-    rented: equipment.filter(e => e.status === 'rented').length,
-    tripsActive: trips.filter(t => t.status === 'in_progress').length,
-    tripsTotal: trips.length,
-  }), [equipment, trips])
+  const stats = useMemo(() => {
+    const onlineTrackers = equipment.reduce((c, e) => c + (e.trackers?.filter(t => t.isActive).length || 0), 0)
+    const totalDistance = trips.reduce((s, t) => s + (t.distance || 0), 0)
+    const totalFuel = trips.reduce((s, t) => s + (t.fuelConsumed || 0), 0)
+    const totalRepairCost = repairs.reduce((s, r) => s + (r.cost || 0), 0)
+    return {
+      total: equipment.length,
+      active: equipment.filter(e => e.status === 'active').length,
+      repair: equipment.filter(e => e.status === 'repair').length,
+      rented: equipment.filter(e => e.status === 'rented').length,
+      decommissioned: equipment.filter(e => e.status === 'decommissioned').length,
+      tripsActive: trips.filter(t => t.status === 'in_progress').length,
+      tripsTotal: trips.length,
+      repairsTotal: repairs.length,
+      repairsInProgress: repairs.filter(r => r.status === 'in_progress').length,
+      onlineTrackers,
+      totalDistance,
+      totalFuel: Math.round(totalFuel * 10) / 10,
+      totalRepairCost,
+      companiesTotal: companies.length,
+      employeesActive: employees.filter(e => e.status === 'active').length,
+      employeesTotal: employees.length,
+    }
+  }, [equipment, trips, repairs, companies, employees])
 
   const handleDelete = async () => {
     const { type, id } = deleteDialog
@@ -757,12 +840,24 @@ export default function Home() {
           <div className="max-w-7xl mx-auto px-3 sm:px-6 h-11 flex items-center gap-2">
             <div className="size-7 rounded-lg bg-primary text-primary-foreground flex items-center justify-center shrink-0"><Truck className="size-3.5" /></div>
             <h1 className="text-sm font-bold shrink-0 hidden sm:block">Учёт техники</h1>
-            <div className="hidden sm:flex items-center gap-1.5 ml-1">
-              {[0,1,2,3].map(i => <div key={i} className="h-5 w-12 rounded-md bg-muted animate-pulse" />)}
+            <div className="hidden md:flex items-center gap-1 ml-1">
+              {[0,1,2,3,4,5,6,7].map(i => <div key={i} className="h-5 w-14 rounded-md bg-muted animate-pulse" />)}
             </div>
           </div>
         </header>
         <main className="flex-1 max-w-7xl mx-auto w-full px-3 sm:px-6 py-4">
+          {/* Skeleton tabs */}
+          <div className="hidden md:flex items-center gap-2 mb-4">
+            {[0,1,2,3,4,5].map(i => <div key={i} className="h-9 w-24 rounded-md bg-muted animate-pulse" />)}
+          </div>
+          {/* Skeleton search bar */}
+          <div className="flex gap-2 mb-3">
+            <div className="flex-1 h-9 rounded-md bg-muted animate-pulse" />
+            <div className="h-9 w-[140px] rounded-md bg-muted animate-pulse" />
+            <div className="h-9 w-[160px] rounded-md bg-muted animate-pulse" />
+            <div className="h-9 w-[100px] rounded-md bg-muted animate-pulse" />
+          </div>
+          {/* Skeleton cards */}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
             {[0,1,2,3,4,5].map(i => <div key={i} className="h-36 rounded-lg bg-muted animate-pulse" />)}
           </div>
@@ -784,11 +879,15 @@ export default function Home() {
           <div className="flex items-center gap-2 min-w-0">
             <div className="size-7 rounded-lg bg-primary text-primary-foreground flex items-center justify-center shrink-0"><Truck className="size-3.5" /></div>
             <h1 className="text-sm font-bold tracking-tight shrink-0 hidden sm:block">Учёт техники</h1>
-            <div className="hidden sm:flex items-center gap-1.5 ml-1">
-              <span className="inline-flex items-center gap-1 rounded-md bg-muted px-1.5 py-0.5 text-[10px] font-medium text-primary"><Truck className="size-3" />{stats.total}</span>
-              <span className="inline-flex items-center gap-1 rounded-md bg-emerald-100 dark:bg-emerald-900/40 px-1.5 py-0.5 text-[10px] font-medium text-emerald-700 dark:text-emerald-400"><CheckCircle2 className="size-3" />{stats.active}</span>
-              <span className="inline-flex items-center gap-1 rounded-md bg-amber-100 dark:bg-amber-900/40 px-1.5 py-0.5 text-[10px] font-medium text-amber-700 dark:text-amber-400"><Wrench className="size-3" />{stats.repair}</span>
-              <span className="inline-flex items-center gap-1 rounded-md bg-sky-100 dark:bg-sky-900/40 px-1.5 py-0.5 text-[10px] font-medium text-sky-700 dark:text-sky-400"><Users className="size-3" />{stats.rented}</span>
+            <div className="hidden md:flex items-center gap-1 ml-1">
+              <button onClick={() => setMainTab('equipment')} className="inline-flex items-center gap-1 rounded-md bg-muted px-1.5 py-0.5 text-[10px] font-medium text-primary hover:bg-muted/80 transition-colors" title={`Всего техники: ${stats.total} (Активна: ${stats.active}, Ремонт: ${stats.repair}, Аренда: ${stats.rented})`}><Truck className="size-3" />{stats.total}<TrendingUp className="size-2 text-emerald-500" /></button>
+              <button onClick={() => setMainTab('equipment')} className="inline-flex items-center gap-1 rounded-md bg-emerald-100 dark:bg-emerald-900/40 px-1.5 py-0.5 text-[10px] font-medium text-emerald-700 dark:text-emerald-400 hover:bg-emerald-200 dark:hover:bg-emerald-900/60 transition-colors" title={`В эксплуатации: ${stats.active}`}><CheckCircle2 className="size-3" />{stats.active}</button>
+              <button onClick={() => { setMainTab('repairs') }} className="inline-flex items-center gap-1 rounded-md bg-amber-100 dark:bg-amber-900/40 px-1.5 py-0.5 text-[10px] font-medium text-amber-700 dark:text-amber-400 hover:bg-amber-200 dark:hover:bg-amber-900/60 transition-colors" title={`На ремонте: ${stats.repair} • В процессе: ${stats.repairsInProgress}`}><Wrench className="size-3" />{stats.repair}</button>
+              <button onClick={() => setMainTab('equipment')} className="inline-flex items-center gap-1 rounded-md bg-sky-100 dark:bg-sky-900/40 px-1.5 py-0.5 text-[10px] font-medium text-sky-700 dark:text-sky-400 hover:bg-sky-200 dark:hover:bg-sky-900/60 transition-colors" title={`В аренде: ${stats.rented}`}><Users className="size-3" />{stats.rented}</button>
+              <span className="inline-flex items-center gap-1 rounded-md bg-green-100 dark:bg-green-900/40 px-1.5 py-0.5 text-[10px] font-medium text-green-700 dark:text-green-400" title={`Онлайн трекеры: ${stats.onlineTrackers}`}><Wifi className="size-3" />{stats.onlineTrackers}</span>
+              <button onClick={() => setMainTab('trips')} className="inline-flex items-center gap-1 rounded-md bg-violet-100 dark:bg-violet-900/40 px-1.5 py-0.5 text-[10px] font-medium text-violet-700 dark:text-violet-400 hover:bg-violet-200 dark:hover:bg-violet-900/60 transition-colors" title={`Рейсов: ${stats.tripsTotal} • В пути: ${stats.tripsActive}`}><Route className="size-3" />{stats.tripsTotal}</button>
+              <button onClick={() => setMainTab('repairs')} className="inline-flex items-center gap-1 rounded-md bg-orange-100 dark:bg-orange-900/40 px-1.5 py-0.5 text-[10px] font-medium text-orange-700 dark:text-orange-400 hover:bg-orange-200 dark:hover:bg-orange-900/60 transition-colors" title={`Ремонтов: ${stats.repairsTotal}`}><ClipboardList className="size-3" />{stats.repairsTotal}</button>
+              <button onClick={() => setMainTab('companies')} className="inline-flex items-center gap-1 rounded-md bg-slate-100 dark:bg-slate-900/40 px-1.5 py-0.5 text-[10px] font-medium text-slate-700 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-900/60 transition-colors" title={`Компаний: ${stats.companiesTotal}`}><Building2 className="size-3" />{stats.companiesTotal}</button>
             </div>
           </div>
           {/* Right: actions */}
@@ -803,6 +902,16 @@ export default function Home() {
               <span>/</span>
               <span className="text-sky-600">{stats.rented}</span>
             </div>
+            {/* Global search button */}
+            <Button variant="ghost" size="icon" className="size-7" onClick={() => setGlobalSearchOpen(true)} aria-label="Поиск (Ctrl+K)" title="Поиск (Ctrl+K)">
+              <Search className="size-3.5" />
+            </Button>
+            {/* Last sync indicator */}
+            {lastSyncTime && (
+              <span className="hidden lg:inline text-[9px] text-muted-foreground mr-1" title={`Последняя синхронизация: ${formatDateTime(lastSyncTime.toISOString())}`}>
+                <RefreshCw className="inline size-2.5 mr-0.5" />{new Date(lastSyncTime).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}
+              </span>
+            )}
             {/* Auto-refresh toggle */}
             <Button variant="ghost" size="icon" className={`size-7 ${autoRefreshEnabled ? 'text-emerald-600' : 'text-muted-foreground'}`} onClick={() => setAutoRefreshEnabled(!autoRefreshEnabled)} aria-label="Автообновление" title={autoRefreshEnabled ? 'Автообновление вкл' : 'Автообновление выкл'}>
               <RefreshCw className={`size-3.5 ${autoRefreshEnabled ? '' : 'opacity-50'}`} />
@@ -862,11 +971,11 @@ export default function Home() {
         {/* Desktop tabs */}
         <Tabs value={mainTab} onValueChange={setMainTab} className="hidden md:block">
           <TabsList className="mb-4">
-            <TabsTrigger value="equipment" className="gap-1.5"><Truck className="size-4" />Техника</TabsTrigger>
-            <TabsTrigger value="repairs" className="gap-1.5"><Wrench className="size-4" />Ремонты</TabsTrigger>
-            <TabsTrigger value="trips" className="gap-1.5"><Route className="size-4" />Рейсы</TabsTrigger>
-            <TabsTrigger value="employees" className="gap-1.5"><Users className="size-4" />Сотрудники</TabsTrigger>
-            <TabsTrigger value="companies" className="gap-1.5"><Building2 className="size-4" />Компании</TabsTrigger>
+            <TabsTrigger value="equipment" className="gap-1.5"><Truck className="size-4" />Техника<Badge variant="secondary" className="ml-1 h-4 min-w-4 px-1 text-[10px]">{stats.total}</Badge></TabsTrigger>
+            <TabsTrigger value="repairs" className="gap-1.5"><Wrench className="size-4" />Ремонты<Badge variant="secondary" className="ml-1 h-4 min-w-4 px-1 text-[10px]">{stats.repairsTotal}</Badge></TabsTrigger>
+            <TabsTrigger value="trips" className="gap-1.5"><Route className="size-4" />Рейсы<Badge variant="secondary" className="ml-1 h-4 min-w-4 px-1 text-[10px]">{stats.tripsTotal}</Badge></TabsTrigger>
+            <TabsTrigger value="employees" className="gap-1.5"><Users className="size-4" />Сотрудники<Badge variant="secondary" className="ml-1 h-4 min-w-4 px-1 text-[10px]">{stats.employeesTotal}</Badge></TabsTrigger>
+            <TabsTrigger value="companies" className="gap-1.5"><Building2 className="size-4" />Компании<Badge variant="secondary" className="ml-1 h-4 min-w-4 px-1 text-[10px]">{stats.companiesTotal}</Badge></TabsTrigger>
             <TabsTrigger value="map" className="gap-1.5"><Map className="size-4" />Карта</TabsTrigger>
           </TabsList>
           <TabsContent value="equipment">
@@ -904,12 +1013,12 @@ export default function Home() {
       <nav className="md:hidden fixed bottom-0 left-0 right-0 z-40 border-t bg-card/95 backdrop-blur-sm">
         <div className="grid grid-cols-6 h-14">
           {[
-            { value: 'equipment', icon: <Truck className="size-5" />, label: 'Техника' },
-            { value: 'repairs', icon: <Wrench className="size-5" />, label: 'Ремонты' },
-            { value: 'trips', icon: <Route className="size-5" />, label: 'Рейсы' },
-            { value: 'employees', icon: <Users className="size-5" />, label: 'Сотрудники' },
-            { value: 'companies', icon: <Building2 className="size-5" />, label: 'Компании' },
-            { value: 'map', icon: <Map className="size-5" />, label: 'Карта' },
+            { value: 'equipment', icon: <Truck className="size-5" />, label: 'Техника', count: stats.total },
+            { value: 'repairs', icon: <Wrench className="size-5" />, label: 'Ремонты', count: stats.repairsTotal },
+            { value: 'trips', icon: <Route className="size-5" />, label: 'Рейсы', count: stats.tripsTotal },
+            { value: 'employees', icon: <Users className="size-5" />, label: 'Сотрудники', count: stats.employeesTotal },
+            { value: 'companies', icon: <Building2 className="size-5" />, label: 'Компании', count: stats.companiesTotal },
+            { value: 'map', icon: <Map className="size-5" />, label: 'Карта', count: 0 },
           ].map(tab => (
             <button key={tab.value} onClick={() => setMainTab(tab.value)}
               className={`flex flex-col items-center justify-center gap-0.5 transition-colors ${mainTab === tab.value ? 'text-primary' : 'text-muted-foreground'}`}>
@@ -1033,6 +1142,44 @@ export default function Home() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Global Search Dialog (Ctrl+K) */}
+      <Dialog open={globalSearchOpen} onOpenChange={setGlobalSearchOpen}>
+        <DialogContent className="sm:max-w-lg p-0 gap-0">
+          <div className="flex items-center border-b px-3">
+            <Search className="size-4 text-muted-foreground shrink-0" />
+            <Input value={globalSearchQuery} onChange={e => setGlobalSearchQuery(e.target.value)} placeholder="Поиск по всей системе..." className="border-0 focus-visible:ring-0 h-10 text-sm" autoFocus />
+            <kbd className="hidden sm:inline-flex items-center gap-0.5 rounded border bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground shrink-0">ESC</kbd>
+          </div>
+          <div className="max-h-[50vh] overflow-y-auto">
+            {globalSearchQuery.trim() === '' ? (
+              <div className="p-6 text-center text-muted-foreground">
+                <Search className="size-8 mx-auto mb-2 opacity-30" />
+                <p className="text-xs">Введите запрос для поиска по технике, ремонтам, рейсам, сотрудникам и компаниям</p>
+                <p className="text-[10px] mt-1">Ctrl+K для быстрого доступа</p>
+              </div>
+            ) : globalSearchResults.length === 0 ? (
+              <div className="p-6 text-center text-muted-foreground">
+                <XCircle className="size-8 mx-auto mb-2 opacity-30" />
+                <p className="text-xs">Ничего не найдено по запросу &laquo;{globalSearchQuery}&raquo;</p>
+              </div>
+            ) : (
+              <div className="py-1">
+                {globalSearchResults.map(r => (
+                  <button key={`${r.type}-${r.id}`} className="w-full flex items-center gap-2.5 px-3 py-2 hover:bg-accent transition-colors text-left" onClick={r.action}>
+                    <div className="size-7 rounded-md bg-muted flex items-center justify-center shrink-0 text-muted-foreground">{r.icon}</div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs font-medium truncate">{r.label}</p>
+                      <p className="text-[10px] text-muted-foreground truncate">{r.sub}</p>
+                    </div>
+                    <span className="text-[9px] text-muted-foreground shrink-0 rounded bg-muted px-1 py-0.5">{r.type}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }
@@ -1067,12 +1214,49 @@ function EquipmentTab({ equipment, companies, eqSearch, setEqSearch, eqStatusFil
   onOpenDetail: (eq: Equipment) => void;
   onAdd: () => void; onEdit: (eq: Equipment) => void; onDelete: (eq: Equipment) => void;
 }) {
+  const [copiedId, setCopiedId] = useState<string | null>(null)
+  const [hoveredRow, setHoveredRow] = useState<string | null>(null)
+
+  const daysUntil = (d?: string | null) => {
+    if (!d) return null
+    const diff = Math.ceil((new Date(d).getTime() - Date.now()) / (1000 * 60 * 60 * 24))
+    return diff
+  }
+
+  const getEngineIcon = (type?: string | null) => {
+    if (!type) return null
+    const t = type.toLowerCase()
+    if (t.includes('дизел') || t.includes('diesel')) return <Droplets className="size-2.5 text-amber-600 dark:text-amber-400" />
+    if (t.includes('бензин') || t.includes('gas') || t.includes('petrol')) return <Flame className="size-2.5 text-red-500" />
+    if (t.includes('электр') || t.includes('electric')) return <Zap className="size-2.5 text-blue-500" />
+    if (t.includes('газ') || t.includes('lpg') || t.includes('cng')) return <Flame className="size-2.5 text-green-500" />
+    return <Cog className="size-2.5 text-muted-foreground" />
+  }
+
+  const getFuelColor = (type?: string | null) => {
+    if (!type) return ''
+    const t = type.toLowerCase()
+    if (t.includes('дизел') || t.includes('diesel')) return 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-400'
+    if (t.includes('бензин') || t.includes('gas') || t.includes('petrol')) return 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-400'
+    if (t.includes('электр') || t.includes('electric')) return 'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-400'
+    if (t.includes('газ') || t.includes('lpg') || t.includes('cng')) return 'bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-400'
+    return 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-400'
+  }
+
+  const copyRegNum = (regNum: string, eqId: string) => {
+    navigator.clipboard.writeText(regNum).then(() => {
+      setCopiedId(eqId)
+      toast.success('Номер скопирован')
+      setTimeout(() => setCopiedId(null), 1500)
+    }).catch(() => {})
+  }
+
   return (
     <div className="space-y-3">
       <div className="flex flex-col sm:flex-row gap-2">
         <div className="relative flex-1">
           <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 size-3.5 text-muted-foreground" />
-          <Input placeholder="Поиск по названию, номеру..." value={eqSearch} onChange={e => setEqSearch(e.target.value)} className="pl-8 h-9 text-sm" />
+          <Input placeholder="Поиск по названию, номеру, VIN..." value={eqSearch} onChange={e => setEqSearch(e.target.value)} className="pl-8 h-9 text-sm" />
         </div>
         <div className="flex gap-2">
           <Select value={eqStatusFilter} onValueChange={setEqStatusFilter}>
@@ -1101,10 +1285,11 @@ function EquipmentTab({ equipment, companies, eqSearch, setEqSearch, eqStatusFil
       <p className="text-xs text-muted-foreground">Найдено: {equipment.length}</p>
 
       {equipment.length === 0 ? (
-        <Card className="py-8">
+        <Card className="py-8 animate-in fade-in duration-300">
           <CardContent className="flex flex-col items-center text-center p-4 pt-0">
             <Truck className="size-10 text-muted-foreground/40 mb-2" />
             <p className="text-sm text-muted-foreground">Техника не найдена</p>
+            <p className="text-xs text-muted-foreground mt-1">Измените фильтры или добавьте новую технику</p>
           </CardContent>
         </Card>
       ) : (
@@ -1116,43 +1301,105 @@ function EquipmentTab({ equipment, companies, eqSearch, setEqSearch, eqStatusFil
                   <th className="text-left py-1.5 px-2 font-medium w-8"></th>
                   <th className="text-left py-1.5 px-2 font-medium">Наименование</th>
                   <th className="text-left py-1.5 px-2 font-medium hidden sm:table-cell">Гос. номер</th>
-                  <th className="text-left py-1.5 px-2 font-medium hidden md:table-cell">Марка / Модель</th>
+                  <th className="text-left py-1.5 px-2 font-medium hidden md:table-cell">Характеристики</th>
                   <th className="text-left py-1.5 px-2 font-medium hidden lg:table-cell">Владелец</th>
+                  <th className="text-left py-1.5 px-2 font-medium hidden xl:table-cell">Документы</th>
                   <th className="text-left py-1.5 px-2 font-medium">Статус</th>
-                  <th className="text-right py-1.5 px-2 font-medium w-16"></th>
+                  <th className="text-right py-1.5 px-2 font-medium w-20"></th>
                 </tr>
               </thead>
               <tbody>
-                {equipment.map(eq => (
-                  <tr key={eq.id} className={`border-b last:border-0 cursor-pointer hover:bg-accent/50 transition-colors border-l-2 ${EQUIPMENT_STATUS_MAP[eq.status]?.border || ''}`} onClick={() => onOpenDetail(eq)}>
-                    <td className="py-1.5 px-2">
-                      <div className={`flex items-center justify-center size-6 rounded ${getTypeInfo(eq.type).color} ${getTypeInfo(eq.type).darkColor}`}>{getTypeInfo(eq.type).icon}</div>
-                    </td>
-                    <td className="py-1.5 px-2">
-                      <div className="font-medium truncate max-w-[200px]">{eq.name}</div>
-                      {eq.employees && eq.employees.length > 0 && (
-                        <div className="flex flex-wrap gap-0.5 mt-0.5">
-                          {eq.employees.slice(0, 2).map(emp => (
-                            <span key={emp.id} className={`inline-flex items-center gap-0.5 rounded px-1 py-0 text-[9px] font-medium ${EMPLOYEE_POSITION_MAP[emp.position]?.color || 'bg-gray-100 text-gray-600'} ${EMPLOYEE_POSITION_MAP[emp.position]?.darkColor || ''}`}>
-                              {emp.fullName.split(' ')[0]}
-                            </span>
-                          ))}
-                          {eq.employees.length > 2 && <span className="text-[9px] text-muted-foreground">+{eq.employees.length - 2}</span>}
+                {equipment.map((eq, idx) => {
+                  const insDays = daysUntil(eq.insuranceExpiry)
+                  const inspDays = daysUntil(eq.inspectionExpiry)
+                  const trackerOnline = eq.trackers?.some(t => t.isActive)
+                  const trackerOffline = eq.trackers?.some(t => !t.isActive) && !trackerOnline
+                  const age = eq.purchaseDate ? Math.floor((Date.now() - new Date(eq.purchaseDate).getTime()) / (365.25 * 24 * 60 * 60 * 1000)) : null
+                  const depreciation = eq.purchasePrice && eq.currentPrice ? Math.round((1 - eq.currentPrice / eq.purchasePrice) * 100) : null
+                  return (
+                    <tr key={eq.id}
+                      className={`border-b last:border-0 cursor-pointer hover:bg-accent/50 transition-colors border-l-2 ${EQUIPMENT_STATUS_MAP[eq.status]?.border || ''} ${idx % 2 === 1 ? 'bg-muted/20' : ''}`}
+                      onClick={() => onOpenDetail(eq)}
+                      onMouseEnter={() => setHoveredRow(eq.id)}
+                      onMouseLeave={() => setHoveredRow(null)}
+                    >
+                      <td className="py-1.5 px-2">
+                        <div className="flex items-center gap-0.5">
+                          <div className={`flex items-center justify-center size-6 rounded ${getTypeInfo(eq.type).color} ${getTypeInfo(eq.type).darkColor}`}>{getTypeInfo(eq.type).icon}</div>
+                          {/* Tracker status dot */}
+                          {eq.trackers && eq.trackers.length > 0 && (
+                            <span className={`size-1.5 rounded-full ${trackerOnline ? 'bg-emerald-500' : 'bg-red-400'}`} title={trackerOnline ? 'Трекер онлайн' : 'Трекер офлайн'} />
+                          )}
                         </div>
-                      )}
-                    </td>
-                    <td className="py-1.5 px-2 hidden sm:table-cell"><span className="font-mono">{eq.registrationNum || '—'}</span></td>
-                    <td className="py-1.5 px-2 hidden md:table-cell text-muted-foreground truncate max-w-[150px]">{[eq.brand, eq.model].filter(Boolean).join(' ') || '—'}</td>
-                    <td className="py-1.5 px-2 hidden lg:table-cell text-muted-foreground truncate max-w-[120px]">{eq.owner?.name || '—'}</td>
-                    <td className="py-1.5 px-2">{statusBadge(eq.status, EQUIPMENT_STATUS_MAP)}</td>
-                    <td className="py-1.5 px-2 text-right" onClick={e => e.stopPropagation()}>
-                      <div className="flex items-center justify-end gap-0.5">
-                        <Button size="sm" variant="ghost" className="size-6 p-0" onClick={() => onEdit(eq)}><Edit className="size-3" /></Button>
-                        <Button size="sm" variant="ghost" className="size-6 p-0 text-destructive hover:text-destructive" onClick={() => onDelete(eq)}><Trash2 className="size-3" /></Button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
+                      </td>
+                      <td className="py-1.5 px-2">
+                        <div className="flex items-center gap-1">
+                          <span className="font-medium truncate max-w-[200px]">{eq.name}</span>
+                          {eq.year && <span className="inline-flex items-center rounded px-1 py-0 text-[9px] font-medium bg-muted text-muted-foreground">{eq.year}</span>}
+                        </div>
+                        <div className="flex flex-wrap items-center gap-1 mt-0.5">
+                          {eq.vin && <span className="text-[9px] text-muted-foreground font-mono">VIN:{eq.vin.slice(-6)}</span>}
+                          {eq.mileage != null && <span className="inline-flex items-center gap-0.5 text-[9px] text-muted-foreground"><Gauge className="size-2" />{eq.mileage >= 1000 ? `${(eq.mileage / 1000).toFixed(1)} тыс. км` : `${eq.mileage} км`}</span>}
+                          {eq.engineType && <span className="inline-flex items-center gap-0.5">{getEngineIcon(eq.engineType)}</span>}
+                          {eq.fuelType && <span className={`inline-flex items-center rounded px-1 py-0 text-[9px] font-medium ${getFuelColor(eq.fuelType)}`}>{eq.fuelType}</span>}
+                          {eq.loadCapacity && <span className="inline-flex items-center gap-0.5 text-[9px] text-muted-foreground"><Weight className="size-2" />{eq.loadCapacity}</span>}
+                        </div>
+                        {/* Assigned employees as avatar circles */}
+                        {eq.employees && eq.employees.length > 0 && (
+                          <div className="flex items-center gap-0.5 mt-0.5">
+                            {eq.employees.slice(0, 3).map(emp => (
+                              <span key={emp.id} className="inline-flex items-center justify-center size-4 rounded-full text-[7px] font-bold bg-primary/10 text-primary" title={emp.fullName}>{emp.fullName[0]}</span>
+                            ))}
+                            {eq.employees.length > 3 && <span className="text-[8px] text-muted-foreground">+{eq.employees.length - 3}</span>}
+                          </div>
+                        )}
+                        {/* Quick actions on hover */}
+                        {hoveredRow === eq.id && (
+                          <div className="flex gap-1 mt-1" onClick={e => e.stopPropagation()}>
+                            <button className="inline-flex items-center gap-0.5 rounded px-1 py-0 text-[9px] text-primary hover:bg-primary/10 transition-colors" onClick={() => onOpenDetail(eq)}><Eye className="size-2.5" />Детали</button>
+                          </div>
+                        )}
+                      </td>
+                      <td className="py-1.5 px-2 hidden sm:table-cell">
+                        <span className="font-mono cursor-pointer hover:text-primary transition-colors inline-flex items-center gap-0.5" onClick={(e) => { e.stopPropagation(); if (eq.registrationNum) copyRegNum(eq.registrationNum, eq.id) }} title={copiedId === eq.id ? 'Скопировано!' : 'Нажмите чтобы скопировать'}>
+                          {eq.registrationNum || '—'}
+                          {eq.registrationNum && <Copy className="size-2 text-muted-foreground" />}
+                        </span>
+                      </td>
+                      <td className="py-1.5 px-2 hidden md:table-cell">
+                        <div className="text-muted-foreground truncate max-w-[180px]">{[eq.brand, eq.model].filter(Boolean).join(' ') || '—'}</div>
+                        <div className="flex flex-wrap gap-0.5 mt-0.5">
+                          {age != null && age > 0 && <span className="text-[9px] text-muted-foreground">Возраст: {age} г.</span>}
+                          {depreciation != null && <span className={`text-[9px] font-medium ${depreciation > 50 ? 'text-red-500' : depreciation > 20 ? 'text-amber-500' : 'text-emerald-500'}`}>Износ: {depreciation}%</span>}
+                          {eq._count?.repairs != null && eq._count.repairs > 0 && <span className="inline-flex items-center gap-0.5 text-[9px] text-muted-foreground"><Wrench className="size-2" />{eq._count.repairs}</span>}
+                        </div>
+                      </td>
+                      <td className="py-1.5 px-2 hidden lg:table-cell">
+                        {eq.owner && <span className="inline-flex items-center gap-0.5 rounded px-1 py-0 text-[9px] font-medium bg-muted truncate max-w-[100px]"><Building2 className="size-2" />{eq.owner.name}</span>}
+                        {eq.renter && <span className="inline-flex items-center gap-0.5 rounded px-1 py-0 text-[9px] font-medium bg-sky-100 dark:bg-sky-900/40 text-sky-700 dark:text-sky-400 truncate max-w-[100px] ml-0.5"><Users className="size-2" />{eq.renter.name}</span>}
+                        {!eq.owner && !eq.renter && <span className="text-muted-foreground">—</span>}
+                      </td>
+                      <td className="py-1.5 px-2 hidden xl:table-cell">
+                        <div className="space-y-0.5">
+                          {insDays != null && <span className={`text-[9px] ${insDays < 0 ? 'text-red-600 dark:text-red-400 font-medium' : insDays < 30 ? 'text-amber-600 dark:text-amber-400 font-medium' : 'text-muted-foreground'}`}>
+                            <Shield className="inline size-2 mr-0.5" />ОСАГО: {insDays < 0 ? 'истекло' : `${insDays} дн.`}
+                          </span>}
+                          {inspDays != null && <span className={`text-[9px] ${inspDays < 0 ? 'text-red-600 dark:text-red-400 font-medium' : inspDays < 30 ? 'text-amber-600 dark:text-amber-400 font-medium' : 'text-muted-foreground'}`}>
+                            <ClipboardCheck className="inline size-2 mr-0.5" />ТО: {inspDays < 0 ? 'истекло' : `${inspDays} дн.`}
+                          </span>}
+                          {insDays == null && inspDays == null && <span className="text-muted-foreground text-[9px]">—</span>}
+                        </div>
+                      </td>
+                      <td className="py-1.5 px-2">{statusBadge(eq.status, EQUIPMENT_STATUS_MAP)}</td>
+                      <td className="py-1.5 px-2 text-right" onClick={e => e.stopPropagation()}>
+                        <div className="flex items-center justify-end gap-0.5">
+                          <Button size="sm" variant="ghost" className="size-6 p-0" onClick={() => onEdit(eq)}><Edit className="size-3" /></Button>
+                          <Button size="sm" variant="ghost" className="size-6 p-0 text-destructive hover:text-destructive" onClick={() => onDelete(eq)}><Trash2 className="size-3" /></Button>
+                        </div>
+                      </td>
+                    </tr>
+                  )
+                })}
               </tbody>
             </table>
           </div>
@@ -1398,6 +1645,27 @@ function EquipmentDetailSheet({ open, onOpenChange, equipment, loading, detailTa
           <div className="flex items-center gap-2 pt-1">
             {statusBadge(eq.status, EQUIPMENT_STATUS_MAP)}
             <span className="text-[10px] text-muted-foreground">создано {formatDate(eq.createdAt)}</span>
+            {eq.trackers && eq.trackers.length > 0 && (
+              <span className={`inline-flex items-center gap-0.5 rounded px-1 py-0 text-[9px] font-medium ${eq.trackers.some(t => t.isActive) ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-400' : 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-400'}`}>
+                {eq.trackers.some(t => t.isActive) ? <><Wifi className="size-2" />Онлайн</> : <><WifiOff className="size-2" />Офлайн</>}
+              </span>
+            )}
+          </div>
+          {/* Document expiry warnings */}
+          {(() => {
+            const warnings: React.ReactNode[] = []
+            const insDays = eq.insuranceExpiry ? Math.ceil((new Date(eq.insuranceExpiry).getTime() - Date.now()) / (1000*60*60*24)) : null
+            const inspDays = eq.inspectionExpiry ? Math.ceil((new Date(eq.inspectionExpiry).getTime() - Date.now()) / (1000*60*60*24)) : null
+            if (insDays != null && insDays < 30) warnings.push(<span key="ins" className="text-[9px] text-amber-600 dark:text-amber-400"><Shield className="inline size-2 mr-0.5" />ОСАГО {insDays < 0 ? 'истекло!' : `истекает через ${insDays} дн.`}</span>)
+            if (inspDays != null && inspDays < 30) warnings.push(<span key="insp" className="text-[9px] text-amber-600 dark:text-amber-400"><ClipboardCheck className="inline size-2 mr-0.5" />ТО {inspDays < 0 ? 'истекло!' : `истекает через ${inspDays} дн.`}</span>)
+            if (warnings.length > 0) return <div className="flex flex-wrap gap-2 mt-1 rounded bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 p-1.5">{warnings}</div>
+            return null
+          })()}
+          {/* Quick actions */}
+          <div className="flex flex-wrap gap-1 pt-1">
+            <Button variant="outline" size="sm" className="h-6 text-[10px] gap-1" onClick={() => onAddRepair(eq.id)}><Wrench className="size-2.5" />Ремонт</Button>
+            <Button variant="outline" size="sm" className="h-6 text-[10px] gap-1" onClick={() => onAddTrip(eq.id)}><Route className="size-2.5" />Рейс</Button>
+            <Button variant="outline" size="sm" className="h-6 text-[10px] gap-1" onClick={() => onUploadPhoto(eq.id)}><Camera className="size-2.5" />Фото</Button>
           </div>
         </SheetHeader>
 
@@ -1450,18 +1718,54 @@ function EquipmentDetailSheet({ open, onOpenChange, equipment, loading, detailTa
                       <DetailRow label="Дата покупки" value={formatDate(eq.purchaseDate)} />
                       <DetailRow label="Цена покупки" value={formatPrice(eq.purchasePrice)} />
                       <DetailRow label="Текущая стоимость" value={formatPrice(eq.currentPrice)} />
+                      {eq.purchasePrice && eq.currentPrice && (
+                        <DetailRow label="Амортизация" value={<span className={`font-medium ${eq.currentPrice < eq.purchasePrice * 0.5 ? 'text-red-500' : eq.currentPrice < eq.purchasePrice * 0.8 ? 'text-amber-500' : 'text-emerald-500'}`}>{Math.round((1 - eq.currentPrice / eq.purchasePrice) * 100)}%</span>} />
+                      )}
+                      {eq.purchaseDate && (
+                        <DetailRow label="Возраст" value={`${Math.floor((Date.now() - new Date(eq.purchaseDate).getTime()) / (365.25 * 24 * 60 * 60 * 1000))} лет`} />
+                      )}
                     </DetailSection>
                     <DetailSection title="Страхование и ТО" icon={<Shield className="size-3.5" />}>
                       <DetailRow label="Полис" value={eq.insuranceNumber} />
-                      <DetailRow label="Страховка до" value={formatDate(eq.insuranceExpiry)} />
+                      <DetailRow label="Страховка до" value={(() => { const d = formatDaysUntil(eq.insuranceExpiry); return <span className={d?.className}>{d?.text || formatDate(eq.insuranceExpiry)}</span> })()} />
                       <DetailRow label="ТО дата" value={formatDate(eq.inspectionDate)} />
-                      <DetailRow label="ТО до" value={formatDate(eq.inspectionExpiry)} />
+                      <DetailRow label="ТО до" value={(() => { const d = formatDaysUntil(eq.inspectionExpiry); return <span className={d?.className}>{d?.text || formatDate(eq.inspectionExpiry)}</span> })()} />
                     </DetailSection>
                     <DetailSection title="Компания" icon={<Building2 className="size-3.5" />}>
                       <DetailRow label="Владелец" value={eq.owner?.name} />
                       <DetailRow label="Арендатор" value={eq.renter?.name} />
                     </DetailSection>
                     {eq.notes && <DetailSection title="Заметки" icon={<ClipboardList className="size-3.5" />}><p className="text-xs whitespace-pre-wrap">{eq.notes}</p></DetailSection>}
+
+                    {/* Utilization & last repair info */}
+                    {(() => {
+                      const totalTrips = eq.repairs ? 0 : 0 // trips fetched separately
+                      const lastRepair = eq.repairs && eq.repairs.length > 0
+                        ? eq.repairs.reduce((latest, r) => {
+                            const d = new Date(r.startDate).getTime()
+                            return d > latest ? d : latest
+                          }, 0)
+                        : null
+                      const daysSinceRepair = lastRepair ? Math.floor((Date.now() - lastRepair) / (1000*60*60*24)) : null
+                      const avgRepairCost = eq.repairs && eq.repairs.length > 0
+                        ? eq.repairs.reduce((s, r) => s + (r.cost || 0), 0) / eq.repairs.length
+                        : null
+                      const activeDays = eq.purchaseDate ? Math.max(1, Math.floor((Date.now() - new Date(eq.purchaseDate).getTime()) / (1000*60*60*24))) : null
+                      const repairDays = eq.repairs ? eq.repairs.reduce((s, r) => {
+                        if (r.status !== 'completed' || !r.startDate || !r.endDate) return s
+                        return s + Math.max(1, Math.ceil((new Date(r.endDate).getTime() - new Date(r.startDate).getTime()) / (1000*60*60*24)))
+                      }, 0) : 0
+                      const utilization = activeDays ? Math.round(((activeDays - repairDays) / activeDays) * 100) : null
+
+                      if (daysSinceRepair == null && avgRepairCost == null && utilization == null) return null
+                      return (
+                        <DetailSection title="Эксплуатация" icon={<Activity className="size-3.5" />}>
+                          {daysSinceRepair != null && <DetailRow label="Дней с последнего ремонта" value={<span className={daysSinceRepair > 90 ? 'text-amber-600 dark:text-amber-400 font-medium' : ''}>{daysSinceRepair} дн.</span>} />}
+                          {avgRepairCost != null && <DetailRow label="Средняя стоимость ремонта" value={formatPrice(avgRepairCost)} />}
+                          {utilization != null && <DetailRow label="Коэффициент использования" value={<span className={`font-medium ${utilization > 80 ? 'text-emerald-600 dark:text-emerald-400' : utilization > 60 ? 'text-amber-600 dark:text-amber-400' : 'text-red-600 dark:text-red-400'}`}>{utilization}%</span>} />}
+                        </DetailSection>
+                      )
+                    })()}
                   </div>
                 )}
 
@@ -1499,7 +1803,15 @@ function EquipmentDetailSheet({ open, onOpenChange, equipment, loading, detailTa
 
                 {detailTab === 'repairs' && (
                   <div className="px-4 sm:px-5 py-3 space-y-2">
-                    <Button size="sm" className="h-8 gap-1 text-xs mb-1" onClick={() => onAddRepair(eq.id)}><Plus className="size-3" />Новый ремонт</Button>
+                    <div className="flex items-center justify-between">
+                      <Button size="sm" className="h-8 gap-1 text-xs" onClick={() => onAddRepair(eq.id)}><Plus className="size-3" />Новый ремонт</Button>
+                      {eq.repairs && eq.repairs.length > 0 && (
+                        <div className="flex items-center gap-2 text-[10px] text-muted-foreground">
+                          <span>Всего: {eq.repairs.length}</span>
+                          <span>Стоимость: {formatPrice(eq.repairs.reduce((s, r) => s + (r.cost || 0), 0))}</span>
+                        </div>
+                      )}
+                    </div>
                     {(!eq.repairs || eq.repairs.length === 0) ? (
                       <div className="text-center py-8 text-muted-foreground"><Wrench className="size-8 mx-auto mb-2 opacity-40" /><p className="text-xs">Нет записей о ремонтах</p></div>
                     ) : eq.repairs.map(r => (
@@ -1810,7 +2122,16 @@ function EquipmentDetailSheet({ open, onOpenChange, equipment, loading, detailTa
 
                 {detailTab === 'trips' && (
                   <div className="px-4 sm:px-5 py-3 space-y-2">
-                    <Button size="sm" className="h-8 gap-1 text-xs mb-1" onClick={() => onAddTrip(eq.id)}><Plus className="size-3" />Новый рейс</Button>
+                    <div className="flex items-center justify-between">
+                      <Button size="sm" className="h-8 gap-1 text-xs" onClick={() => onAddTrip(eq.id)}><Plus className="size-3" />Новый рейс</Button>
+                      {localTrips.length > 0 && (
+                        <div className="flex items-center gap-2 text-[10px] text-muted-foreground">
+                          <span>Всего: {localTrips.length}</span>
+                          <span>Расст.: {localTrips.reduce((s, t) => s + (t.distance || 0), 0).toLocaleString('ru-RU')} км</span>
+                          <span>Топливо: {Math.round(localTrips.reduce((s, t) => s + (t.fuelConsumed || 0), 0) * 10) / 10} л</span>
+                        </div>
+                      )}
+                    </div>
                     {localTrips.length === 0 ? (
                       <div className="text-center py-8 text-muted-foreground"><Route className="size-8 mx-auto mb-2 opacity-40" /><p className="text-xs">Нет рейсов</p></div>
                     ) : localTrips.map(t => (
@@ -1892,7 +2213,9 @@ function EquipmentDetailSheet({ open, onOpenChange, equipment, loading, detailTa
           <Button variant="outline" size="sm" className="h-8 text-[11px] gap-1" onClick={() => onEdit(eq)}><Edit className="size-3" />Редактировать</Button>
           <Button variant="outline" size="sm" className="h-8 text-[11px] gap-1" onClick={() => onUploadPhoto(eq.id)}><ImagePlus className="size-3" />Фото</Button>
           <Button variant="outline" size="sm" className="h-8 text-[11px] gap-1" onClick={onRefresh}><Activity className="size-3" />Обновить</Button>
+          <Button variant="outline" size="sm" className="h-8 text-[11px] gap-1" onClick={() => { navigator.clipboard.writeText(eq.name).then(() => toast.success('Скопировано')).catch(() => {}) }}><Copy className="size-3" />Копировать</Button>
           <div className="flex-1" />
+          <span className="hidden sm:inline-flex items-center gap-1 text-[9px] text-muted-foreground self-center mr-1"><kbd className="rounded border bg-muted px-1 py-0.5">Esc</kbd> закрыть</span>
           <Button variant="destructive" size="sm" className="h-8 text-[11px] gap-1" onClick={() => onDelete(eq)}><Trash2 className="size-3" />Удалить</Button>
         </div>
       </SheetContent>
@@ -2238,14 +2561,32 @@ function RepairsTab({ repairs, equipment, onOpenDetail, onAdd, onDelete }: {
   const [statusFilter, setStatusFilter] = useState('all')
   const [eqFilter, setEqFilter] = useState('all')
   const [search, setSearch] = useState('')
+  const [quickFilter, setQuickFilter] = useState<'all' | 'overdue' | 'expensive'>('all')
   const debouncedSearch = useDebounce(search, 300)
 
   const filtered = useMemo(() => repairs.filter(r => {
     if (statusFilter !== 'all' && r.status !== statusFilter) return false
     if (eqFilter !== 'all' && r.equipmentId !== eqFilter) return false
     if (debouncedSearch && !r.description.toLowerCase().includes(debouncedSearch.toLowerCase()) && !(r.equipment?.name?.toLowerCase().includes(debouncedSearch.toLowerCase()))) return false
+    if (quickFilter === 'overdue' && r.status !== 'in_progress') return false
+    if (quickFilter === 'expensive' && (r.cost || 0) < 50000) return false
     return true
-  }), [repairs, statusFilter, eqFilter, debouncedSearch])
+  }), [repairs, statusFilter, eqFilter, debouncedSearch, quickFilter])
+
+  const totalCost = filtered.reduce((s, r) => s + (r.cost || 0), 0)
+  const avgCost = filtered.length > 0 ? totalCost / filtered.length : 0
+  const maxCost = filtered.reduce((m, r) => Math.max(m, r.cost || 0), 0)
+
+  const getRepairDays = (startDate: string, endDate?: string | null) => {
+    const end = endDate ? new Date(endDate) : new Date()
+    return Math.ceil((end.getTime() - new Date(startDate).getTime()) / (1000 * 60 * 60 * 24))
+  }
+
+  const getDaysColor = (days: number) => {
+    if (days < 7) return 'text-emerald-600 dark:text-emerald-400'
+    if (days <= 14) return 'text-amber-600 dark:text-amber-400'
+    return 'text-red-600 dark:text-red-400'
+  }
 
   return (
     <div className="space-y-3">
@@ -2271,13 +2612,45 @@ function RepairsTab({ repairs, equipment, onOpenDetail, onAdd, onDelete }: {
         <Button onClick={() => onAdd()} size="sm" className="h-9 gap-1.5"><Plus className="size-3.5" />Добавить</Button>
       </div>
 
+      {/* Quick filters */}
+      <div className="flex flex-wrap gap-1.5">
+        <button onClick={() => setQuickFilter('all')} className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium transition-colors ${quickFilter === 'all' ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground hover:bg-muted/80'}`}>Все</button>
+        <button onClick={() => setQuickFilter('overdue')} className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium transition-colors ${quickFilter === 'overdue' ? 'bg-amber-600 text-white' : 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-400 hover:bg-amber-200 dark:hover:bg-amber-900/60'}`}><Clock className="size-2.5" />В процессе</button>
+        <button onClick={() => setQuickFilter('expensive')} className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium transition-colors ${quickFilter === 'expensive' ? 'bg-red-600 text-white' : 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-400 hover:bg-red-200 dark:hover:bg-red-900/60'}`}><DollarSign className="size-2.5" />&gt;50к ₽</button>
+      </div>
+
+      {/* Cost summary */}
+      {filtered.length > 0 && (
+        <div className="grid grid-cols-3 gap-2">
+          <Card className="border-0 shadow-none bg-muted/30 py-2">
+            <CardContent className="p-2 text-center">
+              <p className="text-[10px] text-muted-foreground">Общая стоимость</p>
+              <p className="text-xs font-bold">{formatPrice(totalCost)}</p>
+            </CardContent>
+          </Card>
+          <Card className="border-0 shadow-none bg-muted/30 py-2">
+            <CardContent className="p-2 text-center">
+              <p className="text-[10px] text-muted-foreground">Средняя стоимость</p>
+              <p className="text-xs font-bold">{formatPrice(avgCost)}</p>
+            </CardContent>
+          </Card>
+          <Card className="border-0 shadow-none bg-muted/30 py-2">
+            <CardContent className="p-2 text-center">
+              <p className="text-[10px] text-muted-foreground">Максимальная</p>
+              <p className="text-xs font-bold">{formatPrice(maxCost)}</p>
+            </CardContent>
+          </Card>
+        </div>
+      )}
+
       <p className="text-xs text-muted-foreground">Найдено: {filtered.length}</p>
 
       {filtered.length === 0 ? (
-        <Card className="py-8">
+        <Card className="py-8 animate-in fade-in duration-300">
           <CardContent className="flex flex-col items-center text-center p-4 pt-0">
             <Wrench className="size-10 text-muted-foreground/40 mb-2" />
             <p className="text-sm text-muted-foreground">Ремонты не найдены</p>
+            <p className="text-xs text-muted-foreground mt-1">Измените фильтры или добавьте новый ремонт</p>
           </CardContent>
         </Card>
       ) : (
@@ -2292,16 +2665,18 @@ function RepairsTab({ repairs, equipment, onOpenDetail, onAdd, onDelete }: {
                   <th className="text-left py-1.5 px-2 font-medium">Статус</th>
                   <th className="text-left py-1.5 px-2 font-medium hidden md:table-cell">Начало</th>
                   <th className="text-left py-1.5 px-2 font-medium hidden md:table-cell">Стоимость</th>
+                  <th className="text-left py-1.5 px-2 font-medium hidden lg:table-cell">Дней</th>
                   <th className="text-left py-1.5 px-2 font-medium hidden lg:table-cell">Подрядчик</th>
                   <th className="text-left py-1.5 px-2 font-medium hidden sm:table-cell">Этапы</th>
                   <th className="text-right py-1.5 px-2 font-medium w-16"></th>
                 </tr>
               </thead>
               <tbody>
-                {filtered.map(r => {
+                {filtered.map((r, idx) => {
                   const borderColor = r.status === 'in_progress' ? 'border-l-amber-500' : r.status === 'completed' ? 'border-l-emerald-500' : 'border-l-red-500'
+                  const repairDays = getRepairDays(r.startDate, r.endDate)
                   return (
-                    <tr key={r.id} className={`border-b last:border-0 cursor-pointer hover:bg-accent/50 transition-colors border-l-2 ${borderColor}`} onClick={() => onOpenDetail(r)}>
+                    <tr key={r.id} className={`border-b last:border-0 cursor-pointer hover:bg-accent/50 transition-colors border-l-2 ${borderColor} ${idx % 2 === 1 ? 'bg-muted/20' : ''}`} onClick={() => onOpenDetail(r)}>
                       <td className="py-1.5 px-2">
                         <div className="flex items-center justify-center size-6 rounded bg-amber-100 dark:bg-amber-900/30">
                           <Wrench className="size-3 text-amber-600 dark:text-amber-400" />
@@ -2309,13 +2684,29 @@ function RepairsTab({ repairs, equipment, onOpenDetail, onAdd, onDelete }: {
                       </td>
                       <td className="py-1.5 px-2">
                         <div className="font-medium truncate max-w-[200px]">{r.description}</div>
-                        {r.reason && <div className="text-[10px] text-muted-foreground truncate max-w-[200px]">{r.reason}</div>}
+                        <div className="flex flex-wrap items-center gap-1 mt-0.5">
+                          {r.reason && <span className="text-[9px] text-muted-foreground truncate max-w-[200px]">{r.reason}</span>}
+                          {r.masters && r.masters.length > 0 && <span className="inline-flex items-center gap-0.5 text-[9px] text-muted-foreground"><Users className="size-2" />{r.masters.length}</span>}
+                          {r.photos && r.photos.length > 0 && <span className="inline-flex items-center gap-0.5 text-[9px] text-muted-foreground"><Camera className="size-2" />{r.photos.length}</span>}
+                        </div>
                       </td>
                       <td className="py-1.5 px-2 hidden sm:table-cell text-muted-foreground truncate max-w-[120px]">{r.equipment?.name || '—'}</td>
                       <td className="py-1.5 px-2">{statusBadge(r.status, REPAIR_STATUS_MAP)}</td>
                       <td className="py-1.5 px-2 hidden md:table-cell">{formatDate(r.startDate)}</td>
-                      <td className="py-1.5 px-2 hidden md:table-cell">{formatPrice(r.cost)}</td>
-                      <td className="py-1.5 px-2 hidden lg:table-cell text-muted-foreground truncate max-w-[100px]">{r.contractor || '—'}</td>
+                      <td className="py-1.5 px-2 hidden md:table-cell">
+                        {r.cost != null ? <span className="inline-flex items-center gap-0.5 font-medium"><span className="text-[9px]">₽</span>{new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 0 }).format(r.cost)}</span> : '—'}
+                      </td>
+                      <td className="py-1.5 px-2 hidden lg:table-cell">
+                        <span className={`font-medium ${r.status === 'in_progress' ? getDaysColor(repairDays) : ''}`}>{repairDays} дн.</span>
+                      </td>
+                      <td className="py-1.5 px-2 hidden lg:table-cell">
+                        {r.contractor ? (
+                          <div className="truncate max-w-[100px]">
+                            <span className="text-muted-foreground">{r.contractor}</span>
+                            {r.contractorPhone && <span className="block text-[9px] text-muted-foreground"><Phone className="inline size-2 mr-0.5" />{r.contractorPhone}</span>}
+                          </div>
+                        ) : '—'}
+                      </td>
                       <td className="py-1.5 px-2 hidden sm:table-cell">
                         {r.stages && r.stages.length > 0 ? (
                           <div className="space-y-0.5">
@@ -2538,39 +2929,51 @@ function RepairDetailDialog({ open, onOpenChange, repair, loading, fullPhoto, se
               {/* Assigned Masters */}
               <RepairMastersSection repair={r} employees={employees} onRefresh={onRefresh} />
 
-              {/* Stages */}
+              {/* Stages - Timeline visualization */}
               <DetailSection title="Этапы ремонта" icon={<Settings2 className="size-3.5" />}>
                 <div className="col-span-2">
-                  <Button size="sm" variant="outline" className="h-7 gap-1 text-[11px] mb-2" onClick={() => onAddStage(r.id)}><Plus className="size-3" />Добавить этап</Button>
+                  <div className="flex items-center justify-between mb-2">
+                    <Button size="sm" variant="outline" className="h-7 gap-1 text-[11px]" onClick={() => onAddStage(r.id)}><Plus className="size-3" />Добавить этап</Button>
+                    {r.stages && r.stages.length > 0 && (
+                      <span className="text-[10px] text-muted-foreground">Итого по этапам: {formatPrice(r.stages.reduce((s, st) => s + (st.cost || 0), 0))}</span>
+                    )}
+                  </div>
                   {r.stages && r.stages.length > 0 ? (
-                    <div className="space-y-1.5">
-                      {r.stages.map(stage => (
-                        <div key={stage.id} className="flex items-center gap-2 p-2 rounded-md border bg-card/50">
-                          {/* Quick status toggle */}
-                          <button
-                            className="shrink-0"
-                            onClick={() => {
-                              const nextStatus = stage.status === 'pending' ? 'in_progress' : stage.status === 'in_progress' ? 'completed' : 'pending'
-                              fetch(`/api/repairs/${r.id}/stages`, {
-                                method: 'PUT',
-                                headers: { 'Content-Type': 'application/json' },
-                                body: JSON.stringify({ stageId: stage.id, status: nextStatus })
-                              }).then(res => { if (res.ok) { toast.success('Статус обновлён'); onRefresh() } else toast.error('Ошибка') }).catch(() => toast.error('Ошибка'))
-                            }}
-                            aria-label="Переключить статус"
-                          >
-                            {stage.status === 'completed' ? <CheckCircle2 className="size-4 text-emerald-500" /> : stage.status === 'in_progress' ? <Clock className="size-4 text-amber-500" /> : <XCircle className="size-4 text-gray-400" />}
-                          </button>
-                          <div className="flex-1 min-w-0">
-                            <div className="flex items-center gap-1.5">
-                              <p className="text-xs font-medium">{stage.name}</p>
-                              {statusBadge(stage.status, STAGE_STATUS_MAP)}
-                            </div>
-                            {stage.description && <p className="text-[10px] text-muted-foreground">{stage.description}</p>}
-                            <div className="flex gap-2 mt-0.5 text-[10px] text-muted-foreground">
-                              {stage.performer && <span>Исполнитель: {stage.performer}</span>}
-                              {stage.cost != null && <span>Стоимость: {formatPrice(stage.cost)}</span>}
-                            </div>
+                    <div className="relative pl-4">
+                      {/* Vertical timeline line */}
+                      <div className="absolute left-[7px] top-2 bottom-2 w-px bg-border" />
+                      <div className="space-y-2">
+                        {r.stages.map((stage, si) => {
+                          const stageDays = stage.startDate ? Math.ceil(((stage.endDate ? new Date(stage.endDate) : new Date()).getTime() - new Date(stage.startDate).getTime()) / (1000*60*60*24)) : null
+                          return (
+                            <div key={stage.id} className="relative flex items-start gap-2">
+                              {/* Timeline dot */}
+                              <button
+                                className="shrink-0 z-10 mt-1"
+                                onClick={() => {
+                                  const nextStatus = stage.status === 'pending' ? 'in_progress' : stage.status === 'in_progress' ? 'completed' : 'pending'
+                                  fetch(`/api/repairs/${r.id}/stages`, {
+                                    method: 'PUT',
+                                    headers: { 'Content-Type': 'application/json' },
+                                    body: JSON.stringify({ stageId: stage.id, status: nextStatus })
+                                  }).then(res => { if (res.ok) { toast.success('Статус обновлён'); onRefresh() } else toast.error('Ошибка') }).catch(() => toast.error('Ошибка'))
+                                }}
+                                aria-label="Переключить статус"
+                              >
+                                {stage.status === 'completed' ? <CheckCircle2 className="size-4 text-emerald-500" /> : stage.status === 'in_progress' ? <Clock className="size-4 text-amber-500" /> : <XCircle className="size-4 text-gray-400" />}
+                              </button>
+                              <div className="flex-1 min-w-0 p-2 rounded-md border bg-card/50">
+                                <div className="flex items-center gap-1.5">
+                                  <p className="text-xs font-medium">{stage.name}</p>
+                                  {statusBadge(stage.status, STAGE_STATUS_MAP)}
+                                  {si + 1 < (r.stages?.length || 0) && <span className="text-[9px] text-muted-foreground">#{si + 1}</span>}
+                                </div>
+                                {stage.description && <p className="text-[10px] text-muted-foreground">{stage.description}</p>}
+                                <div className="flex flex-wrap gap-2 mt-0.5 text-[10px] text-muted-foreground">
+                                  {stage.performer && <span>Исполнитель: {stage.performer}</span>}
+                                  {stage.cost != null && <span>Стоимость: {formatPrice(stage.cost)}</span>}
+                                  {stageDays != null && <span>Длительность: {stageDays} дн.</span>}
+                                </div>
                           </div>
                           <div className="flex gap-0.5 shrink-0">
                             <Button size="sm" variant="ghost" className="size-6 p-0" onClick={() => onEditStage(stage, r.id)} aria-label="Редактировать этап"><Edit className="size-3" /></Button>
@@ -2619,6 +3022,7 @@ function RepairDetailDialog({ open, onOpenChange, repair, loading, fullPhoto, se
             <Button variant="outline" size="sm" className="h-8 gap-1 text-xs" onClick={() => onComplete(r)}><CheckCircle2 className="size-3.5" />Завершить</Button>
           )}
           <Button variant="outline" size="sm" className="h-8 gap-1 text-xs" onClick={() => onEdit(r)}><Edit className="size-3.5" />Редактировать</Button>
+          <Button variant="outline" size="sm" className="h-8 gap-1 text-xs" onClick={() => window.print()}><Printer className="size-3.5" />Печать</Button>
           <Button variant="outline" size="sm" className="h-8 gap-1 text-xs" onClick={onRefresh}><Activity className="size-3.5" />Обновить</Button>
           <Button variant="destructive" size="sm" className="h-8 gap-1 text-xs" onClick={() => onDelete(r)}><Trash2 className="size-3.5" />Удалить</Button>
         </DialogFooter>
@@ -2809,6 +3213,19 @@ function CompaniesTab({ companies, onAdd, onEdit, onDelete }: {
     return true
   }), [companies, debouncedSearch])
 
+  const formatINN = (inn?: string | null) => {
+    if (!inn) return '—'
+    if (inn.length === 10) return `${inn.slice(0, 2)}-${inn.slice(2, 4)}-${inn.slice(4, 6)}-${inn.slice(6)}`
+    if (inn.length === 12) return `${inn.slice(0, 2)}-${inn.slice(2, 4)}-${inn.slice(4, 6)}-${inn.slice(6, 8)}-${inn.slice(8)}`
+    return inn
+  }
+
+  const getTypeIcon = (type: string) => {
+    if (type === 'owner') return <Shield className="size-3 text-emerald-600 dark:text-emerald-400" />
+    if (type === 'renter') return <Users className="size-3 text-sky-600 dark:text-sky-400" />
+    return <Building2 className="size-3 text-violet-600 dark:text-violet-400" />
+  }
+
   return (
     <div className="space-y-3">
       <div className="flex flex-col sm:flex-row gap-2">
@@ -2822,8 +3239,8 @@ function CompaniesTab({ companies, onAdd, onEdit, onDelete }: {
       <p className="text-xs text-muted-foreground">Найдено: {filtered.length}</p>
 
       {filtered.length === 0 ? (
-        <Card className="py-8">
-          <CardContent className="flex flex-col items-center text-center p-4 pt-0"><Building2 className="size-10 text-muted-foreground/40 mb-2" /><p className="text-sm text-muted-foreground">Компании не найдены</p></CardContent>
+        <Card className="py-8 animate-in fade-in duration-300">
+          <CardContent className="flex flex-col items-center text-center p-4 pt-0"><Building2 className="size-10 text-muted-foreground/40 mb-2" /><p className="text-sm text-muted-foreground">Компании не найдены</p><p className="text-xs text-muted-foreground mt-1">Добавьте компанию для управления контрагентами</p></CardContent>
         </Card>
       ) : (
         <>
@@ -2833,17 +3250,17 @@ function CompaniesTab({ companies, onAdd, onEdit, onDelete }: {
               <Card key={c.id}>
                 <CardContent className="p-3 space-y-1.5">
                   <div className="flex items-center gap-2">
-                    <div className="size-7 rounded-md bg-muted flex items-center justify-center shrink-0"><Building2 className="size-3.5 text-muted-foreground" /></div>
+                    <div className="size-7 rounded-md bg-primary/10 flex items-center justify-center shrink-0 text-xs font-bold text-primary">{c.name[0]}</div>
                     <div className="min-w-0 flex-1">
                       <p className="text-xs font-medium truncate">{c.name}</p>
-                      <p className="text-[10px] text-muted-foreground">{c.inn || '—'}</p>
+                      <p className="text-[10px] text-muted-foreground font-mono">{formatINN(c.inn)}</p>
                     </div>
-                    <span className={`inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-medium ${c.type === 'owner' ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-400' : c.type === 'renter' ? 'bg-sky-100 text-sky-800 dark:bg-sky-900/40 dark:text-sky-400' : 'bg-violet-100 text-violet-800 dark:bg-violet-900/40 dark:text-violet-400'}`}>{COMPANY_TYPES[c.type] || c.type}</span>
+                    <span className={`inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-medium ${c.type === 'owner' ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-400' : c.type === 'renter' ? 'bg-sky-100 text-sky-800 dark:bg-sky-900/40 dark:text-sky-400' : 'bg-violet-100 text-violet-800 dark:bg-violet-900/40 dark:text-violet-400'}`}>{getTypeIcon(c.type)}{COMPANY_TYPES[c.type] || c.type}</span>
                   </div>
                   <Separator />
                   <div className="grid grid-cols-2 gap-1 text-[10px]">
-                    <div><span className="text-muted-foreground">Тел.:</span> <span className="font-medium">{c.phone || '—'}</span></div>
-                    <div><span className="text-muted-foreground">Email:</span> <span className="font-medium truncate">{c.email || '—'}</span></div>
+                    <div><span className="text-muted-foreground">Тел.:</span> {c.phone ? <a href={`tel:${c.phone}`} className="font-medium hover:text-primary">{c.phone}</a> : <span className="text-muted-foreground">—</span>}</div>
+                    <div><span className="text-muted-foreground">Email:</span> {c.email ? <a href={`mailto:${c.email}`} className="font-medium hover:text-primary truncate">{c.email}</a> : <span className="text-muted-foreground">—</span>}</div>
                     <div><span className="text-muted-foreground">Владеет:</span> <span className="font-medium">{c._count?.ownedEquipment || 0}</span></div>
                     <div><span className="text-muted-foreground">Арендует:</span> <span className="font-medium">{c._count?.rentedEquipment || 0}</span></div>
                   </div>
@@ -2861,30 +3278,38 @@ function CompaniesTab({ companies, onAdd, onEdit, onDelete }: {
               <TableHeader>
                 <TableRow>
                   <TableHead className="text-xs">Название</TableHead>
-                  <TableHead className="text-xs hidden sm:table-cell">ИНН</TableHead>
+                  <TableHead className="text-xs hidden sm:table-cell">ИНН/КПП</TableHead>
                   <TableHead className="text-xs hidden md:table-cell">Тип</TableHead>
-                  <TableHead className="text-xs hidden md:table-cell">Телефон</TableHead>
+                  <TableHead className="text-xs hidden md:table-cell">Контакты</TableHead>
                   <TableHead className="text-xs text-center">Вл.</TableHead>
                   <TableHead className="text-xs text-center">Ар.</TableHead>
                   <TableHead className="text-xs text-right w-20">Действия</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {filtered.map(c => (
-                  <TableRow key={c.id}>
+                {filtered.map((c, idx) => (
+                  <TableRow key={c.id} className={idx % 2 === 1 ? 'bg-muted/20' : ''}>
                     <TableCell className="font-medium py-2">
                       <div className="flex items-center gap-2">
-                        <div className="size-7 rounded-md bg-muted flex items-center justify-center shrink-0"><Building2 className="size-3.5 text-muted-foreground" /></div>
-                        <div><p className="text-xs font-medium">{c.name}</p><p className="text-[10px] text-muted-foreground sm:hidden">{c.inn || '—'}</p></div>
+                        <div className="size-7 rounded-md bg-primary/10 flex items-center justify-center shrink-0 text-xs font-bold text-primary">{c.name[0]}</div>
+                        <div><p className="text-xs font-medium">{c.name}</p><p className="text-[10px] text-muted-foreground sm:hidden">{formatINN(c.inn)}</p></div>
                       </div>
                     </TableCell>
-                    <TableCell className="hidden sm:table-cell text-xs py-2">{c.inn || '—'}</TableCell>
-                    <TableCell className="hidden md:table-cell py-2">
-                      <span className={`inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-medium ${c.type === 'owner' ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-400' : c.type === 'renter' ? 'bg-sky-100 text-sky-800 dark:bg-sky-900/40 dark:text-sky-400' : 'bg-violet-100 text-violet-800 dark:bg-violet-900/40 dark:text-violet-400'}`}>{COMPANY_TYPES[c.type] || c.type}</span>
+                    <TableCell className="hidden sm:table-cell text-xs py-2">
+                      <span className="font-mono">{formatINN(c.inn)}</span>
+                      {c.kpp && <span className="block text-[9px] text-muted-foreground font-mono">КПП: {c.kpp}</span>}
                     </TableCell>
-                    <TableCell className="hidden md:table-cell text-xs py-2">{c.phone || '—'}</TableCell>
-                    <TableCell className="text-center text-xs py-2">{c._count?.ownedEquipment || 0}</TableCell>
-                    <TableCell className="text-center text-xs py-2">{c._count?.rentedEquipment || 0}</TableCell>
+                    <TableCell className="hidden md:table-cell py-2">
+                      <span className={`inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-medium ${c.type === 'owner' ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-400' : c.type === 'renter' ? 'bg-sky-100 text-sky-800 dark:bg-sky-900/40 dark:text-sky-400' : 'bg-violet-100 text-violet-800 dark:bg-violet-900/40 dark:text-violet-400'}`}>{getTypeIcon(c.type)}{COMPANY_TYPES[c.type] || c.type}</span>
+                    </TableCell>
+                    <TableCell className="hidden md:table-cell text-xs py-2">
+                      <div className="space-y-0.5">
+                        {c.phone ? <a href={`tel:${c.phone}`} className="inline-flex items-center gap-0.5 hover:text-primary transition-colors"><Phone className="size-2.5" />{c.phone}</a> : <span className="text-muted-foreground">—</span>}
+                        {c.email && <a href={`mailto:${c.email}`} className="block text-[9px] text-muted-foreground hover:text-primary transition-colors"><Mail className="inline size-2 mr-0.5" />{c.email}</a>}
+                      </div>
+                    </TableCell>
+                    <TableCell className="text-center text-xs py-2 font-medium">{c._count?.ownedEquipment || 0}</TableCell>
+                    <TableCell className="text-center text-xs py-2 font-medium">{c._count?.rentedEquipment || 0}</TableCell>
                     <TableCell className="text-right py-2">
                       <div className="flex justify-end gap-0.5">
                         <Button size="sm" variant="ghost" className="size-7 p-0" onClick={() => onEdit(c)} aria-label="Редактировать"><Edit className="size-3" /></Button>
@@ -3239,10 +3664,11 @@ function TripsTab({ trips, equipment, crews, onOpenDetail, onAdd, onDelete, onAd
 
       {/* Trips list */}
       {filtered.length === 0 ? (
-        <Card className="py-8">
+        <Card className="py-8 animate-in fade-in duration-300">
           <CardContent className="flex flex-col items-center text-center p-4 pt-0">
             <Route className="size-10 text-muted-foreground/40 mb-2" />
             <p className="text-sm text-muted-foreground">Рейсы не найдены</p>
+            <p className="text-xs text-muted-foreground mt-1">Создайте новый рейс или измените фильтры</p>
           </CardContent>
         </Card>
       ) : (
@@ -3256,15 +3682,15 @@ function TripsTab({ trips, equipment, crews, onOpenDetail, onAdd, onDelete, onAd
                   <th className="text-left py-1.5 px-2 font-medium hidden sm:table-cell">Техника</th>
                   <th className="text-left py-1.5 px-2 font-medium">Статус</th>
                   <th className="text-left py-1.5 px-2 font-medium hidden md:table-cell">Начало</th>
-                  <th className="text-left py-1.5 px-2 font-medium hidden lg:table-cell">Груз/Вес</th>
-                  <th className="text-left py-1.5 px-2 font-medium hidden md:table-cell">Расст.</th>
+                  <th className="text-left py-1.5 px-2 font-medium hidden md:table-cell">Расст./Скор.</th>
                   <th className="text-left py-1.5 px-2 font-medium hidden lg:table-cell">Топливо</th>
+                  <th className="text-left py-1.5 px-2 font-medium hidden xl:table-cell">Доп.</th>
                   <th className="text-right py-1.5 px-2 font-medium w-12"></th>
                 </tr>
               </thead>
               <tbody>
-                {filtered.map(t => (
-                  <tr key={t.id} className={`border-b last:border-0 cursor-pointer hover:bg-accent/50 transition-colors border-l-2 ${TRIP_STATUS_MAP[t.status]?.border || ''}`} onClick={() => onOpenDetail(t)}>
+                {filtered.map((t, idx) => (
+                  <tr key={t.id} className={`border-b last:border-0 cursor-pointer hover:bg-accent/50 transition-colors border-l-2 ${TRIP_STATUS_MAP[t.status]?.border || ''} ${idx % 2 === 1 ? 'bg-muted/20' : ''}`} onClick={() => onOpenDetail(t)}>
                     <td className="py-1.5 px-2">
                       <div className="flex items-center justify-center size-6 rounded bg-sky-100 dark:bg-sky-900/30">
                         <Route className="size-3 text-sky-600 dark:text-sky-400" />
@@ -3272,20 +3698,50 @@ function TripsTab({ trips, equipment, crews, onOpenDetail, onAdd, onDelete, onAd
                     </td>
                     <td className="py-1.5 px-2">
                       <div className="font-medium truncate max-w-[200px]">{t.route}</div>
-                      {t.cargo && <div className="text-[10px] text-muted-foreground truncate max-w-[200px]">{t.cargo}{t.cargoWeight != null ? ` • ${t.cargoWeight} т` : ''}</div>}
+                      <div className="flex flex-wrap items-center gap-1 mt-0.5">
+                        {t.startPoint && <span className="inline-flex items-center gap-0.5 text-[9px] text-muted-foreground"><MapPin className="size-2 text-emerald-500" />{t.startPoint}</span>}
+                        {t.endPoint && <span className="inline-flex items-center gap-0.5 text-[9px] text-muted-foreground"><ArrowRight className="size-2" /><MapPin className="size-2 text-red-500" />{t.endPoint}</span>}
+                      </div>
+                      <div className="flex flex-wrap items-center gap-1 mt-0.5">
+                        {t.cargo && <span className="inline-flex items-center gap-0.5 text-[9px] text-muted-foreground"><Package className="size-2" />{t.cargo}{t.cargoWeight != null ? ` • ${t.cargoWeight} т` : ''}</span>}
+                        {t.crew && <span className="inline-flex items-center gap-0.5 text-[9px] text-muted-foreground"><Users className="size-2" />{t.crew.name}</span>}
+                      </div>
                     </td>
                     <td className="py-1.5 px-2 hidden sm:table-cell text-muted-foreground">
                       <div className="truncate max-w-[120px]">{t.equipment?.name || '—'}</div>
                       {t.equipment?.registrationNum && <div className="text-[10px] font-mono">{t.equipment.registrationNum}</div>}
                     </td>
                     <td className="py-1.5 px-2">{statusBadge(t.status, TRIP_STATUS_MAP)}</td>
-                    <td className="py-1.5 px-2 hidden md:table-cell">{formatDateTime(t.startDate)}</td>
-                    <td className="py-1.5 px-2 hidden lg:table-cell text-muted-foreground truncate max-w-[100px]">{t.cargo || '—'}{t.cargoWeight != null ? ` • ${t.cargoWeight}т` : ''}</td>
-                    <td className="py-1.5 px-2 hidden md:table-cell">{t.distance != null ? `${t.distance} км` : '—'}</td>
+                    <td className="py-1.5 px-2 hidden md:table-cell">
+                      <div>{formatDateTime(t.startDate)}</div>
+                      {t.tripDuration != null && <div className="text-[9px] text-muted-foreground"><Timer className="inline size-2 mr-0.5" />{formatDurationShort(t.tripDuration)}</div>}
+                    </td>
+                    <td className="py-1.5 px-2 hidden md:table-cell">
+                      {t.distance != null ? <span className="inline-flex items-center gap-0.5 font-medium"><Navigation className="size-2 text-sky-500" />{t.distance} км</span> : <span className="text-muted-foreground">—</span>}
+                      <div className="flex gap-1 mt-0.5">
+                        {t.avgSpeed != null && <span className="text-[9px] text-muted-foreground"><Gauge className="inline size-2 mr-0.5" />{t.avgSpeed} км/ч</span>}
+                        {t.maxSpeed != null && <span className={`text-[9px] ${t.maxSpeed > 90 ? 'text-red-500 font-medium' : 'text-muted-foreground'}`}>макс: {t.maxSpeed}</span>}
+                      </div>
+                    </td>
                     <td className="py-1.5 px-2 hidden lg:table-cell">
-                      {t.status === 'completed' && t.fuelConsumed != null ? (
-                        <span className="text-amber-600 dark:text-amber-400 font-medium">{t.fuelConsumed} л</span>
+                      {t.fuelConsumed != null ? (
+                        <span className="inline-flex items-center gap-0.5 font-medium text-amber-600 dark:text-amber-400"><Fuel className="size-2" />{t.fuelConsumed} л</span>
                       ) : '—'}
+                      <div className="flex gap-1 mt-0.5">
+                        {t.refuelVolume != null && t.refuelVolume > 0 && <span className="inline-flex items-center gap-0.5 text-[9px] text-emerald-600 dark:text-emerald-400"><ArrowUpFromLine className="size-2" />+{t.refuelVolume}л</span>}
+                        {t.plumVolume != null && t.plumVolume > 0 && <span className="inline-flex items-center gap-0.5 text-[9px] text-red-600 dark:text-red-400"><ArrowDownToLine className="size-2" />-{t.plumVolume}л</span>}
+                      </div>
+                    </td>
+                    <td className="py-1.5 px-2 hidden xl:table-cell">
+                      <div className="space-y-0.5">
+                        {t.idleTime != null && <span className="text-[9px] text-muted-foreground"><Clock className="inline size-2 mr-0.5" />Простой: {formatDurationShort(t.idleTime)}</span>}
+                        {(t.cost != null || t.revenue != null) && (
+                          <div className="flex gap-1">
+                            {t.cost != null && <span className="text-[9px] text-red-500">−{new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 0 }).format(t.cost)}₽</span>}
+                            {t.revenue != null && <span className="text-[9px] text-emerald-500">+{new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 0 }).format(t.revenue)}₽</span>}
+                          </div>
+                        )}
+                      </div>
                     </td>
                     <td className="py-1.5 px-2 text-right" onClick={e => e.stopPropagation()}>
                       <div className="flex items-center justify-end gap-0.5">
@@ -3690,6 +4146,38 @@ function TripDetailDialog({ open, onOpenChange, trip, loading, crews, onEdit, on
             <div className="flex items-center justify-center h-24"><Loader2 className="size-5 animate-spin text-muted-foreground" /></div>
           ) : (
             <div className="space-y-4 py-2">
+              {/* Trip summary dashboard */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                {t.distance != null && <Card className="border-0 shadow-none bg-sky-50 dark:bg-sky-950/20 py-2"><CardContent className="p-2 text-center"><Navigation className="size-4 text-sky-500 mx-auto mb-0.5" /><p className="text-xs font-bold text-sky-700 dark:text-sky-400">{t.distance.toFixed(1)} км</p><p className="text-[9px] text-muted-foreground">Расстояние</p></CardContent></Card>}
+                {t.fuelConsumed != null && <Card className="border-0 shadow-none bg-amber-50 dark:bg-amber-950/20 py-2"><CardContent className="p-2 text-center"><Fuel className="size-4 text-amber-500 mx-auto mb-0.5" /><p className="text-xs font-bold text-amber-700 dark:text-amber-400">{t.fuelConsumed} л</p><p className="text-[9px] text-muted-foreground">Расход</p></CardContent></Card>}
+                {t.avgSpeed != null && <Card className="border-0 shadow-none bg-emerald-50 dark:bg-emerald-950/20 py-2"><CardContent className="p-2 text-center"><Gauge className="size-4 text-emerald-500 mx-auto mb-0.5" /><p className="text-xs font-bold text-emerald-700 dark:text-emerald-400">{t.avgSpeed} км/ч</p><p className="text-[9px] text-muted-foreground">Ср. скорость</p></CardContent></Card>}
+                {t.tripDuration != null && <Card className="border-0 shadow-none bg-violet-50 dark:bg-violet-950/20 py-2"><CardContent className="p-2 text-center"><Timer className="size-4 text-violet-500 mx-auto mb-0.5" /><p className="text-xs font-bold text-violet-700 dark:text-violet-400">{fmtDur(t.tripDuration)}</p><p className="text-[9px] text-muted-foreground">Время в пути</p></CardContent></Card>}
+              </div>
+              {/* Speed profile bar */}
+              {t.avgSpeed != null && t.maxSpeed != null && (
+                <div className="rounded-lg border p-2">
+                  <div className="flex items-center justify-between text-[10px] text-muted-foreground mb-1">
+                    <span>Профиль скорости</span>
+                    <span>мин: {0} • ср: {t.avgSpeed} • макс: <span className={t.maxSpeed > 90 ? 'text-red-500 font-medium' : ''}>{t.maxSpeed}</span> км/ч</span>
+                  </div>
+                  <div className="h-2 rounded-full bg-muted overflow-hidden flex">
+                    <div className="h-full bg-emerald-400 rounded-l-full" style={{ width: `${Math.min((t.avgSpeed / t.maxSpeed) * 100, 100)}%` }} />
+                    <div className="h-full bg-amber-400 flex-1" />
+                    <div className={`h-full w-1 rounded-r-full ${t.maxSpeed > 90 ? 'bg-red-500' : 'bg-sky-400'}`} />
+                  </div>
+                </div>
+              )}
+              {/* Fuel economy rating */}
+              {t.fuelConsumed != null && t.distance != null && t.distance > 0 && (
+                <div className="rounded-lg border p-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] text-muted-foreground flex items-center gap-1"><Fuel className="size-3" />Экономичность</span>
+                    <span className={`text-[10px] font-medium ${(() => { const rate = (t.fuelConsumed! / t.distance!) * 100; return rate < 15 ? 'text-emerald-600 dark:text-emerald-400' : rate < 25 ? 'text-amber-600 dark:text-amber-400' : 'text-red-600 dark:text-red-400' })()}`}>
+                      {((t.fuelConsumed! / t.distance!) * 100).toFixed(1)} л/100км — {(() => { const rate = (t.fuelConsumed! / t.distance!) * 100; return rate < 15 ? '✓ Отлично' : rate < 25 ? '• Норма' : '⚠ Высокий' })()}
+                    </span>
+                  </div>
+                </div>
+              )}
               <DetailSection title="Маршрут" icon={<Route className="size-3.5" />}>
                 <DetailRow label="Маршрут" value={t.route} />
                 <DetailRow label="Пункт отправления" value={t.startPoint} />
@@ -3758,6 +4246,15 @@ function TripDetailDialog({ open, onOpenChange, trip, loading, crews, onEdit, on
               )}
 
               {/* ── СРАВНЕНИЕ ДАТЧИКОВ СТАРТ/ФИНИШ ── */}
+              {/* Cost analysis section */}
+              {(t.cost != null || t.revenue != null) && (
+                <DetailSection title="Финансы" icon={<DollarSign className="size-3.5" />}>
+                  {t.cost != null && <DetailRow label="Расходы" value={<span className="text-red-600 dark:text-red-400">{formatPrice(t.cost)}</span> as any} />}
+                  {t.revenue != null && <DetailRow label="Доходы" value={<span className="text-emerald-600 dark:text-emerald-400">{formatPrice(t.revenue)}</span> as any} />}
+                  {t.cost != null && t.revenue != null && <DetailRow label="Прибыль" value={<span className={`font-bold ${t.revenue - t.cost >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400'}`}>{formatPrice(t.revenue - t.cost)}</span> as any} />}
+                  {t.fuelConsumed != null && t.distance != null && t.distance > 0 && t.cost != null && <DetailRow label="Стоимость за км" value={`${(t.cost / t.distance).toFixed(2)} ₽/км`} />}
+                </DetailSection>
+              )}
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
                   <h4 className="text-xs font-semibold flex items-center gap-1.5"><CircuitBoard className="size-3.5" />Показания датчиков (старт / финиш)</h4>
@@ -4366,7 +4863,7 @@ function EmployeesTab({ employees, crews, empSearch, setEmpSearch, empPositionFi
 
       {/* Employee list */}
       {filtered.length === 0 ? (
-        <Card className="py-8">
+        <Card className="py-8 animate-in fade-in duration-300">
           <CardContent className="flex flex-col items-center text-center p-4 pt-0">
             <Users className="size-10 text-muted-foreground/40 mb-2" />
             <p className="text-sm text-muted-foreground">Сотрудники не найдены</p>
@@ -4384,23 +4881,26 @@ function EmployeesTab({ employees, crews, empSearch, setEmpSearch, empPositionFi
                   <th className="text-left py-1.5 px-2 font-medium hidden sm:table-cell">Должность</th>
                   <th className="text-left py-1.5 px-2 font-medium">Статус</th>
                   <th className="text-left py-1.5 px-2 font-medium hidden sm:table-cell">Телефон</th>
-                  <th className="text-left py-1.5 px-2 font-medium hidden md:table-cell">ВУ</th>
-                  <th className="text-left py-1.5 px-2 font-medium hidden lg:table-cell">Кат.</th>
+                  <th className="text-left py-1.5 px-2 font-medium hidden md:table-cell">ВУ / Кат.</th>
                   <th className="text-left py-1.5 px-2 font-medium hidden md:table-cell">Техника</th>
+                  <th className="text-left py-1.5 px-2 font-medium hidden lg:table-cell">Стаж</th>
                   <th className="text-right py-1.5 px-2 font-medium w-16"></th>
                 </tr>
               </thead>
               <tbody>
-                {filtered.map(emp => {
+                {filtered.map((emp, idx) => {
                   const statusInfo = EMPLOYEE_STATUS_MAP[emp.status]
                   const posInfo = EMPLOYEE_POSITION_MAP[emp.position]
                   const licenseExpiring = emp.licenseExpiry && new Date(emp.licenseExpiry) <= new Date(Date.now() + 30 * 24 * 60 * 60 * 1000) && new Date(emp.licenseExpiry) >= new Date()
                   const licenseExpired = emp.licenseExpiry && new Date(emp.licenseExpiry) < new Date()
+                  const tenure = emp.hireDate ? Math.floor((Date.now() - new Date(emp.hireDate).getTime()) / (365.25 * 24 * 60 * 60 * 1000)) : null
+                  const tenureMonths = emp.hireDate ? Math.floor((Date.now() - new Date(emp.hireDate).getTime()) / (30.44 * 24 * 60 * 60 * 1000)) : null
+                  const repairCount = emp.repairAssignments?.length || 0
                   return (
-                    <tr key={emp.id} className={`border-b last:border-0 cursor-pointer hover:bg-accent/50 transition-colors border-l-2 ${statusInfo?.border || 'border-l-gray-300'}`} onClick={() => onOpenDetail(emp)}>
+                    <tr key={emp.id} className={`border-b last:border-0 cursor-pointer hover:bg-accent/50 transition-colors border-l-2 ${statusInfo?.border || 'border-l-gray-300'} ${idx % 2 === 1 ? 'bg-muted/20' : ''}`} onClick={() => onOpenDetail(emp)}>
                       <td className="py-1.5 px-2">
-                        <div className={`flex items-center justify-center size-6 rounded ${getPositionColor(emp.position)}`}>
-                          {getPositionIcon(emp.position)}
+                        <div className={`flex items-center justify-center size-6 rounded-full text-[8px] font-bold ${getPositionColor(emp.position)}`}>
+                          {emp.fullName.split(' ').map(n => n[0]).slice(0, 2).join('')}
                         </div>
                       </td>
                       <td className="py-1.5 px-2">
@@ -4409,20 +4909,28 @@ function EmployeesTab({ employees, crews, empSearch, setEmpSearch, empPositionFi
                           <span className={`sm:hidden inline-flex items-center gap-0.5 rounded px-1 py-0 text-[9px] font-medium ${getPositionColor(emp.position)}`}>{posInfo?.label || emp.position}</span>
                           {licenseExpired && <span className="inline-flex items-center gap-0.5 text-[9px] text-red-600 dark:text-red-400 font-medium"><AlertTriangle className="size-2.5" />ВУ истекло!</span>}
                           {licenseExpiring && !licenseExpired && <span className="inline-flex items-center gap-0.5 text-[9px] text-amber-600 dark:text-amber-400 font-medium"><Clock className="size-2.5" />ВУ истекает</span>}
+                          {repairCount > 0 && <span className="inline-flex items-center gap-0.5 text-[9px] text-muted-foreground"><Wrench className="size-2" />{repairCount}</span>}
                         </div>
                       </td>
                       <td className="py-1.5 px-2 hidden sm:table-cell">
                         <span className={`inline-flex items-center gap-0.5 rounded px-1 py-0 text-[10px] font-medium ${getPositionColor(emp.position)}`}>{posInfo?.label || emp.position}</span>
                       </td>
                       <td className="py-1.5 px-2">{statusBadge(emp.status, EMPLOYEE_STATUS_MAP)}</td>
-                      <td className="py-1.5 px-2 hidden sm:table-cell text-muted-foreground">{emp.phone || '—'}</td>
+                      <td className="py-1.5 px-2 hidden sm:table-cell">
+                        {emp.phone ? <a href={`tel:${emp.phone}`} className="text-muted-foreground hover:text-primary transition-colors inline-flex items-center gap-0.5" onClick={e => e.stopPropagation()}><Phone className="size-2.5" />{emp.phone}</a> : <span className="text-muted-foreground">—</span>}
+                      </td>
                       <td className="py-1.5 px-2 hidden md:table-cell">
                         <span className="font-mono">{emp.licenseNum || '—'}</span>
+                        {emp.licenseCat && <span className="ml-1 text-[9px] text-muted-foreground">кат. {emp.licenseCat}</span>}
                         {licenseExpired && <AlertTriangle className="inline size-2.5 text-red-500 ml-0.5" />}
                         {licenseExpiring && !licenseExpired && <Clock className="inline size-2.5 text-amber-500 ml-0.5" />}
                       </td>
-                      <td className="py-1.5 px-2 hidden lg:table-cell">{emp.licenseCat || '—'}</td>
-                      <td className="py-1.5 px-2 hidden md:table-cell text-muted-foreground truncate max-w-[120px]">{emp.equipment?.name || '—'}</td>
+                      <td className="py-1.5 px-2 hidden md:table-cell text-muted-foreground truncate max-w-[120px]">
+                        {emp.equipment ? <span className="inline-flex items-center gap-0.5"><Truck className="size-2" />{emp.equipment.name}</span> : '—'}
+                      </td>
+                      <td className="py-1.5 px-2 hidden lg:table-cell text-muted-foreground">
+                        {tenure != null ? <span>{tenure > 0 ? `${tenure} г.` : `${tenureMonths} мес.`}</span> : '—'}
+                      </td>
                       <td className="py-1.5 px-2 text-right" onClick={e => e.stopPropagation()}>
                         <div className="flex items-center justify-end gap-0.5">
                           <Button size="sm" variant="ghost" className="size-6 p-0" onClick={() => onEdit(emp)}><Edit className="size-3" /></Button>
