@@ -33,6 +33,97 @@ async function getValidToken(settings: { apiUrl: string; apiKey: string; usernam
   return token
 }
 
+// Helper: fetch historical snapshot from Axenta for a specific moment using track API
+// Fetches a short track window around the given time and returns first point's data + sensors
+async function fetchAxentaSnapshot(
+  settings: { apiUrl: string; apiKey: string; username?: string | null; password?: string | null },
+  objectId: string,
+  tracker: { id: string; trackerName: string | null; imei: string | null },
+  targetTime: Date,
+  windowMinutes: number = 10
+): Promise<Record<string, unknown> | null> {
+  try {
+    const token = await getValidToken(settings)
+    const startISO = new Date(targetTime.getTime() - windowMinutes * 60 * 1000).toISOString()
+    const endISO = new Date(targetTime.getTime() + windowMinutes * 60 * 1000).toISOString()
+
+    const tracksRes = await fetch(`${settings.apiUrl}/api/tracks/create/`, {
+      method: 'POST',
+      headers: { 'Authorization': `Token ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        objectId: Number(objectId), startDate: startISO, endDate: endISO,
+        trackType: 'single', detectTrips: false, withStops: false, withParkings: false,
+      }),
+      signal: AbortSignal.timeout(15000),
+    })
+
+    if (!tracksRes.ok) return null
+
+    const tracksData = await tracksRes.json()
+    if (!tracksData.trips || !Array.isArray(tracksData.trips) || tracksData.trips.length === 0) return null
+
+    const firstTrip = tracksData.trips[0]
+    const raw = firstTrip.messagesCoordinates
+    if (!Array.isArray(raw) || raw.length === 0) return null
+
+    // Get the first point closest to target time
+    let lat: number | null = null, lng: number | null = null, spd: number | null = null
+    let alt: number | null = null, crs: number | null = null
+    const firstPt = raw[0]
+    if (Array.isArray(firstPt) && firstPt.length >= 2) {
+      lat = Number(firstPt[0]); lng = Number(firstPt[1]); spd = Number(firstPt[2]) || null
+    } else if (typeof firstPt === 'object' && firstPt !== null) {
+      lat = Number((firstPt as any).latitude ?? (firstPt as any).lat ?? 0)
+      lng = Number((firstPt as any).longitude ?? (firstPt as any).lng ?? 0)
+      spd = Number((firstPt as any).speed ?? 0)
+      alt = Number((firstPt as any).altitude ?? (firstPt as any).alt ?? 0) || null
+      crs = Number((firstPt as any).course ?? (firstPt as any).heading ?? 0) || null
+    }
+
+    // Collect sensors from track response
+    const sensors: Array<{ type: string; name: string; value: number | null; unit: string }> = []
+    if (firstTrip.startSensors && Array.isArray(firstTrip.startSensors)) {
+      for (const s of firstTrip.startSensors) {
+        sensors.push({ type: s.type || '', name: s.name || s.type || '', value: s.value != null ? Number(s.value) : null, unit: s.unit || '' })
+      }
+    }
+
+    // Extract fuel and mileage from sensors if available
+    let fuelLevel: number | null = null
+    let mileage: number | null = null
+    for (const s of sensors) {
+      if (s.type === 'fuel_level_sensor' || s.name?.toLowerCase().includes('бак') || s.name?.toLowerCase().includes('топлив')) {
+        if (fuelLevel == null && s.value != null) fuelLevel = s.value
+      }
+      if (s.type === 'odometer' || s.name?.toLowerCase().includes('пробег')) {
+        if (mileage == null && s.value != null) mileage = s.value
+      }
+    }
+
+    return {
+      trackerId: tracker.id,
+      trackerName: tracker.trackerName,
+      imei: tracker.imei,
+      capturedAt: targetTime.toISOString(),
+      fuelLevel,
+      mileage,
+      engineTemp: null,
+      speed: spd,
+      ignition: null,
+      latitude: lat && lat !== 0 ? lat : null,
+      longitude: lng && lng !== 0 ? lng : null,
+      altitude: alt || null,
+      course: crs || null,
+      address: null,
+      sensors,
+      _source: 'axenta_history',
+    }
+  } catch (err) {
+    console.error('[fetchAxentaSnapshot] Failed:', err)
+    return null
+  }
+}
+
 export async function GET(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     const { id } = await params
@@ -274,7 +365,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
       })
       if (!trip) return NextResponse.json({ error: 'Рейс не найден' }, { status: 404 })
 
-      // Get tracker data
+      // Get tracker data (current state for fallback)
       const tracker = await db.glonassTracker.findFirst({
         where: { equipmentId: trip.equipmentId },
         include: { sensorData: { orderBy: { timestamp: 'desc' } } },
@@ -300,8 +391,15 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
         }
       }
 
-      // Parse start snapshot
+      // Determine effective start and end times from trip fields
+      const effectiveStartTime = trip.startDate ? new Date(trip.startDate) : null
+      const effectiveEndTime = trip.endDate ? new Date(trip.endDate) : null
+
+      // ── Build START snapshot ──
+      // Priority: 1) Saved snapshot (trackerSnapshotStart) → 2) Axenta historical data at startDate → 3) Trip fields → 4) Current tracker data
       let startSnapshot: Record<string, unknown> | null = null
+
+      // 1. Use saved snapshot if available
       if (trip.trackerSnapshotStart) {
         try { startSnapshot = JSON.parse(trip.trackerSnapshotStart) } catch { /* ignore */ }
       }
@@ -309,184 +407,97 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
       if (!startSnapshot && trip.trackerSnapshot && trip.status !== 'completed') {
         try { startSnapshot = JSON.parse(trip.trackerSnapshot) } catch { /* ignore */ }
       }
-      // Build start snapshot from trip fields if no snapshot exists
+
+      // 2. Try Axenta historical data at startDate if no snapshot
+      if (!startSnapshot && tracker && effectiveStartTime) {
+        const settings = await db.axentaSettings.findFirst()
+        if (settings?.isActive && settings.apiUrl && settings.apiKey) {
+          const objectId = tracker.axentaCloudId || tracker.trackerId
+          if (objectId) {
+            startSnapshot = await fetchAxentaSnapshot(settings, objectId, tracker, effectiveStartTime)
+          }
+        }
+      }
+
+      // 3. Build from trip fields if still no snapshot
       if (!startSnapshot) {
         const startSensors: Array<{ type: string; name: string; value: number | null; unit: string }> = []
         if (trip.fuelStart != null) startSensors.push({ type: 'fuel', name: 'Топливо на старте', value: trip.fuelStart, unit: 'л' })
         if (trip.mileageStart != null) startSensors.push({ type: 'mileage', name: 'Пробег на старте', value: trip.mileageStart, unit: 'км' })
         startSnapshot = {
           trackerName: tracker?.trackerName || null,
-          capturedAt: trip.startDate?.toISOString() || null,
+          capturedAt: effectiveStartTime?.toISOString() || null,
           fuelLevel: trip.fuelStart ?? null,
           mileage: trip.mileageStart ?? null,
-          engineTemp: null,
-          speed: null,
-          ignition: null,
-          latitude: null,
-          longitude: null,
-          altitude: null,
-          course: null,
-          address: null,
+          engineTemp: null, speed: null, ignition: null,
+          latitude: null, longitude: null, altitude: null, course: null, address: null,
           sensors: startSensors,
-          _source: 'trip_fields', // flag that this was built from trip fields, not a real snapshot
+          _source: 'trip_fields',
         }
       }
 
-      // Try to enrich startSnapshot from Axenta if it was built from trip_fields and has gaps
-      if (startSnapshot && (startSnapshot as any)._source === 'trip_fields' && tracker) {
+      // Fill gaps in start snapshot from current tracker data (last resort fallback)
+      if (currentData) {
+        const fillFields = ['fuelLevel', 'mileage', 'engineTemp', 'speed', 'ignition', 'latitude', 'longitude', 'altitude', 'course']
+        for (const f of fillFields) {
+          if ((startSnapshot as any)[f] == null && (currentData as any)[f] != null) {
+            (startSnapshot as any)[f] = (currentData as any)[f]
+          }
+        }
+        // Merge sensors from current data if not present
+        const existingSensorKeys = new Set(((startSnapshot as any).sensors || []).map((s: any) => s.name || s.type))
+        const mergedSensors = [...((startSnapshot as any).sensors || [])]
+        if (Array.isArray(currentData.sensors)) {
+          for (const s of currentData.sensors as any[]) {
+            const key = s.name || s.type
+            if (!existingSensorKeys.has(key)) {
+              mergedSensors.push(s)
+              existingSensorKeys.add(key)
+            }
+          }
+        }
+        (startSnapshot as any).sensors = mergedSensors
+      }
+      delete (startSnapshot as any)._source
+
+      // ── Build END snapshot ──
+      // Priority: 1) Saved snapshot (trackerSnapshot) → 2) Axenta historical data at endDate → 3) Trip fields → 4) Current tracker data
+      let endSnapshot: Record<string, unknown> | null = null
+
+      // 1. Use saved snapshot if available (for completed trips)
+      if (trip.status === 'completed' && trip.trackerSnapshot) {
+        try { endSnapshot = JSON.parse(trip.trackerSnapshot) } catch { /* ignore */ }
+      }
+
+      // 2. Try Axenta historical data at endDate if no snapshot
+      if (!endSnapshot && tracker && effectiveEndTime) {
         const settings = await db.axentaSettings.findFirst()
         if (settings?.isActive && settings.apiUrl && settings.apiKey) {
           const objectId = tracker.axentaCloudId || tracker.trackerId
           if (objectId) {
-            try {
-              const token = await getValidToken(settings)
-              // Fetch track for a short window around start to get first point's data
-              const startISO = trip.startDate.toISOString()
-              const windowEnd = new Date(trip.startDate.getTime() + 5 * 60 * 1000).toISOString() // +5 min window
-              const tracksRes = await fetch(`${settings.apiUrl}/api/tracks/create/`, {
-                method: 'POST',
-                headers: { 'Authorization': `Token ${token}`, 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                  objectId: Number(objectId), startDate: startISO, endDate: windowEnd,
-                  trackType: 'single', detectTrips: false, withStops: false, withParkings: false,
-                }),
-                signal: AbortSignal.timeout(10000),
-              })
-              if (tracksRes.ok) {
-                const tracksData = await tracksRes.json()
-                if (tracksData.trips && Array.isArray(tracksData.trips) && tracksData.trips.length > 0) {
-                  const firstTrip = tracksData.trips[0]
-                  const raw = firstTrip.messagesCoordinates
-                  if (Array.isArray(raw) && raw.length > 0) {
-                    // Get the first point
-                    const firstPt = raw[0]
-                    let lat: number | null = null, lng: number | null = null, spd: number | null = null
-                    if (Array.isArray(firstPt) && firstPt.length >= 2) {
-                      lat = Number(firstPt[0]); lng = Number(firstPt[1]); spd = Number(firstPt[2]) || null
-                    } else if (typeof firstPt === 'object' && firstPt !== null) {
-                      lat = Number((firstPt as any).latitude ?? (firstPt as any).lat ?? 0)
-                      lng = Number((firstPt as any).longitude ?? (firstPt as any).lng ?? 0)
-                      spd = Number((firstPt as any).speed ?? 0)
-                    }
-                    if (lat && lng && lat !== 0 && lng !== 0) {
-                      // Fill in missing start snapshot fields from first track point
-                      if (startSnapshot.latitude == null) (startSnapshot as any).latitude = lat
-                      if (startSnapshot.longitude == null) (startSnapshot as any).longitude = lng
-                      if (startSnapshot.speed == null && spd) (startSnapshot as any).speed = spd
-                    }
-                    // Also try to get sensor data from the first message
-                    if (firstTrip.startSensors && Array.isArray(firstTrip.startSensors)) {
-                      const existingSensors = new Set(((startSnapshot as any).sensors || []).map((s: any) => s.name || s.type))
-                      const newSensors = [...((startSnapshot as any).sensors || [])]
-                      for (const s of firstTrip.startSensors) {
-                        const key = s.name || s.type
-                        if (!existingSensors.has(key)) {
-                          newSensors.push({ type: s.type, name: s.name, value: s.value, unit: s.unit })
-                          existingSensors.add(key)
-                        }
-                      }
-                      (startSnapshot as any).sensors = newSensors
-                    }
-                  }
-                }
-              }
-              // Also try to get object state at start time for fuel/mileage
-              try {
-                const stateRes = await fetch(`${settings.apiUrl}/api/objects/${Number(objectId)}/state/`, {
-                  headers: { 'Authorization': `Token ${token}` },
-                  signal: AbortSignal.timeout(8000),
-                })
-                if (stateRes.ok) {
-                  const stateData = await stateRes.json()
-                  // If start snapshot still missing fuelLevel/mileage, fill from current state
-                  if (stateData.fuelLevel != null && (startSnapshot as any).fuelLevel == null) {
-                    (startSnapshot as any).fuelLevel = stateData.fuelLevel
-                  }
-                  if (stateData.mileage != null && (startSnapshot as any).mileage == null) {
-                    (startSnapshot as any).mileage = stateData.mileage
-                  }
-                  if (stateData.engineTemp != null && (startSnapshot as any).engineTemp == null) {
-                    (startSnapshot as any).engineTemp = stateData.engineTemp
-                  }
-                  if (stateData.ignition != null && (startSnapshot as any).ignition == null) {
-                    (startSnapshot as any).ignition = stateData.ignition
-                  }
-                }
-              } catch { /* state endpoint not available, ignore */ }
-            } catch (enrichErr) {
-              console.error('[Sensor Compare] Start enrichment failed:', enrichErr)
-            }
+            endSnapshot = await fetchAxentaSnapshot(settings, objectId, tracker, effectiveEndTime)
           }
         }
-        // If still missing after Axenta attempt, supplement with current tracker data as fallback
-        if (currentData) {
-          if ((startSnapshot as any).fuelLevel == null && currentData.fuelLevel != null) {
-            (startSnapshot as any).fuelLevel = currentData.fuelLevel
-          }
-          if ((startSnapshot as any).mileage == null && currentData.mileage != null) {
-            (startSnapshot as any).mileage = currentData.mileage
-          }
-          if ((startSnapshot as any).engineTemp == null && currentData.engineTemp != null) {
-            (startSnapshot as any).engineTemp = currentData.engineTemp
-          }
-          if ((startSnapshot as any).ignition == null && currentData.ignition != null) {
-            (startSnapshot as any).ignition = currentData.ignition
-          }
-          if ((startSnapshot as any).speed == null && currentData.speed != null) {
-            (startSnapshot as any).speed = currentData.speed
-          }
-          if ((startSnapshot as any).latitude == null && currentData.latitude != null) {
-            (startSnapshot as any).latitude = currentData.latitude
-          }
-          if ((startSnapshot as any).longitude == null && currentData.longitude != null) {
-            (startSnapshot as any).longitude = currentData.longitude
-          }
-          if ((startSnapshot as any).altitude == null && currentData.altitude != null) {
-            (startSnapshot as any).altitude = currentData.altitude
-          }
-          // Merge sensors from current data if not present
-          const existingSensorKeys = new Set(((startSnapshot as any).sensors || []).map((s: any) => s.name || s.type))
-          const mergedSensors = [...((startSnapshot as any).sensors || [])]
-          if (Array.isArray(currentData.sensors)) {
-            for (const s of currentData.sensors as any[]) {
-              const key = s.name || s.type
-              if (!existingSensorKeys.has(key)) {
-                mergedSensors.push(s)
-                existingSensorKeys.add(key)
-              }
-            }
-          }
-          (startSnapshot as any).sensors = mergedSensors
-        }
-        delete (startSnapshot as any)._source // Remove source flag after enrichment
       }
 
-      // Parse end snapshot
-      let endSnapshot: Record<string, unknown> | null = null
-      if (trip.status === 'completed' && trip.trackerSnapshot) {
-        try { endSnapshot = JSON.parse(trip.trackerSnapshot) } catch { /* ignore */ }
-      }
-      // Build end snapshot from trip fields if no snapshot exists for completed trip
+      // 3. Build from trip fields if still no snapshot (for completed trips)
       if (!endSnapshot && trip.status === 'completed') {
         const endSensors: Array<{ type: string; name: string; value: number | null; unit: string }> = []
         if (trip.fuelEnd != null) endSensors.push({ type: 'fuel', name: 'Топливо на финише', value: trip.fuelEnd, unit: 'л' })
         if (trip.mileageEnd != null) endSensors.push({ type: 'mileage', name: 'Пробег на финише', value: trip.mileageEnd, unit: 'км' })
         endSnapshot = {
           trackerName: tracker?.trackerName || null,
-          capturedAt: trip.endDate?.toISOString() || null,
+          capturedAt: effectiveEndTime?.toISOString() || null,
           fuelLevel: trip.fuelEnd ?? null,
           mileage: trip.mileageEnd ?? null,
-          engineTemp: null,
-          speed: null,
-          ignition: null,
-          latitude: null,
-          longitude: null,
-          address: null,
+          engineTemp: null, speed: null, ignition: null,
+          latitude: null, longitude: null, address: null,
           sensors: endSensors,
           _source: 'trip_fields',
         }
       }
-      // For in-progress trips: use current tracker data as "end" snapshot
+
+      // 4. For in-progress trips: use current tracker data as "end" snapshot (real-time)
       if (!endSnapshot && currentData && trip.status === 'in_progress') {
         endSnapshot = {
           trackerName: tracker?.trackerName,
@@ -502,12 +513,27 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
           sensors: currentData.sensors,
         }
       }
-      // For planned trips: use current tracker data as both start and end (for preview)
+
+      // 5. For planned trips: use Axenta data at startDate for both start and end (preview of current state)
+      if (!endSnapshot && !startSnapshot && tracker && effectiveStartTime) {
+        const settings = await db.axentaSettings.findFirst()
+        if (settings?.isActive && settings.apiUrl && settings.apiKey) {
+          const objectId = tracker.axentaCloudId || tracker.trackerId
+          if (objectId) {
+            const axentaSnap = await fetchAxentaSnapshot(settings, objectId, tracker, effectiveStartTime)
+            if (axentaSnap) {
+              startSnapshot = { ...axentaSnap, _source: 'axenta_history' }
+              endSnapshot = { ...axentaSnap, _source: 'axenta_history' }
+            }
+          }
+        }
+      }
+      // Fallback for planned trips if Axenta didn't work
       if (!endSnapshot && currentData && trip.status === 'planned') {
         if (!startSnapshot) {
           startSnapshot = {
             trackerName: tracker?.trackerName,
-            capturedAt: new Date().toISOString(),
+            capturedAt: effectiveStartTime?.toISOString() || new Date().toISOString(),
             fuelLevel: currentData.fuelLevel,
             mileage: currentData.mileage,
             engineTemp: currentData.engineTemp,
@@ -522,7 +548,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
         }
         endSnapshot = {
           trackerName: tracker?.trackerName,
-          capturedAt: new Date().toISOString(),
+          capturedAt: effectiveStartTime?.toISOString() || new Date().toISOString(),
           fuelLevel: currentData.fuelLevel,
           mileage: currentData.mileage,
           engineTemp: currentData.engineTemp,
@@ -535,6 +561,30 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
           _source: 'current_tracker',
         }
       }
+
+      // Fill gaps in end snapshot from current tracker data (fallback)
+      if (endSnapshot && currentData) {
+        const fillFields = ['fuelLevel', 'mileage', 'engineTemp', 'speed', 'ignition', 'latitude', 'longitude', 'altitude', 'course']
+        for (const f of fillFields) {
+          if ((endSnapshot as any)[f] == null && (currentData as any)[f] != null) {
+            (endSnapshot as any)[f] = (currentData as any)[f]
+          }
+        }
+        // Merge sensors
+        const existingSensorKeys = new Set(((endSnapshot as any).sensors || []).map((s: any) => s.name || s.type))
+        const mergedSensors = [...((endSnapshot as any).sensors || [])]
+        if (Array.isArray(currentData.sensors)) {
+          for (const s of currentData.sensors as any[]) {
+            const key = s.name || s.type
+            if (!existingSensorKeys.has(key)) {
+              mergedSensors.push(s)
+              existingSensorKeys.add(key)
+            }
+          }
+        }
+        (endSnapshot as any).sensors = mergedSensors
+      }
+      delete (endSnapshot as any)?._source
 
       // Main tracker fields comparison
       const mainFields = [
@@ -598,17 +648,17 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
         }
       }
 
-      // Trip stats from Axenta
+      // Trip stats from Axenta — use trip's startDate/endDate, not current time
       let tripStats: Record<string, unknown> | null = null
-      if (tracker) {
+      if (tracker && effectiveStartTime) {
         const settings = await db.axentaSettings.findFirst()
         if (settings?.isActive && settings.apiUrl && settings.apiKey) {
           const objectId = tracker.axentaCloudId || tracker.trackerId
           if (objectId) {
             try {
               const token = await getValidToken(settings)
-              const startDate = trip.startDate.toISOString()
-              const endDate = trip.endDate ? new Date(trip.endDate).toISOString() : new Date().toISOString()
+              const startDate = effectiveStartTime.toISOString()
+              const endDate = effectiveEndTime ? effectiveEndTime.toISOString() : new Date().toISOString()
 
               const statsResponse = await fetch(`${settings.apiUrl}/api/objects/stats/`, {
                 method: 'POST',
