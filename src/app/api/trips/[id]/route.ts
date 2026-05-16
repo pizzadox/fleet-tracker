@@ -701,7 +701,9 @@ async function handleStart(id: string) {
   if (trip.status !== 'planned') return NextResponse.json({ error: 'Начать можно только запланированный рейс' }, { status: 400 })
 
   const now = new Date()
-  const updateData: Record<string, unknown> = { status: 'in_progress', startDate: now }
+  // Use existing startDate if already set (user-specified), otherwise use current time
+  const effectiveStartDate = trip.startDate || now
+  const updateData: Record<string, unknown> = { status: 'in_progress', startDate: effectiveStartDate }
 
   // Try to get tracker data for auto-fill
   const tracker = await db.glonassTracker.findFirst({
@@ -717,7 +719,7 @@ async function handleStart(id: string) {
     // Snapshot tracker data at start — save to trackerSnapshotStart
     const snapshot: Record<string, unknown> = {
       trackerId: tracker.id, trackerName: tracker.trackerName, imei: tracker.imei,
-      capturedAt: now.toISOString(), fuelLevel: tracker.lastFuelLevel, mileage: tracker.lastMileage,
+      capturedAt: effectiveStartDate.toISOString(), fuelLevel: tracker.lastFuelLevel, mileage: tracker.lastMileage,
       engineTemp: tracker.lastEngineTemp, speed: tracker.lastSpeed, ignition: tracker.lastIgnition,
       latitude: tracker.lastLatitude, longitude: tracker.lastLongitude, address: tracker.lastAddress,
       sensors: tracker.sensorData.map(s => ({ type: s.sensorType, name: s.sensorName, value: s.value, unit: s.unit })),
@@ -735,7 +737,7 @@ async function handleStart(id: string) {
   })
 
   await db.equipmentHistory.create({
-    data: { equipmentId: trip.equipmentId, event: 'trip_started', description: `Рейс начат: ${trip.route}`, date: now },
+    data: { equipmentId: trip.equipmentId, event: 'trip_started', description: `Рейс начат: ${trip.route}`, date: effectiveStartDate },
   })
 
   return NextResponse.json(updatedTrip)
