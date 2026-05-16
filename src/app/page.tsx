@@ -1108,50 +1108,54 @@ function EquipmentTab({ equipment, companies, eqSearch, setEqSearch, eqStatusFil
           </CardContent>
         </Card>
       ) : (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-          {equipment.map(eq => (
-            <Card key={eq.id} className={`cursor-pointer hover:shadow-md transition-shadow border-l-3 ${EQUIPMENT_STATUS_MAP[eq.status]?.border || ''}`} onClick={() => onOpenDetail(eq)}>
-              <CardHeader className="pb-1.5 pt-3 px-3">
-                <div className="flex items-start justify-between gap-1.5">
-                  <div className="flex items-center gap-2 min-w-0">
-                    <div className={`flex items-center justify-center size-8 rounded-lg shrink-0 ${getTypeInfo(eq.type).color} ${getTypeInfo(eq.type).darkColor}`}>{getTypeInfo(eq.type).icon}</div>
-                    <div className="min-w-0">
-                      <CardTitle className="text-sm font-semibold truncate">{eq.name}</CardTitle>
-                      <p className="text-[11px] text-muted-foreground truncate">{[eq.brand, eq.model].filter(Boolean).join(' ') || '—'}</p>
-                    </div>
-                  </div>
-                  {statusBadge(eq.status, EQUIPMENT_STATUS_MAP)}
-                </div>
-              </CardHeader>
-              <CardContent className="px-3 pb-3 pt-0 space-y-1.5">
-                <Separator />
-                <div className="grid grid-cols-2 gap-x-4 gap-y-0.5 text-[11px]">
-                  <div><span className="text-muted-foreground">Гос. номер:</span> <span className="font-medium">{eq.registrationNum || '—'}</span></div>
-                  <div><span className="text-muted-foreground">Тип:</span> <TypeBadge type={eq.type} /></div>
-                  <div><span className="text-muted-foreground">Владелец:</span> <span className="font-medium truncate">{eq.owner?.name || '—'}</span></div>
-                  <div><span className="text-muted-foreground">Арендатор:</span> <span className="font-medium truncate">{eq.renter?.name || '—'}</span></div>
-                </div>
-                {eq.employees && eq.employees.length > 0 && (
-                  <div className="flex flex-wrap gap-1 mt-0.5">
-                    {eq.employees.map(emp => (
-                      <span key={emp.id} className={`inline-flex items-center gap-0.5 rounded px-1 py-0 text-[10px] font-medium ${EMPLOYEE_POSITION_MAP[emp.position]?.color || 'bg-gray-100 text-gray-600'} ${EMPLOYEE_POSITION_MAP[emp.position]?.darkColor || ''}`}>
-                        {EMPLOYEE_POSITION_MAP[emp.position]?.icon}{emp.fullName.split(' ')[0]}
-                      </span>
-                    ))}
-                  </div>
-                )}
-                <div className="flex items-center gap-3 text-[11px] text-muted-foreground pt-0.5">
-                  <span className="flex items-center gap-0.5"><Wrench className="size-3" />{eq._count?.repairs || 0}</span>
-                  <span className="flex items-center gap-0.5"><Camera className="size-3" />{eq._count?.photos || 0}</span>
-                  {eq.employees && eq.employees.length > 0 && <span className="flex items-center gap-0.5"><Users className="size-3" />{eq.employees.length}</span>}
-                </div>
-                <div className="flex gap-1 pt-1" onClick={e => e.stopPropagation()}>
-                  <Button size="sm" variant="ghost" className="h-7 text-[11px] gap-1" onClick={() => onEdit(eq)}><Edit className="size-3" />Изменить</Button>
-                  <Button size="sm" variant="ghost" className="h-7 text-[11px] gap-1 text-destructive hover:text-destructive" onClick={() => onDelete(eq)}><Trash2 className="size-3" />Удалить</Button>
-                </div>
-              </CardContent>
-            </Card>
-          ))}
+        <div className="border rounded-lg overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="w-full text-[11px]">
+              <thead>
+                <tr className="border-b bg-muted/50 text-muted-foreground">
+                  <th className="text-left py-1.5 px-2 font-medium w-8"></th>
+                  <th className="text-left py-1.5 px-2 font-medium">Наименование</th>
+                  <th className="text-left py-1.5 px-2 font-medium hidden sm:table-cell">Гос. номер</th>
+                  <th className="text-left py-1.5 px-2 font-medium hidden md:table-cell">Марка / Модель</th>
+                  <th className="text-left py-1.5 px-2 font-medium hidden lg:table-cell">Владелец</th>
+                  <th className="text-left py-1.5 px-2 font-medium">Статус</th>
+                  <th className="text-right py-1.5 px-2 font-medium w-16"></th>
+                </tr>
+              </thead>
+              <tbody>
+                {equipment.map(eq => (
+                  <tr key={eq.id} className={`border-b last:border-0 cursor-pointer hover:bg-accent/50 transition-colors border-l-2 ${EQUIPMENT_STATUS_MAP[eq.status]?.border || ''}`} onClick={() => onOpenDetail(eq)}>
+                    <td className="py-1.5 px-2">
+                      <div className={`flex items-center justify-center size-6 rounded ${getTypeInfo(eq.type).color} ${getTypeInfo(eq.type).darkColor}`}>{getTypeInfo(eq.type).icon}</div>
+                    </td>
+                    <td className="py-1.5 px-2">
+                      <div className="font-medium truncate max-w-[200px]">{eq.name}</div>
+                      {eq.employees && eq.employees.length > 0 && (
+                        <div className="flex flex-wrap gap-0.5 mt-0.5">
+                          {eq.employees.slice(0, 2).map(emp => (
+                            <span key={emp.id} className={`inline-flex items-center gap-0.5 rounded px-1 py-0 text-[9px] font-medium ${EMPLOYEE_POSITION_MAP[emp.position]?.color || 'bg-gray-100 text-gray-600'} ${EMPLOYEE_POSITION_MAP[emp.position]?.darkColor || ''}`}>
+                              {emp.fullName.split(' ')[0]}
+                            </span>
+                          ))}
+                          {eq.employees.length > 2 && <span className="text-[9px] text-muted-foreground">+{eq.employees.length - 2}</span>}
+                        </div>
+                      )}
+                    </td>
+                    <td className="py-1.5 px-2 hidden sm:table-cell"><span className="font-mono">{eq.registrationNum || '—'}</span></td>
+                    <td className="py-1.5 px-2 hidden md:table-cell text-muted-foreground truncate max-w-[150px]">{[eq.brand, eq.model].filter(Boolean).join(' ') || '—'}</td>
+                    <td className="py-1.5 px-2 hidden lg:table-cell text-muted-foreground truncate max-w-[120px]">{eq.owner?.name || '—'}</td>
+                    <td className="py-1.5 px-2">{statusBadge(eq.status, EQUIPMENT_STATUS_MAP)}</td>
+                    <td className="py-1.5 px-2 text-right" onClick={e => e.stopPropagation()}>
+                      <div className="flex items-center justify-end gap-0.5">
+                        <Button size="sm" variant="ghost" className="size-6 p-0" onClick={() => onEdit(eq)}><Edit className="size-3" /></Button>
+                        <Button size="sm" variant="ghost" className="size-6 p-0 text-destructive hover:text-destructive" onClick={() => onDelete(eq)}><Trash2 className="size-3" /></Button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
     </div>
@@ -3429,29 +3433,83 @@ function TripDetailDialog({ open, onOpenChange, trip, loading, crews, onEdit, on
     }
   }
 
-  // Apply start values from comparison data
+  // Apply start values — if fields already filled with different values, ask user
   const applyStartValues = () => {
     if (!compareData) return
     const startSnap = compareData.startSnapshot as Record<string, unknown> | null
     if (!startSnap) return
     const fields: Record<string, unknown> = {}
-    if (startSnap.fuelLevel != null && t.fuelStart == null) fields.fuelStart = Number(startSnap.fuelLevel)
-    if (startSnap.mileage != null && t.mileageStart == null) fields.mileageStart = Math.round(Number(startSnap.mileage))
-    if (Object.keys(fields).length === 0) {
-      toast.info('Нет данных для заполнения или поля уже заполнены')
+    const diffs: Array<{ field: string; current: string; tracker: string }> = []
+
+    // Fuel start
+    if (startSnap.fuelLevel != null) {
+      const trackerVal = Number(startSnap.fuelLevel)
+      if (t.fuelStart == null) {
+        fields.fuelStart = trackerVal
+      } else if (Math.abs(t.fuelStart - trackerVal) > 0.01) {
+        diffs.push({ field: 'Топливо на старте', current: `${t.fuelStart} л`, tracker: `${trackerVal.toFixed(1)} л` })
+      }
+    }
+    // Mileage start
+    if (startSnap.mileage != null) {
+      const trackerVal = Math.round(Number(startSnap.mileage))
+      if (t.mileageStart == null) {
+        fields.mileageStart = trackerVal
+      } else if (t.mileageStart !== trackerVal) {
+        diffs.push({ field: 'Пробег на старте', current: `${t.mileageStart} км`, tracker: `${trackerVal} км` })
+      }
+    }
+
+    if (Object.keys(fields).length === 0 && diffs.length === 0) {
+      toast.info('Данные совпадают или нет данных для заполнения')
       return
     }
-    applySensorFields(fields)
+
+    // If no conflicts, apply directly
+    if (diffs.length === 0) {
+      applySensorFields(fields)
+      return
+    }
+
+    // Show conflict resolution — replace all (tracker) or keep existing
+    const fieldsWithReplace: Record<string, unknown> = { ...fields }
+    if (startSnap.fuelLevel != null) fieldsWithReplace.fuelStart = Number(startSnap.fuelLevel)
+    if (startSnap.mileage != null) fieldsWithReplace.mileageStart = Math.round(Number(startSnap.mileage))
+
+    const msg = diffs.map(d => `${d.field}: сейчас ${d.current}, трекер: ${d.tracker}`).join('\n')
+    if (confirm(`Расхождения с данными трекера:\n\n${msg}\n\nЗаменить данными трекера?`)) {
+      applySensorFields(fieldsWithReplace)
+    }
   }
 
-  // Apply end values from comparison data + trip stats
+  // Apply end values — if fields already filled with different values, ask user
   const applyEndValues = () => {
     if (!compareData) return
     const endSnap = compareData.endSnapshot as Record<string, unknown> | null
     const stats = compareData.tripStats as Record<string, unknown> | null
     const fields: Record<string, unknown> = {}
-    if (endSnap?.fuelLevel != null && t.fuelEnd == null) fields.fuelEnd = Number(endSnap.fuelLevel)
-    if (endSnap?.mileage != null && t.mileageEnd == null) fields.mileageEnd = Math.round(Number(endSnap.mileage))
+    const diffs: Array<{ field: string; current: string; tracker: string }> = []
+
+    // Fuel end
+    if (endSnap?.fuelLevel != null) {
+      const trackerVal = Number(endSnap.fuelLevel)
+      if (t.fuelEnd == null) {
+        fields.fuelEnd = trackerVal
+      } else if (Math.abs(t.fuelEnd - trackerVal) > 0.01) {
+        diffs.push({ field: 'Топливо на финише', current: `${t.fuelEnd} л`, tracker: `${trackerVal.toFixed(1)} л` })
+      }
+    }
+    // Mileage end
+    if (endSnap?.mileage != null) {
+      const trackerVal = Math.round(Number(endSnap.mileage))
+      if (t.mileageEnd == null) {
+        fields.mileageEnd = trackerVal
+      } else if (t.mileageEnd !== trackerVal) {
+        diffs.push({ field: 'Пробег на финише', current: `${t.mileageEnd} км`, tracker: `${trackerVal} км` })
+      }
+    }
+
+    // Stats (only fill if empty)
     if (stats) {
       if (stats.mileage != null && t.distance == null) fields.distance = Number(stats.mileage)
       if (stats.avgSpeed != null && t.avgSpeed == null) fields.avgSpeed = Number(stats.avgSpeed)
@@ -3465,6 +3523,7 @@ function TripDetailDialog({ open, onOpenChange, trip, loading, crews, onEdit, on
       if (stats.engineHours != null && t.engineHours == null) fields.engineHours = Number(stats.engineHours)
       if (stats.idleTime != null && t.idleTime == null) fields.idleTime = Number(stats.idleTime)
     }
+
     if (fields.fuelEnd != null && t.fuelStart != null && !fields.fuelConsumed) {
       fields.fuelConsumed = Math.round((t.fuelStart! - (fields.fuelEnd as number)) * 100) / 100
       if (fields.fuelConsumed < 0) fields.fuelConsumed = 0
@@ -3472,11 +3531,35 @@ function TripDetailDialog({ open, onOpenChange, trip, loading, crews, onEdit, on
     if (fields.mileageEnd != null && t.mileageStart != null && !fields.distance) {
       fields.distance = (fields.mileageEnd as number) - t.mileageStart!
     }
-    if (Object.keys(fields).length === 0) {
-      toast.info('Нет данных для заполнения или поля уже заполнены')
+
+    if (Object.keys(fields).length === 0 && diffs.length === 0) {
+      toast.info('Данные совпадают или нет данных для заполнения')
       return
     }
-    applySensorFields(fields)
+
+    // If no conflicts, apply directly
+    if (diffs.length === 0) {
+      applySensorFields(fields)
+      return
+    }
+
+    // Show conflict resolution — replace all (tracker) or keep existing
+    const fieldsWithReplace: Record<string, unknown> = { ...fields }
+    if (endSnap?.fuelLevel != null) fieldsWithReplace.fuelEnd = Number(endSnap.fuelLevel)
+    if (endSnap?.mileage != null) fieldsWithReplace.mileageEnd = Math.round(Number(endSnap.mileage))
+    // Recalculate derived values
+    if (fieldsWithReplace.fuelEnd != null && t.fuelStart != null) {
+      fieldsWithReplace.fuelConsumed = Math.round((t.fuelStart! - (fieldsWithReplace.fuelEnd as number)) * 100) / 100
+      if (fieldsWithReplace.fuelConsumed < 0) fieldsWithReplace.fuelConsumed = 0
+    }
+    if (fieldsWithReplace.mileageEnd != null && t.mileageStart != null) {
+      fieldsWithReplace.distance = (fieldsWithReplace.mileageEnd as number) - t.mileageStart!
+    }
+
+    const msg = diffs.map(d => `${d.field}: сейчас ${d.current}, трекер: ${d.tracker}`).join('\n')
+    if (confirm(`Расхождения с данными трекера:\n\n${msg}\n\nЗаменить данными трекера?`)) {
+      applySensorFields(fieldsWithReplace)
+    }
   }
 
   return (

@@ -274,23 +274,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
       })
       if (!trip) return NextResponse.json({ error: 'Рейс не найден' }, { status: 404 })
 
-      // Parse start snapshot
-      let startSnapshot: Record<string, unknown> | null = null
-      if (trip.trackerSnapshotStart) {
-        try { startSnapshot = JSON.parse(trip.trackerSnapshotStart) } catch { /* ignore */ }
-      }
-      // Fallback for old trips that only have trackerSnapshot (was start snapshot before completion)
-      if (!startSnapshot && trip.trackerSnapshot && trip.status !== 'completed') {
-        try { startSnapshot = JSON.parse(trip.trackerSnapshot) } catch { /* ignore */ }
-      }
-
-      // Parse end snapshot
-      let endSnapshot: Record<string, unknown> | null = null
-      if (trip.status === 'completed' && trip.trackerSnapshot) {
-        try { endSnapshot = JSON.parse(trip.trackerSnapshot) } catch { /* ignore */ }
-      }
-
-      // For in-progress trips: get current tracker data as "end" snapshot
+      // Get tracker data
       const tracker = await db.glonassTracker.findFirst({
         where: { equipmentId: trip.equipmentId },
         include: { sensorData: { orderBy: { timestamp: 'desc' } } },
@@ -316,7 +300,62 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
         }
       }
 
-      // If trip is in progress and no end snapshot, use current data
+      // Parse start snapshot
+      let startSnapshot: Record<string, unknown> | null = null
+      if (trip.trackerSnapshotStart) {
+        try { startSnapshot = JSON.parse(trip.trackerSnapshotStart) } catch { /* ignore */ }
+      }
+      // Fallback for old trips that only have trackerSnapshot (was start snapshot before completion)
+      if (!startSnapshot && trip.trackerSnapshot && trip.status !== 'completed') {
+        try { startSnapshot = JSON.parse(trip.trackerSnapshot) } catch { /* ignore */ }
+      }
+      // Build start snapshot from trip fields if no snapshot exists
+      if (!startSnapshot) {
+        const startSensors: Array<{ type: string; name: string; value: number | null; unit: string }> = []
+        if (trip.fuelStart != null) startSensors.push({ type: 'fuel', name: 'Топливо на старте', value: trip.fuelStart, unit: 'л' })
+        if (trip.mileageStart != null) startSensors.push({ type: 'mileage', name: 'Пробег на старте', value: trip.mileageStart, unit: 'км' })
+        startSnapshot = {
+          trackerName: tracker?.trackerName || null,
+          capturedAt: trip.startDate?.toISOString() || null,
+          fuelLevel: trip.fuelStart ?? null,
+          mileage: trip.mileageStart ?? null,
+          engineTemp: null,
+          speed: null,
+          ignition: null,
+          latitude: null,
+          longitude: null,
+          address: null,
+          sensors: startSensors,
+          _source: 'trip_fields', // flag that this was built from trip fields, not a real snapshot
+        }
+      }
+
+      // Parse end snapshot
+      let endSnapshot: Record<string, unknown> | null = null
+      if (trip.status === 'completed' && trip.trackerSnapshot) {
+        try { endSnapshot = JSON.parse(trip.trackerSnapshot) } catch { /* ignore */ }
+      }
+      // Build end snapshot from trip fields if no snapshot exists for completed trip
+      if (!endSnapshot && trip.status === 'completed') {
+        const endSensors: Array<{ type: string; name: string; value: number | null; unit: string }> = []
+        if (trip.fuelEnd != null) endSensors.push({ type: 'fuel', name: 'Топливо на финише', value: trip.fuelEnd, unit: 'л' })
+        if (trip.mileageEnd != null) endSensors.push({ type: 'mileage', name: 'Пробег на финише', value: trip.mileageEnd, unit: 'км' })
+        endSnapshot = {
+          trackerName: tracker?.trackerName || null,
+          capturedAt: trip.endDate?.toISOString() || null,
+          fuelLevel: trip.fuelEnd ?? null,
+          mileage: trip.mileageEnd ?? null,
+          engineTemp: null,
+          speed: null,
+          ignition: null,
+          latitude: null,
+          longitude: null,
+          address: null,
+          sensors: endSensors,
+          _source: 'trip_fields',
+        }
+      }
+      // For in-progress trips: use current tracker data as "end" snapshot
       if (!endSnapshot && currentData && trip.status === 'in_progress') {
         endSnapshot = {
           trackerName: tracker?.trackerName,
@@ -332,10 +371,39 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
           sensors: currentData.sensors,
         }
       }
-
-      // Build comparison for key metrics
-      const startSensors: Record<string, { value: number | null; unit: string }> = {}
-      const endSensors: Record<string, { value: number | null; unit: string }> = {}
+      // For planned trips: use current tracker data as both start and end (for preview)
+      if (!endSnapshot && currentData && trip.status === 'planned') {
+        if (!startSnapshot) {
+          startSnapshot = {
+            trackerName: tracker?.trackerName,
+            capturedAt: new Date().toISOString(),
+            fuelLevel: currentData.fuelLevel,
+            mileage: currentData.mileage,
+            engineTemp: currentData.engineTemp,
+            speed: currentData.speed,
+            ignition: currentData.ignition,
+            latitude: currentData.latitude,
+            longitude: currentData.longitude,
+            address: currentData.address,
+            sensors: currentData.sensors,
+            _source: 'current_tracker',
+          }
+        }
+        endSnapshot = {
+          trackerName: tracker?.trackerName,
+          capturedAt: new Date().toISOString(),
+          fuelLevel: currentData.fuelLevel,
+          mileage: currentData.mileage,
+          engineTemp: currentData.engineTemp,
+          speed: currentData.speed,
+          ignition: currentData.ignition,
+          latitude: currentData.latitude,
+          longitude: currentData.longitude,
+          address: currentData.address,
+          sensors: currentData.sensors,
+          _source: 'current_tracker',
+        }
+      }
 
       // Main tracker fields comparison
       const mainFields = [
