@@ -4,6 +4,7 @@ import { NextRequest, NextResponse } from 'next/server'
 // ═══════════════════════════════════════════════════════════════
 // GET /api/trips/[id] — Получить данные рейса
 // GET /api/trips/[id]?action=track — Получить трек рейса из Axenta
+// GET /api/trips/[id]?action=sensors — Загрузить данные датчиков из трекера
 // ═══════════════════════════════════════════════════════════════
 
 export async function GET(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -117,6 +118,123 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
         })).filter((p: { lat: unknown; lng: unknown }) => p.lat != null && p.lng != null)
       }
       return NextResponse.json(result)
+    }
+
+    // ── Sensors action: fetch current sensor data from tracker ──
+    if (action === 'sensors') {
+      const trip = await db.trip.findUnique({
+        where: { id },
+        include: { equipment: { select: { id: true, name: true, registrationNum: true } } },
+      })
+      if (!trip) return NextResponse.json({ error: 'Рейс не найден' }, { status: 404 })
+
+      const tracker = await db.glonassTracker.findFirst({
+        where: { equipmentId: trip.equipmentId },
+        include: { sensorData: { orderBy: { timestamp: 'desc' } } },
+      })
+      if (!tracker) return NextResponse.json({ error: 'У техники нет привязанного трекера' }, { status: 404 })
+
+      // Current tracker state (from DB)
+      const current: Record<string, unknown> = {
+        fuelLevel: tracker.lastFuelLevel ?? null,
+        mileage: tracker.lastMileage ?? null,
+        speed: tracker.lastSpeed ?? null,
+        ignition: tracker.lastIgnition ?? null,
+        engineTemp: tracker.lastEngineTemp ?? null,
+        latitude: tracker.lastLatitude ?? null,
+        longitude: tracker.lastLongitude ?? null,
+        altitude: tracker.lastAltitude ?? null,
+        course: tracker.lastCourse ?? null,
+        address: tracker.lastAddress ?? null,
+        lastSeenAt: tracker.lastSeenAt?.toISOString() ?? null,
+        lastPositionAt: tracker.lastPositionAt?.toISOString() ?? null,
+      }
+
+      // All sensor data from DB
+      const sensors = tracker.sensorData.map(s => ({
+        type: s.sensorType,
+        name: s.sensorName,
+        value: s.value,
+        stringValue: s.stringValue,
+        unit: s.unit,
+        timestamp: s.timestamp?.toISOString(),
+      }))
+
+      // Try to get Axenta stats for the trip period
+      let tripStats: Record<string, unknown> | null = null
+      const settings = await db.axentaSettings.findFirst()
+      if (settings?.isActive && settings.apiUrl && settings.apiKey) {
+        const objectId = tracker.axentaCloudId || tracker.trackerId
+        if (objectId) {
+          try {
+            // Verify/re-login if needed
+            let token = settings.apiKey
+            const testRes = await fetch(`${settings.apiUrl}/api/current_user/`, {
+              headers: { 'Authorization': `Token ${token}` },
+              signal: AbortSignal.timeout(8000),
+            })
+            if (!testRes.ok && settings.username && settings.password) {
+              const loginRes = await fetch(`${settings.apiUrl}/api/auth/login/`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ username: settings.username, password: settings.password }),
+                signal: AbortSignal.timeout(8000),
+              })
+              if (loginRes.ok) {
+                const loginData = await loginRes.json()
+                if (loginData.token) {
+                  token = loginData.token
+                  await db.axentaSettings.update({ where: { id: settings.id }, data: { apiKey: token } })
+                }
+              }
+            }
+
+            const startDate = trip.startDate.toISOString()
+            const endDate = trip.endDate ? new Date(trip.endDate).toISOString() : new Date().toISOString()
+
+            const statsUrl = `${settings.apiUrl}/api/objects/stats/`
+            const statsResponse = await fetch(statsUrl, {
+              method: 'POST',
+              headers: { 'Authorization': `Token ${token}`, 'Content-Type': 'application/json' },
+              body: JSON.stringify({ objectId: Number(objectId), startDate, endDate }),
+              signal: AbortSignal.timeout(15000),
+            })
+            if (statsResponse.ok) {
+              const stats = await statsResponse.json()
+              tripStats = {
+                mileage: stats.mileage ?? null,
+                avgSpeed: stats.avgSpeed ?? null,
+                maxSpeed: stats.maxSpeed ?? null,
+                fuelConsumption: stats.fuelConsumption ?? null,
+                avgFuelConsumption: stats.avgFuelConsumption ?? null,
+                refuelVolume: stats.refuelVolume ?? null,
+                plumVolume: stats.plumVolume ?? null,
+                tripsDuration: stats.tripsDuration ?? null,
+                parkingsDuration: stats.parkingsDuration ?? null,
+                engineHours: stats.engineHours ?? null,
+                idleTime: stats.idleTime ?? null,
+              }
+            }
+          } catch (statsErr) {
+            console.error('[Trip Sensors] Stats fetch failed:', statsErr)
+          }
+        }
+      }
+
+      return NextResponse.json({
+        tracker: {
+          id: tracker.id,
+          name: tracker.trackerName || tracker.trackerId,
+          imei: tracker.imei,
+          isActive: tracker.isActive,
+        },
+        current,
+        sensors,
+        tripStats,
+        tripStatus: trip.status,
+        tripStartDate: trip.startDate.toISOString(),
+        tripEndDate: trip.endDate ? new Date(trip.endDate).toISOString() : null,
+      })
     }
 
     // ── Default: get trip detail ──

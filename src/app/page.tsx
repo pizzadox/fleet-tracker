@@ -52,7 +52,8 @@ import {
   Satellite, ArrowLeft, ChevronDown, ChevronUp, Filter, ListFilter,
   Route, Package, Weight, UserCircle, IdCard, ClipboardCheck, Map, Bell,
   Car, Bus, Bike, Tractor, Ship, Container, Wrench as Settings, CircuitBoard, Cable,
-  UserPlus, UserCheck
+  UserPlus, UserCheck, Download, Cpu, BarChart3, Compass, Mountain,
+  ArrowDownToLine, ArrowUpFromLine
 } from 'lucide-react'
 
 // ═══════════════════════════════════════════════════════════════
@@ -728,13 +729,11 @@ export default function Home() {
     return (
       <div className="min-h-screen flex flex-col bg-background">
         <header className="border-b bg-card/80 backdrop-blur-sm sticky top-0 z-30">
-          <div className="max-w-7xl mx-auto px-3 sm:px-6 py-3 sm:py-4">
-            <div className="flex items-center gap-2.5 mb-3">
-              <div className="size-9 rounded-xl bg-primary text-primary-foreground flex items-center justify-center"><Truck className="size-4" /></div>
-              <div><h1 className="text-lg font-bold">Учёт техники</h1><p className="text-[10px] text-muted-foreground hidden sm:block">Система управления оборудованием</p></div>
-            </div>
-            <div className="grid grid-cols-4 gap-2">
-              {[0,1,2,3].map(i => <div key={i} className="h-14 rounded-lg bg-muted animate-pulse" />)}
+          <div className="max-w-7xl mx-auto px-3 sm:px-6 h-11 flex items-center gap-2">
+            <div className="size-7 rounded-lg bg-primary text-primary-foreground flex items-center justify-center shrink-0"><Truck className="size-3.5" /></div>
+            <h1 className="text-sm font-bold shrink-0 hidden sm:block">Учёт техники</h1>
+            <div className="hidden sm:flex items-center gap-1.5 ml-1">
+              {[0,1,2,3].map(i => <div key={i} className="h-5 w-12 rounded-md bg-muted animate-pulse" />)}
             </div>
           </div>
         </header>
@@ -755,74 +754,80 @@ export default function Home() {
     <div className="min-h-screen flex flex-col bg-background pb-16 md:pb-0">
       {/* ─── HEADER ──────────────────────────────────────────── */}
       <header className="border-b bg-card/80 backdrop-blur-sm sticky top-0 z-30">
-        <div className="max-w-7xl mx-auto px-3 sm:px-6 py-3 sm:py-4">
-          <div className="flex items-center justify-between mb-3">
-            <div className="flex items-center gap-2.5">
-              <div className="size-9 rounded-xl bg-primary text-primary-foreground flex items-center justify-center"><Truck className="size-4" /></div>
-              <div>
-                <h1 className="text-lg sm:text-xl font-bold tracking-tight">Учёт техники</h1>
-                <p className="text-[10px] sm:text-xs text-muted-foreground">Управление оборудованием предприятия</p>
-              </div>
-            </div>
-            <div className="flex items-center gap-1">
-              {/* Auto-refresh toggle */}
-              <Button variant="ghost" size="icon" className={`size-8 ${autoRefreshEnabled ? 'text-emerald-600' : 'text-muted-foreground'}`} onClick={() => setAutoRefreshEnabled(!autoRefreshEnabled)} aria-label="Автообновление" title={autoRefreshEnabled ? 'Автообновление вкл (каждые 60 сек)' : 'Автообновление выкл'}>
-                <RefreshCw className={`size-4 ${autoRefreshEnabled ? '' : 'opacity-50'}`} />
-              </Button>
-              {/* Notification bell */}
-              <div className="relative">
-                <Button variant="ghost" size="icon" className="size-8" onClick={() => setShowAlerts(!showAlerts)} aria-label="Уведомления">
-                  <Bell className="size-4" />
-                  {activeAlerts.length > 0 && (
-                    <span className="absolute -top-0.5 -right-0.5 size-4 rounded-full bg-red-500 text-white text-[9px] font-bold flex items-center justify-center animate-pulse">{activeAlerts.length}</span>
-                  )}
-                </Button>
-                {/* Alerts dropdown */}
-                {showAlerts && (
-                  <div className="absolute right-0 top-full mt-1 w-80 max-h-72 overflow-y-auto bg-card border rounded-lg shadow-lg z-50">
-                    <div className="p-2 border-b flex items-center justify-between">
-                      <span className="text-xs font-semibold">Уведомления ({activeAlerts.length})</span>
-                      {activeAlerts.length > 0 && (
-                        <Button variant="ghost" size="sm" className="h-6 text-[10px]" onClick={() => { setActiveAlerts([]); setShowAlerts(false) }}>Очистить</Button>
-                      )}
-                    </div>
-                    {activeAlerts.length === 0 ? (
-                      <div className="p-4 text-center text-xs text-muted-foreground">Нет активных уведомлений</div>
-                    ) : (
-                      activeAlerts.map((alert, i) => (
-                        <div key={i} className={`p-2.5 border-b last:border-0 ${alert.severity === 'critical' ? 'bg-red-50 dark:bg-red-950/30' : 'bg-amber-50 dark:bg-amber-950/30'}`}>
-                          <div className="flex items-start gap-2">
-                            {alert.severity === 'critical' ? <AlertTriangle className="size-4 text-red-500 mt-0.5 shrink-0" /> : <Bell className="size-4 text-amber-500 mt-0.5 shrink-0" />}
-                            <div className="flex-1 min-w-0">
-                              <p className="text-xs font-medium">{alert.message}</p>
-                              <p className="text-[10px] text-muted-foreground mt-0.5">{formatDateTime(alert.triggeredAt)}</p>
-                            </div>
-                          </div>
-                        </div>
-                      ))
-                    )}
-                    {notificationRules.length > 0 && (
-                      <div className="p-2 border-t">
-                        <p className="text-[10px] text-muted-foreground">Активных правил: {notificationRules.filter(r => r.isActive).length} из {notificationRules.length}</p>
-                      </div>
-                    )}
-                  </div>
-                )}
-              </div>
-              <Button variant="ghost" size="icon" className="size-8" onClick={() => setSettingsOpen(true)} aria-label="Настройки"><Cog className="size-4" /></Button>
-              {mounted && (
-                <Button variant="ghost" size="icon" className="size-8" onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')} aria-label="Тема">
-                  {theme === 'dark' ? <Sun className="size-4" /> : <Moon className="size-4" />}
-                </Button>
-              )}
+        <div className="max-w-7xl mx-auto px-3 sm:px-6 h-11 flex items-center justify-between gap-2">
+          {/* Left: logo + title + stats */}
+          <div className="flex items-center gap-2 min-w-0">
+            <div className="size-7 rounded-lg bg-primary text-primary-foreground flex items-center justify-center shrink-0"><Truck className="size-3.5" /></div>
+            <h1 className="text-sm font-bold tracking-tight shrink-0 hidden sm:block">Учёт техники</h1>
+            <div className="hidden sm:flex items-center gap-1.5 ml-1">
+              <span className="inline-flex items-center gap-1 rounded-md bg-muted px-1.5 py-0.5 text-[10px] font-medium text-primary"><Truck className="size-3" />{stats.total}</span>
+              <span className="inline-flex items-center gap-1 rounded-md bg-emerald-100 dark:bg-emerald-900/40 px-1.5 py-0.5 text-[10px] font-medium text-emerald-700 dark:text-emerald-400"><CheckCircle2 className="size-3" />{stats.active}</span>
+              <span className="inline-flex items-center gap-1 rounded-md bg-amber-100 dark:bg-amber-900/40 px-1.5 py-0.5 text-[10px] font-medium text-amber-700 dark:text-amber-400"><Wrench className="size-3" />{stats.repair}</span>
+              <span className="inline-flex items-center gap-1 rounded-md bg-sky-100 dark:bg-sky-900/40 px-1.5 py-0.5 text-[10px] font-medium text-sky-700 dark:text-sky-400"><Users className="size-3" />{stats.rented}</span>
             </div>
           </div>
-          {/* Stats */}
-          <div className="grid grid-cols-4 gap-2">
-            <StatCard icon={<Truck className="size-3.5" />} label="Всего" value={stats.total} color="text-primary" />
-            <StatCard icon={<CheckCircle2 className="size-3.5" />} label="Экспл." value={stats.active} color="text-emerald-600" />
-            <StatCard icon={<Wrench className="size-3.5" />} label="Ремонт" value={stats.repair} color="text-amber-600" />
-            <StatCard icon={<Users className="size-3.5" />} label="Аренда" value={stats.rented} color="text-sky-600" />
+          {/* Right: actions */}
+          <div className="flex items-center gap-0.5 shrink-0">
+            {/* Mobile stats as compact text */}
+            <div className="sm:hidden flex items-center gap-1 text-[10px] text-muted-foreground mr-1">
+              <span className="text-primary font-bold">{stats.total}</span>
+              <span>/</span>
+              <span className="text-emerald-600">{stats.active}</span>
+              <span>/</span>
+              <span className="text-amber-600">{stats.repair}</span>
+              <span>/</span>
+              <span className="text-sky-600">{stats.rented}</span>
+            </div>
+            {/* Auto-refresh toggle */}
+            <Button variant="ghost" size="icon" className={`size-7 ${autoRefreshEnabled ? 'text-emerald-600' : 'text-muted-foreground'}`} onClick={() => setAutoRefreshEnabled(!autoRefreshEnabled)} aria-label="Автообновление" title={autoRefreshEnabled ? 'Автообновление вкл' : 'Автообновление выкл'}>
+              <RefreshCw className={`size-3.5 ${autoRefreshEnabled ? '' : 'opacity-50'}`} />
+            </Button>
+            {/* Notification bell */}
+            <div className="relative">
+              <Button variant="ghost" size="icon" className="size-7" onClick={() => setShowAlerts(!showAlerts)} aria-label="Уведомления">
+                <Bell className="size-3.5" />
+                {activeAlerts.length > 0 && (
+                  <span className="absolute -top-0.5 -right-0.5 size-3.5 rounded-full bg-red-500 text-white text-[8px] font-bold flex items-center justify-center animate-pulse">{activeAlerts.length}</span>
+                )}
+              </Button>
+              {/* Alerts dropdown */}
+              {showAlerts && (
+                <div className="absolute right-0 top-full mt-1 w-72 max-h-64 overflow-y-auto bg-card border rounded-lg shadow-lg z-50">
+                  <div className="p-2 border-b flex items-center justify-between">
+                    <span className="text-[11px] font-semibold">Уведомления ({activeAlerts.length})</span>
+                    {activeAlerts.length > 0 && (
+                      <Button variant="ghost" size="sm" className="h-5 text-[9px]" onClick={() => { setActiveAlerts([]); setShowAlerts(false) }}>Очистить</Button>
+                    )}
+                  </div>
+                  {activeAlerts.length === 0 ? (
+                    <div className="p-3 text-center text-[11px] text-muted-foreground">Нет активных уведомлений</div>
+                  ) : (
+                    activeAlerts.map((alert, i) => (
+                      <div key={i} className={`p-2 border-b last:border-0 ${alert.severity === 'critical' ? 'bg-red-50 dark:bg-red-950/30' : 'bg-amber-50 dark:bg-amber-950/30'}`}>
+                        <div className="flex items-start gap-1.5">
+                          {alert.severity === 'critical' ? <AlertTriangle className="size-3.5 text-red-500 mt-0.5 shrink-0" /> : <Bell className="size-3.5 text-amber-500 mt-0.5 shrink-0" />}
+                          <div className="flex-1 min-w-0">
+                            <p className="text-[11px] font-medium">{alert.message}</p>
+                            <p className="text-[9px] text-muted-foreground mt-0.5">{formatDateTime(alert.triggeredAt)}</p>
+                          </div>
+                        </div>
+                      </div>
+                    ))
+                  )}
+                  {notificationRules.length > 0 && (
+                    <div className="p-1.5 border-t">
+                      <p className="text-[9px] text-muted-foreground">Правил: {notificationRules.filter(r => r.isActive).length}/{notificationRules.length}</p>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+            <Button variant="ghost" size="icon" className="size-7" onClick={() => setSettingsOpen(true)} aria-label="Настройки"><Cog className="size-3.5" /></Button>
+            {mounted && (
+              <Button variant="ghost" size="icon" className="size-7" onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')} aria-label="Тема">
+                {theme === 'dark' ? <Sun className="size-3.5" /> : <Moon className="size-3.5" />}
+              </Button>
+            )}
           </div>
         </div>
       </header>
@@ -3263,11 +3268,18 @@ function TripDetailDialog({ open, onOpenChange, trip, loading, crews, onEdit, on
   const [trackData, setTrackData] = useState<Record<string, unknown> | null>(null)
   const [trackLoading, setTrackLoading] = useState(false)
   const [trackError, setTrackError] = useState<string | null>(null)
+  const [sensorData, setSensorData] = useState<Record<string, unknown> | null>(null)
+  const [sensorLoading, setSensorLoading] = useState(false)
+  const [sensorError, setSensorError] = useState<string | null>(null)
+  const [applySuccess, setApplySuccess] = useState<string | null>(null)
 
-  // Reset track data when trip changes — must be before any early return (Rules of Hooks)
+  // Reset track and sensor data when trip changes — must be before any early return (Rules of Hooks)
   useEffect(() => {
     setTrackData(null)
     setTrackError(null)
+    setSensorData(null)
+    setSensorError(null)
+    setApplySuccess(null)
   }, [trip?.id])
 
   if (!trip) return null
@@ -3313,6 +3325,93 @@ function TripDetailDialog({ open, onOpenChange, trip, loading, crews, onEdit, on
       setTrackError(e.message || 'Ошибка загрузки трека')
     }
     setTrackLoading(false)
+  }
+
+  // Load sensor data from tracker
+  const loadSensors = async () => {
+    setSensorLoading(true)
+    setSensorError(null)
+    setApplySuccess(null)
+    try {
+      const res = await fetch(`/api/trips/${t.id}?action=sensors`)
+      if (!res.ok) {
+        const errData = await res.json().catch(() => null)
+        throw new Error(errData?.error || 'Ошибка загрузки датчиков')
+      }
+      const data = await res.json()
+      setSensorData(data)
+    } catch (e: any) {
+      setSensorError(e.message || 'Ошибка загрузки датчиков')
+    }
+    setSensorLoading(false)
+  }
+
+  // Apply sensor data to trip fields
+  const applySensorFields = async (fields: Record<string, unknown>) => {
+    try {
+      const res = await fetch(`/api/trips/${t.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(fields),
+      })
+      if (!res.ok) throw new Error()
+      toast.success('Данные датчиков применены')
+      setApplySuccess('Данные успешно заполнены из трекера')
+      onRefresh()
+    } catch {
+      toast.error('Ошибка применения данных')
+    }
+  }
+
+  // Apply start values (fuel + mileage at start)
+  const applyStartValues = () => {
+    if (!sensorData) return
+    const cur = sensorData.current as Record<string, unknown> | undefined
+    if (!cur) return
+    const fields: Record<string, unknown> = {}
+    if (cur.fuelLevel != null && t.fuelStart == null) fields.fuelStart = Number(cur.fuelLevel)
+    if (cur.mileage != null && t.mileageStart == null) fields.mileageStart = Math.round(Number(cur.mileage))
+    if (Object.keys(fields).length === 0) {
+      toast.info('Нет данных для заполнения или поля уже заполнены')
+      return
+    }
+    applySensorFields(fields)
+  }
+
+  // Apply end values (fuel + mileage at end) + trip stats
+  const applyEndValues = () => {
+    if (!sensorData) return
+    const cur = sensorData.current as Record<string, unknown> | undefined
+    const stats = sensorData.tripStats as Record<string, unknown> | null | undefined
+    const fields: Record<string, unknown> = {}
+    if (cur?.fuelLevel != null && t.fuelEnd == null) fields.fuelEnd = Number(cur.fuelLevel)
+    if (cur?.mileage != null && t.mileageEnd == null) fields.mileageEnd = Math.round(Number(cur.mileage))
+    if (stats) {
+      if (stats.mileage != null && t.distance == null) fields.distance = Number(stats.mileage)
+      if (stats.avgSpeed != null && t.avgSpeed == null) fields.avgSpeed = Number(stats.avgSpeed)
+      if (stats.maxSpeed != null && t.maxSpeed == null) fields.maxSpeed = Number(stats.maxSpeed)
+      if (stats.fuelConsumption != null && t.fuelConsumed == null) fields.fuelConsumed = Number(stats.fuelConsumption)
+      if (stats.avgFuelConsumption != null && t.avgFuelRate == null) fields.avgFuelRate = Number(stats.avgFuelConsumption)
+      if (stats.refuelVolume != null && t.refuelVolume == null) fields.refuelVolume = Number(stats.refuelVolume)
+      if (stats.plumVolume != null && t.plumVolume == null) fields.plumVolume = Number(stats.plumVolume)
+      if (stats.tripsDuration != null && t.tripDuration == null) fields.tripDuration = Number(stats.tripsDuration)
+      if (stats.parkingsDuration != null && t.parkingsDuration == null) fields.parkingsDuration = Number(stats.parkingsDuration)
+      if (stats.engineHours != null && t.engineHours == null) fields.engineHours = Number(stats.engineHours)
+      if (stats.idleTime != null && t.idleTime == null) fields.idleTime = Number(stats.idleTime)
+    }
+    // Calculate derived values
+    if (fields.fuelEnd != null && t.fuelStart != null && !fields.fuelConsumed) {
+      fields.fuelConsumed = Math.round((t.fuelStart! - (fields.fuelEnd as number)) * 100) / 100
+      if (fields.fuelConsumed < 0) fields.fuelConsumed = 0
+    }
+    if (fields.mileageEnd != null && t.mileageStart != null && !fields.distance) {
+      fields.distance = (fields.mileageEnd as number) - t.mileageStart!
+    }
+    if (Object.keys(fields).length === 0) {
+      toast.info('Нет данных для заполнения или поля уже заполнены')
+      return
+    }
+    applySensorFields(fields)
   }
 
   return (
@@ -3425,6 +3524,158 @@ function TripDetailDialog({ open, onOpenChange, trip, loading, crews, onEdit, on
                 </DetailSection>
               )}
 
+              {/* ── ЗАГРУЗКА ДАННЫХ ДАТЧИКОВ ИЗ ТРЕКЕРА ── */}
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <h4 className="text-xs font-semibold flex items-center gap-1.5"><CircuitBoard className="size-3.5" />Данные датчиков</h4>
+                  {!sensorData && !sensorLoading && (
+                    <Button variant="outline" size="sm" className="h-7 text-[10px] gap-1" onClick={loadSensors}>
+                      <Download className="size-3" />Загрузить из трекера
+                    </Button>
+                  )}
+                </div>
+
+                {sensorLoading && (
+                  <div className="flex items-center justify-center h-24 bg-muted/30 rounded-lg">
+                    <Loader2 className="size-4 animate-spin text-muted-foreground" />
+                    <span className="ml-2 text-xs text-muted-foreground">Загрузка данных датчиков...</span>
+                  </div>
+                )}
+
+                {sensorError && (
+                  <div className="flex items-center gap-2 p-3 bg-red-50 dark:bg-red-900/20 rounded-lg text-xs text-red-600 dark:text-red-400">
+                    <AlertTriangle className="size-3.5 shrink-0" />{sensorError}
+                  </div>
+                )}
+
+                {applySuccess && (
+                  <div className="flex items-center gap-2 p-2.5 bg-emerald-50 dark:bg-emerald-900/20 rounded-lg text-xs text-emerald-600 dark:text-emerald-400">
+                    <CheckCircle2 className="size-3.5 shrink-0" />{applySuccess}
+                  </div>
+                )}
+
+                {sensorData && !sensorLoading && (
+                  <div className="space-y-3">
+                    {/* Tracker info */}
+                    {sensorData.tracker && (
+                      <div className="flex items-center gap-2 text-[10px] px-2 py-1 bg-muted/30 rounded">
+                        <span className="text-muted-foreground">Трекер:</span>
+                        <span className="font-medium">{(sensorData.tracker as any).name}</span>
+                        {(sensorData.tracker as any).imei && <span className="text-muted-foreground">IMEI: {(sensorData.tracker as any).imei}</span>}
+                        <span className={`ml-auto px-1.5 py-0.5 rounded ${(sensorData.tracker as any).isActive ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400' : 'bg-gray-100 text-gray-600 dark:bg-gray-900/30 dark:text-gray-400'}`}>
+                          {(sensorData.tracker as any).isActive ? 'Онлайн' : 'Офлайн'}
+                        </span>
+                      </div>
+                    )}
+
+                    {/* Current sensor values */}
+                    {sensorData.current && (
+                      <div className="rounded-lg border p-2.5 space-y-2">
+                        <h5 className="text-[11px] font-semibold text-muted-foreground flex items-center gap-1">
+                          <Activity className="size-3" />Текущие показания
+                          {sensorData.current.lastSeenAt && (
+                            <span className="font-normal ml-auto">
+                              обновлено {new Date(sensorData.current.lastSeenAt as string).toLocaleString('ru-RU')}
+                            </span>
+                          )}
+                        </h5>
+                        <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5">
+                          {(() => {
+                            const cur = sensorData.current as Record<string, unknown>
+                            const items: { label: string; value: string | null; icon: React.ReactNode; highlight?: boolean }[] = [
+                              { label: 'Топливо', value: cur.fuelLevel != null ? `${Number(cur.fuelLevel).toFixed(1)} л` : null, icon: <Fuel className="size-3" /> },
+                              { label: 'Пробег', value: cur.mileage != null ? `${Math.round(Number(cur.mileage)).toLocaleString('ru-RU')} км` : null, icon: <Gauge className="size-3" /> },
+                              { label: 'Скорость', value: cur.speed != null ? `${Number(cur.speed).toFixed(0)} км/ч` : null, icon: <Navigation className="size-3" /> },
+                              { label: 'Зажигание', value: cur.ignition != null ? (cur.ignition ? 'Вкл' : 'Выкл') : null, icon: <Zap className="size-3" />, highlight: cur.ignition === true },
+                              { label: 'Темп. двигателя', value: cur.engineTemp != null ? `${Number(cur.engineTemp).toFixed(1)} °C` : null, icon: <Thermometer className="size-3" /> },
+                              { label: 'Курс', value: cur.course != null ? `${Number(cur.course).toFixed(0)}°` : null, icon: <Compass className="size-3" /> },
+                              { label: 'Высота', value: cur.altitude != null ? `${Number(cur.altitude).toFixed(0)} м` : null, icon: <Mountain className="size-3" /> },
+                              { label: 'Адрес', value: (cur.address as string) || null, icon: <MapPin className="size-3" /> },
+                            ]
+                            return items.filter(it => it.value != null).map((it, i) => (
+                              <div key={i} className={`flex items-center gap-1.5 text-[10px] py-1 px-2 rounded ${it.highlight ? 'bg-emerald-50 dark:bg-emerald-900/20 font-medium' : 'bg-muted/50'}`}>
+                                <span className="text-muted-foreground shrink-0">{it.icon}</span>
+                                <span className="text-muted-foreground truncate">{it.label}</span>
+                                <span className="font-medium ml-auto truncate">{it.value}</span>
+                              </div>
+                            ))
+                          })()}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* All sensors list */}
+                    {sensorData.sensors && Array.isArray(sensorData.sensors) && (sensorData.sensors as any[]).length > 0 && (
+                      <div className="rounded-lg border p-2.5 space-y-2">
+                        <h5 className="text-[11px] font-semibold text-muted-foreground flex items-center gap-1">
+                          <Cpu className="size-3" />Все датчики ({(sensorData.sensors as any[]).length})
+                        </h5>
+                        <div className="grid grid-cols-2 gap-1">
+                          {(sensorData.sensors as any[]).map((s: any, i: number) => (
+                            <div key={i} className="flex items-center gap-1.5 text-[10px] py-0.5 px-1.5 rounded bg-muted/50">
+                              <span className="text-muted-foreground truncate">{s.name || s.type}</span>
+                              <span className="font-medium ml-auto shrink-0">
+                                {s.value != null ? `${Number(s.value).toFixed(s.unit === 'л' || s.unit === 'L' ? 1 : 0)}${s.unit ? ' ' + s.unit : ''}` : '—'}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Trip stats from Axenta */}
+                    {sensorData.tripStats && (
+                      <div className="rounded-lg border p-2.5 space-y-2">
+                        <h5 className="text-[11px] font-semibold text-muted-foreground flex items-center gap-1">
+                          <BarChart3 className="size-3" />Статистика за период рейса
+                        </h5>
+                        <div className="grid grid-cols-2 gap-1.5">
+                          {(() => {
+                            const st = sensorData.tripStats as Record<string, unknown>
+                            const items: { label: string; value: string | null }[] = [
+                              { label: 'Пробег', value: st.mileage != null ? `${Number(st.mileage).toFixed(1)} км` : null },
+                              { label: 'Ср. скорость', value: st.avgSpeed != null ? `${Number(st.avgSpeed).toFixed(1)} км/ч` : null },
+                              { label: 'Макс. скорость', value: st.maxSpeed != null ? `${Number(st.maxSpeed).toFixed(0)} км/ч` : null },
+                              { label: 'Расход топлива', value: st.fuelConsumption != null ? `${Number(st.fuelConsumption).toFixed(1)} л` : null },
+                              { label: 'Ср. расход', value: st.avgFuelConsumption != null ? `${Number(st.avgFuelConsumption).toFixed(1)} л/100км` : null },
+                              { label: 'Заправки', value: st.refuelVolume != null ? `${Number(st.refuelVolume).toFixed(1)} л` : null },
+                              { label: 'Сливы', value: st.plumVolume != null ? `${Number(st.plumVolume).toFixed(1)} л` : null },
+                              { label: 'Длительность поездок', value: st.tripsDuration != null ? fmtDur(Number(st.tripsDuration)) : null },
+                              { label: 'Время стоянок', value: st.parkingsDuration != null ? fmtDur(Number(st.parkingsDuration)) : null },
+                              { label: 'Моточасы', value: st.engineHours != null ? `${Number(st.engineHours).toFixed(1)}` : null },
+                              { label: 'Холостой ход', value: st.idleTime != null ? fmtDur(Number(st.idleTime)) : null },
+                            ]
+                            return items.filter(it => it.value != null).map((it, i) => (
+                              <div key={i} className="flex items-center gap-1.5 text-[10px] py-0.5 px-1.5 rounded bg-muted/50">
+                                <span className="text-muted-foreground">{it.label}</span>
+                                <span className="font-medium ml-auto">{it.value}</span>
+                              </div>
+                            ))
+                          })()}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Apply buttons */}
+                    <div className="flex flex-wrap gap-1.5">
+                      {(t.status === 'planned' || t.status === 'in_progress') && (
+                        <Button variant="outline" size="sm" className="h-7 text-[10px] gap-1" onClick={applyStartValues}>
+                          <ArrowDownToLine className="size-3" />Заполнить начало рейса
+                        </Button>
+                      )}
+                      {(t.status === 'in_progress' || t.status === 'completed') && (
+                        <Button variant="outline" size="sm" className="h-7 text-[10px] gap-1" onClick={applyEndValues}>
+                          <ArrowUpFromLine className="size-3" />Заполнить финиш рейса
+                        </Button>
+                      )}
+                      <Button variant="ghost" size="sm" className="h-7 text-[10px] gap-1" onClick={() => { setSensorData(null); setSensorError(null); setApplySuccess(null) }}>
+                        <X className="size-3" />Скрыть
+                      </Button>
+                    </div>
+                  </div>
+                )}
+              </div>
+
               {/* ── ТРЕК НА КАРТЕ ── */}
               {isCompleted && t.endDate && (
                 <div className="space-y-2">
@@ -3471,6 +3722,7 @@ function TripDetailDialog({ open, onOpenChange, trip, loading, crews, onEdit, on
             <Button variant="outline" size="sm" className="h-8 gap-1 text-xs" onClick={() => onComplete(t)}><CheckCircle2 className="size-3.5" />Завершить</Button>
           )}
           <Button variant="outline" size="sm" className="h-8 gap-1 text-xs" onClick={() => onEdit(t)}><Edit className="size-3.5" />Редактировать</Button>
+          <Button variant="outline" size="sm" className="h-8 gap-1 text-xs" onClick={loadSensors} disabled={sensorLoading}><CircuitBoard className="size-3.5" />Датчики</Button>
           <Button variant="outline" size="sm" className="h-8 gap-1 text-xs" onClick={onRefresh}><Activity className="size-3.5" />Обновить</Button>
           <Button variant="destructive" size="sm" className="h-8 gap-1 text-xs" onClick={() => onDelete(t)}><Trash2 className="size-3.5" />Удалить</Button>
         </DialogFooter>
@@ -4596,6 +4848,10 @@ function MapTab({ equipment, onSync, onOpenDetail }: {
               {syncing ? <Loader2 className="size-3 animate-spin" /> : <RefreshCw className="size-3" />}
               Синхронизировать
             </Button>
+            <span className="text-[9px] text-muted-foreground flex items-center gap-1">
+              <span className="size-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+              Автообновление 60 сек
+            </span>
           </div>
 
           {/* Track panel */}
@@ -4750,7 +5006,7 @@ function MapTab({ equipment, onSync, onOpenDetail }: {
                       <p className="text-xs mt-1">Подключите ГЛОНАСС трекеры к технике для отображения на карте</p>
                     </div>
                   ) : (
-                    <TrackerMap trackers={mapTrackers} trackPoints={trackPoints} trackData={mapTrackData} onEquipmentClick={onOpenDetail} />
+                    <TrackerMap trackers={mapTrackers} trackPoints={trackPoints} trackData={mapTrackData} onEquipmentClick={onOpenDetail} autoRefreshMs={60000} onRefresh={onSync} />
                   )}
                 </div>
               </CardContent>

@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useCallback } from 'react'
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
 
@@ -45,7 +45,6 @@ interface TrackerInfo {
   sensorData?: SensorData[]
 }
 
-// Rich track data from Axenta API
 interface TripPoint {
   lat: number
   lng: number
@@ -65,7 +64,7 @@ interface ParkingStop {
   endDate: string
   lat: number
   lng: number
-  duration: number  // seconds
+  duration: number
   ignitionTime?: number
 }
 
@@ -89,6 +88,8 @@ interface TrackerMapProps {
   trackData?: TrackData | null
   onMarkerClick?: (trackerId: string) => void
   onEquipmentClick?: (equipmentId: string) => void
+  autoRefreshMs?: number  // auto-refresh interval in ms (0 = disabled)
+  onRefresh?: () => void  // callback to trigger data refresh
 }
 
 function formatDateTime(d?: string | null): string {
@@ -133,44 +134,32 @@ function getSensorLabel(type: string): string {
 }
 
 function formatSensorValue(s: SensorData): string {
-  // For ignition sensors: 1/0 → On/Off
   const isIgnition = s.sensorType === 'ignition' || /зажиган/i.test(s.sensorName || '')
   if (isIgnition && s.value != null) {
     return s.value > 0 ? 'On' : 'Off'
   }
-  // For fuel sensors: always show in liters
   const isFuel = s.sensorType === 'fuel' || /топлив|бак/i.test(s.sensorName || '')
   if (isFuel && s.value != null) {
     return `${s.value} л`
   }
-  // Default formatting
   const val = s.value != null ? s.value : (s.stringValue || '—')
   return `${val}${s.unit ? ' ' + s.unit : ''}`
 }
 
-function formatSpeedKmh(speed: number): string {
-  return `${Math.round(speed)} км/ч`
-}
-
-// Map equipment type to emoji icon for map markers
 function getEquipmentIcon(type?: string | null): string {
   if (!type) return '🚗'
   const t = type.toLowerCase()
-  // Легковой транспорт
   if (t === 'автомобиль') return '🚗'
   if (t === 'кроссовер') return '🚙'
   if (t === 'внедорожник') return '🚙'
   if (t === 'мототехника') return '🏍️'
-  // Грузовой транспорт
   if (t === 'грузовик') return '🚛'
   if (t === 'фургон') return '🚐'
   if (t === 'прицеп') return '🏗️'
   if (t === 'полуприцеп') return '🏗️'
   if (t === 'рефрижератор') return '🚛'
-  // Пассажирский транспорт
   if (t === 'автобус') return '🚌'
   if (t === 'микроавтобус') return '🚐'
-  // Спецтехника
   if (t === 'спецтехника') return '⚙️'
   if (t === 'экскаватор') return '⛏️'
   if (t === 'бульдозер') return '🚜'
@@ -179,91 +168,321 @@ function getEquipmentIcon(type?: string | null): string {
   if (t === 'самосвал') return '🚛'
   if (t === 'автовышка') return '🏗️'
   if (t === 'ямобур') return '⛏️'
-  // Сельхозтехника
   if (t === 'сельхозтехника') return '🌾'
   if (t === 'трактор') return '🚜'
   if (t === 'комбайн') return '🌾'
-  // Строительная техника
   if (t === 'строительная техника') return '🏗️'
   if (t === 'бетономешалка') return '🏗️'
   if (t === 'каток') return '🚜'
-  // Водный транспорт
   if (t === 'водный транспорт') return '🚢'
   if (t === 'катер') return '🚤'
   if (t === 'баржа') return '🚢'
   return '🚗'
 }
 
-// Map equipment type to marker color
 function getEquipmentColor(type?: string | null): string {
   if (!type) return '#3b82f6'
   const t = type.toLowerCase()
-  // Легковой — синий
   if (['автомобиль', 'кроссовер', 'внедорожник', 'мототехника'].includes(t)) return '#3b82f6'
-  // Грузовой — оранжевый
   if (['грузовик', 'фургон', 'прицеп', 'полуприцеп', 'рефрижератор'].includes(t)) return '#f97316'
-  // Пассажирский — фиолетовый
   if (['автобус', 'микроавтобус'].includes(t)) return '#8b5cf6'
-  // Спецтехника — красный
   if (['спецтехника', 'экскаватор', 'бульдозер', 'кран', 'погрузчик', 'самосвал', 'автовышка', 'ямобур'].includes(t)) return '#ef4444'
-  // Сельхоз — зелёный
   if (['сельхозтехника', 'трактор', 'комбайн'].includes(t)) return '#22c55e'
-  // Строительная — серый
   if (['строительная техника', 'бетономешалка', 'каток'].includes(t)) return '#6b7280'
-  // Водный — голубой
   if (['водный транспорт', 'катер', 'баржа'].includes(t)) return '#06b6d4'
   return '#3b82f6'
 }
 
-// Color scale for speed: green -> yellow -> orange -> red
 function speedToColor(speed: number): string {
-  if (speed <= 0) return '#9ca3af'     // grey for stationary
-  if (speed <= 20) return '#22c55e'    // green
-  if (speed <= 40) return '#84cc16'    // lime
-  if (speed <= 60) return '#eab308'    // yellow
-  if (speed <= 80) return '#f97316'    // orange
-  if (speed <= 100) return '#ef4444'   // red
-  return '#dc2626'                      // dark red
+  if (speed <= 0) return '#9ca3af'
+  if (speed <= 20) return '#22c55e'
+  if (speed <= 40) return '#84cc16'
+  if (speed <= 60) return '#eab308'
+  if (speed <= 80) return '#f97316'
+  if (speed <= 100) return '#ef4444'
+  return '#dc2626'
 }
 
-export default function TrackerMap({ trackers, trackPoints, trackData, onMarkerClick, onEquipmentClick }: TrackerMapProps) {
+// ─── Build a single vehicle marker icon ─────────────────────────────
+function buildVehicleIcon(tracker: TrackerInfo): L.DivIcon {
+  const typeColor = getEquipmentColor(tracker.equipmentType)
+  const statusColor = tracker.isActive ? '#22c55e' : '#ef4444'
+  const typeIcon = getEquipmentIcon(tracker.equipmentType)
+  const regNum = tracker.registrationNum || ''
+
+  return L.divIcon({
+    className: 'custom-tracker-icon',
+    html: `
+      <div style="position: relative; display: flex; flex-direction: column; align-items: center;">
+        <div style="
+          position: relative;
+          width: 40px; height: 40px;
+          background: ${typeColor};
+          border-radius: 50%;
+          border: 3px solid white;
+          box-shadow: 0 2px 8px rgba(0,0,0,0.4);
+          display: flex; align-items: center; justify-content: center;
+          font-size: 18px;
+          transition: background 0.3s;
+        ">
+          ${typeIcon}
+          <div style="
+            position: absolute; bottom: -2px; right: -2px;
+            width: 14px; height: 14px;
+            background: ${statusColor};
+            border-radius: 50%;
+            border: 2px solid white;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+            transition: background 0.3s;
+          "></div>
+          <div style="
+            position: absolute; top: -4px; left: 50%;
+            transform: translateX(-50%) rotate(${tracker.lastCourse || 0}deg);
+            width: 0; height: 0;
+            border-left: 4px solid transparent;
+            border-right: 4px solid transparent;
+            border-bottom: 7px solid white;
+            filter: drop-shadow(0 1px 1px rgba(0,0,0,0.3));
+            transition: transform 0.3s;
+          "></div>
+        </div>
+        ${regNum ? `<div style="
+          margin-top: 2px;
+          background: rgba(0,0,0,0.75);
+          color: white;
+          font-size: 10px;
+          font-weight: 600;
+          padding: 1px 6px;
+          border-radius: 3px;
+          white-space: nowrap;
+          text-shadow: 0 1px 2px rgba(0,0,0,0.5);
+          letter-spacing: 0.5px;
+        ">${regNum}</div>` : ''}
+      </div>
+    `,
+    iconSize: [40, regNum ? 56 : 40],
+    iconAnchor: [20, 20],
+    popupAnchor: [0, -22],
+  })
+}
+
+// ─── Build popup HTML for a vehicle marker ──────────────────────────
+function buildVehiclePopup(tracker: TrackerInfo): string {
+  const typeColor = getEquipmentColor(tracker.equipmentType)
+  const typeIcon = getEquipmentIcon(tracker.equipmentType)
+  const regNum = tracker.registrationNum || ''
+
+  const sensorsWithValues = (tracker.sensorData || []).filter(s => s.value != null || (s.stringValue != null && s.stringValue !== ''))
+  let sensorHtml = ''
+  if (sensorsWithValues.length > 0) {
+    sensorHtml = `
+      <div style="margin-top: 8px; border-top: 1px solid #e5e7eb; padding-top: 6px;">
+        <div style="font-size: 10px; font-weight: 600; color: #6b7280; margin-bottom: 4px; text-transform: uppercase;">ДАТЧИКИ</div>
+        ${sensorsWithValues.map(s => `
+          <div style="display: flex; align-items: center; gap: 6px; font-size: 11px; padding: 2px 0;">
+            <span style="font-size: 12px;">${getSensorIcon(s.sensorType)}</span>
+            <span style="color: #6b7280; min-width: 70px;">${s.sensorName || getSensorLabel(s.sensorType)}</span>
+            <strong>${formatSensorValue(s)}</strong>
+          </div>
+        `).join('')}
+      </div>
+    `
+  }
+
+  return `
+    <div style="min-width: 240px; max-width: 320px; font-family: system-ui, -apple-system, sans-serif; font-size: 12px; line-height: 1.5;">
+      <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 6px;">
+        <div style="width: 28px; height: 28px; border-radius: 6px; background: ${typeColor}20; display: flex; align-items: center; justify-content: center;">
+          <span style="font-size: 14px;">${typeIcon}</span>
+        </div>
+        <div>
+          <div style="font-weight: 700; font-size: 13px; ${tracker.equipmentId ? 'color: #3b82f6; cursor: pointer; text-decoration: underline;' : ''}" ${tracker.equipmentId ? `data-equipment-id="${tracker.equipmentId}"` : ''}>${tracker.equipmentName || tracker.trackerName || 'Трекер'}</div>
+          ${regNum ? `<div style="color: #6b7280; font-size: 11px;">${regNum}</div>` : ''}
+        </div>
+        <div style="margin-left: auto;">
+          <span style="display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 10px; font-weight: 600; background: ${tracker.isActive ? '#dcfce7' : '#fee2e2'}; color: ${tracker.isActive ? '#166534' : '#991b1b'};">${tracker.isActive ? 'Онлайн' : 'Оффлайн'}</span>
+        </div>
+      </div>
+      <div style="border-top: 1px solid #e5e7eb; padding-top: 6px;">
+        ${tracker.lastSpeed != null ? `<div style="display: flex; justify-content: space-between; padding: 2px 0;"><span style="color: #6b7280;">🏃 Скорость</span><strong>${tracker.lastSpeed} км/ч</strong></div>` : ''}
+        ${tracker.lastCourse != null ? `<div style="display: flex; justify-content: space-between; padding: 2px 0;"><span style="color: #6b7280;">🧭 Курс</span><strong>${tracker.lastCourse}°</strong></div>` : ''}
+        ${tracker.lastAltitude != null ? `<div style="display: flex; justify-content: space-between; padding: 2px 0;"><span style="color: #6b7280;">⛰️ Высота</span><strong>${tracker.lastAltitude} м</strong></div>` : ''}
+        ${tracker.lastIgnition != null ? `<div style="display: flex; justify-content: space-between; padding: 2px 0;"><span style="color: #6b7280;">🔑 Зажигание</span><strong style="color: ${tracker.lastIgnition ? '#166534' : '#991b1b'};">${tracker.lastIgnition ? 'Вкл' : 'Выкл'}</strong></div>` : ''}
+        ${tracker.lastFuelLevel != null ? `<div style="display: flex; justify-content: space-between; padding: 2px 0;"><span style="color: #6b7280;">⛽ Топливо</span><strong>${tracker.lastFuelLevel} л</strong></div>` : ''}
+        ${tracker.lastMileage != null ? `<div style="display: flex; justify-content: space-between; padding: 2px 0;"><span style="color: #6b7280;">📊 Пробег</span><strong>${tracker.lastMileage} км</strong></div>` : ''}
+        ${tracker.lastEngineTemp != null ? `<div style="display: flex; justify-content: space-between; padding: 2px 0;"><span style="color: #6b7280;">🌡️ Темп. двигателя</span><strong>${tracker.lastEngineTemp}°C</strong></div>` : ''}
+        ${tracker.lastAddress ? `<div style="padding: 4px 0 0;"><span style="color: #6b7280;">📍</span> ${tracker.lastAddress}</div>` : ''}
+        ${tracker.lastSeenAt ? `<div style="color: #9ca3af; font-size: 10px; margin-top: 4px;">⏱ Последняя связь: ${formatDateTime(tracker.lastSeenAt)}</div>` : ''}
+        ${tracker.lastPositionAt ? `<div style="color: #9ca3af; font-size: 10px;">📍 Последняя позиция: ${formatDateTime(tracker.lastPositionAt)}</div>` : ''}
+      </div>
+      ${sensorHtml}
+    </div>
+  `
+}
+
+// ─── Build tooltip HTML ─────────────────────────────────────────────
+function buildVehicleTooltip(tracker: TrackerInfo): string {
+  const regNum = tracker.registrationNum || ''
+  return `<div style="font-family:system-ui;font-size:11px;"><strong>${tracker.equipmentName || tracker.trackerName || 'Трекер'}</strong>${regNum ? `<br/><span style="color:#6b7280">${regNum}</span>` : ''}</div>`
+}
+
+export default function TrackerMap({ trackers, trackPoints, trackData, onMarkerClick, onEquipmentClick, autoRefreshMs, onRefresh }: TrackerMapProps) {
   const mapRef = useRef<HTMLDivElement>(null)
   const mapInstanceRef = useRef<L.Map | null>(null)
   const legendRef = useRef<L.Control | null>(null)
+  // Layer groups for efficient updates
+  const markersLayerRef = useRef<L.LayerGroup | null>(null)
+  const tracksLayerRef = useRef<L.LayerGroup | null>(null)
+  // Track marker objects by tracker ID for incremental updates
+  const markerByIdRef = useRef<Map<string, L.Marker>>(new Map())
+  // Auto-refresh timer ref
+  const refreshTimerRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
+  // ─── Initialize map once ──────────────────────────────────────
   useEffect(() => {
-    if (!mapRef.current) return
+    if (!mapRef.current || mapInstanceRef.current) return
 
-    // Initialize map
-    if (!mapInstanceRef.current) {
-      mapInstanceRef.current = L.map(mapRef.current, {
-        center: [55.7558, 37.6173], // Moscow default
-        zoom: 10,
-        zoomControl: true,
-        attributionControl: false,
-      })
+    const map = L.map(mapRef.current, {
+      center: [55.7558, 37.6173],
+      zoom: 10,
+      zoomControl: true,
+      attributionControl: false,
+    })
 
-      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-        maxZoom: 19,
-      }).addTo(mapInstanceRef.current)
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      maxZoom: 19,
+    }).addTo(map)
+
+    // Create layer groups for markers and tracks
+    markersLayerRef.current = L.layerGroup().addTo(map)
+    tracksLayerRef.current = L.layerGroup().addTo(map)
+
+    mapInstanceRef.current = map
+
+    // Invalidate size after initial render
+    setTimeout(() => map.invalidateSize(), 200)
+
+    return () => {
+      if (refreshTimerRef.current) clearInterval(refreshTimerRef.current)
+      map.remove()
+      mapInstanceRef.current = null
+      markersLayerRef.current = null
+      tracksLayerRef.current = null
+    }
+  }, [])
+
+  // ─── Auto-refresh ─────────────────────────────────────────────
+  useEffect(() => {
+    if (refreshTimerRef.current) {
+      clearInterval(refreshTimerRef.current)
+      refreshTimerRef.current = null
+    }
+    if (autoRefreshMs && autoRefreshMs > 0 && onRefresh) {
+      refreshTimerRef.current = setInterval(() => {
+        onRefresh()
+      }, autoRefreshMs)
+    }
+    return () => {
+      if (refreshTimerRef.current) clearInterval(refreshTimerRef.current)
+    }
+  }, [autoRefreshMs, onRefresh])
+
+  // ─── Update vehicle markers without destroying map ────────────
+  const updateMarkers = useCallback(() => {
+    const map = mapInstanceRef.current
+    const markersLayer = markersLayerRef.current
+    if (!map || !markersLayer) return
+
+    const existingMarkers = markerByIdRef.current
+    const newTrackerIds = new Set(trackers.map(t => t.id))
+
+    // Remove markers for trackers that no longer exist
+    for (const [id, marker] of existingMarkers) {
+      if (!newTrackerIds.has(id)) {
+        markersLayer.removeLayer(marker)
+        existingMarkers.delete(id)
+      }
     }
 
-    const map = mapInstanceRef.current
+    // Update or create markers
+    for (const tracker of trackers) {
+      if (tracker.lastLatitude == null || tracker.lastLongitude == null) continue
 
-    // Clear existing layers (except tile layer)
-    map.eachLayer(layer => {
-      if (!(layer instanceof L.TileLayer)) {
-        map.removeLayer(layer)
+      const existing = existingMarkers.get(tracker.id)
+
+      if (existing) {
+        // Update existing marker: move position, update icon & popup
+        try {
+          existing.setLatLng([tracker.lastLatitude, tracker.lastLongitude])
+          existing.setIcon(buildVehicleIcon(tracker))
+          existing.setPopupContent(buildVehiclePopup(tracker))
+          existing.setTooltipContent(buildVehicleTooltip(tracker))
+        } catch {
+          // If update fails, recreate
+          markersLayer.removeLayer(existing)
+          existingMarkers.delete(tracker.id)
+          const newMarker = createMarker(tracker, markersLayer)
+          if (newMarker) existingMarkers.set(tracker.id, newMarker)
+        }
+      } else {
+        // Create new marker
+        const newMarker = createMarker(tracker, markersLayer)
+        if (newMarker) existingMarkers.set(tracker.id, newMarker)
       }
-    })
+    }
+
+    // Fit bounds to markers if there are any
+    const allMarkers = Array.from(existingMarkers.values())
+    if (allMarkers.length > 0) {
+      try {
+        const group = L.featureGroup(allMarkers)
+        map.fitBounds(group.getBounds(), { padding: [30, 30], maxZoom: 14 })
+      } catch { /* skip if bounds invalid */ }
+    }
+  }, [trackers, onEquipmentClick])
+
+  // Create a new marker and add to layer group
+  function createMarker(tracker: TrackerInfo, layer: L.LayerGroup): L.Marker | null {
+    if (tracker.lastLatitude == null || tracker.lastLongitude == null) return null
+    try {
+      const marker = L.marker([tracker.lastLatitude, tracker.lastLongitude], {
+        icon: buildVehicleIcon(tracker),
+      })
+        .bindPopup(buildVehiclePopup(tracker), { className: 'tracker-popup', maxWidth: 340 })
+        .bindTooltip(buildVehicleTooltip(tracker), { direction: 'top', offset: [0, -24], className: 'tracker-tooltip' })
+
+      layer.addLayer(marker)
+      return marker
+    } catch {
+      return null
+    }
+  }
+
+  // ─── Update markers effect ────────────────────────────────────
+  useEffect(() => {
+    updateMarkers()
+  }, [updateMarkers])
+
+  // ─── Update tracks without destroying map ─────────────────────
+  useEffect(() => {
+    const map = mapInstanceRef.current
+    const tracksLayer = tracksLayerRef.current
+    if (!map || !tracksLayer) return
+
+    // Clear all existing track layers
+    tracksLayer.clearLayers()
+
+    // Remove legend
+    if (legendRef.current) {
+      try { map.removeControl(legendRef.current) } catch { /* ignore */ }
+      legendRef.current = null
+    }
 
     const allBounds: L.LatLngBounds[] = []
 
-    // ── RICH TRACK RENDERING ──────────────────────────────────────
+    // ── RICH TRACK RENDERING ──
     if (trackData && trackData.trips && trackData.trips.length > 0) {
-      // Render each trip segment with speed-colored segments
       for (const trip of trackData.trips) {
-        // Filter out points without valid coordinates
         const validPoints = (trip.points || []).filter((p: TripPoint) => p.lat != null && p.lng != null && isFinite(p.lat) && isFinite(p.lng))
         if (validPoints.length < 2) continue
 
@@ -278,178 +497,99 @@ export default function TrackerMap({ trackers, trackPoints, trackData, onMarkerC
             L.polyline(
               [[prev.lat, prev.lng], [curr.lat, curr.lng]],
               { color, weight: 5, opacity: 0.85, lineCap: 'round', lineJoin: 'round' }
-            ).addTo(map)
+            ).addTo(tracksLayer)
           } catch { /* skip invalid segment */ }
         }
 
-        // Trip start marker (green circle with "A")
+        // Trip start marker (green "A")
         const firstPoint = validPoints[0]
         const startIcon = L.divIcon({
           className: 'track-marker',
-          html: `<div style="
-            width: 30px; height: 30px;
-            background: #22c55e;
-            border-radius: 50%;
-            border: 3px solid white;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.4);
-            display: flex; align-items: center; justify-content: center;
-            color: white; font-size: 13px; font-weight: bold;
-          ">A</div>`,
-          iconSize: [30, 30],
-          iconAnchor: [15, 15],
+          html: `<div style="width:30px;height:30px;background:#22c55e;border-radius:50%;border:3px solid white;box-shadow:0 2px 8px rgba(0,0,0,0.4);display:flex;align-items:center;justify-content:center;color:white;font-size:13px;font-weight:bold;">A</div>`,
+          iconSize: [30, 30], iconAnchor: [15, 15],
         })
         try {
           L.marker([firstPoint.lat, firstPoint.lng], { icon: startIcon })
-            .addTo(map)
-            .bindPopup(`
-              <div style="font-family: system-ui; font-size: 12px; min-width: 180px;">
-                <div style="font-weight: 700; color: #22c55e; margin-bottom: 4px;">🟢 Начало поездки</div>
-                <div>⏱ ${formatTime(trip.startDate)}</div>
-                <div>📅 ${formatDateTime(trip.startDate)}</div>
-                ${trip.distance ? `<div>📏 ${trip.distance.toFixed(1)} км</div>` : ''}
-              </div>
-            `, { className: 'track-popup' })
-        } catch { /* skip invalid marker */ }
+            .addTo(tracksLayer)
+            .bindPopup(`<div style="font-family:system-ui;font-size:12px;min-width:180px;"><div style="font-weight:700;color:#22c55e;margin-bottom:4px;">🟢 Начало поездки</div><div>⏱ ${formatTime(trip.startDate)}</div><div>📅 ${formatDateTime(trip.startDate)}</div>${trip.distance ? `<div>📏 ${trip.distance.toFixed(1)} км</div>` : ''}</div>`, { className: 'track-popup' })
+        } catch { /* skip */ }
 
-        // Trip end marker (red circle with "B")
+        // Trip end marker (red "B")
         const lastPoint = validPoints[validPoints.length - 1]
         const endIcon = L.divIcon({
           className: 'track-marker',
-          html: `<div style="
-            width: 30px; height: 30px;
-            background: #ef4444;
-            border-radius: 50%;
-            border: 3px solid white;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.4);
-            display: flex; align-items: center; justify-content: center;
-            color: white; font-size: 13px; font-weight: bold;
-          ">B</div>`,
-          iconSize: [30, 30],
-          iconAnchor: [15, 15],
+          html: `<div style="width:30px;height:30px;background:#ef4444;border-radius:50%;border:3px solid white;box-shadow:0 2px 8px rgba(0,0,0,0.4);display:flex;align-items:center;justify-content:center;color:white;font-size:13px;font-weight:bold;">B</div>`,
+          iconSize: [30, 30], iconAnchor: [15, 15],
         })
         try {
           L.marker([lastPoint.lat, lastPoint.lng], { icon: endIcon })
-            .addTo(map)
-            .bindPopup(`
-              <div style="font-family: system-ui; font-size: 12px; min-width: 180px;">
-                <div style="font-weight: 700; color: #ef4444; margin-bottom: 4px;">🔴 Конец поездки</div>
-                <div>⏱ ${formatTime(trip.endDate)}</div>
-                <div>📅 ${formatDateTime(trip.endDate)}</div>
-                <div>🏁 Скорость: ${lastPoint.speed} км/ч</div>
-                ${trip.distance ? `<div>📏 ${trip.distance.toFixed(1)} км</div>` : ''}
-              </div>
-            `, { className: 'track-popup' })
-        } catch { /* skip invalid marker */ }
+            .addTo(tracksLayer)
+            .bindPopup(`<div style="font-family:system-ui;font-size:12px;min-width:180px;"><div style="font-weight:700;color:#ef4444;margin-bottom:4px;">🔴 Конец поездки</div><div>⏱ ${formatTime(trip.endDate)}</div><div>📅 ${formatDateTime(trip.endDate)}</div><div>🏁 Скорость: ${lastPoint.speed} км/ч</div>${trip.distance ? `<div>📏 ${trip.distance.toFixed(1)} км</div>` : ''}</div>`, { className: 'track-popup' })
+        } catch { /* skip */ }
 
-        // Add direction arrows along the track every N points
+        // Direction arrows
         const arrowInterval = Math.max(1, Math.floor(validPoints.length / 8))
         for (let i = arrowInterval; i < validPoints.length - 1; i += arrowInterval) {
           const p = validPoints[i]
           const next = validPoints[Math.min(i + 1, validPoints.length - 1)]
           const angle = Math.atan2(next.lng - p.lng, next.lat - p.lat) * (180 / Math.PI)
-
           const arrowIcon = L.divIcon({
             className: 'track-arrow',
-            html: `<div style="
-              width: 16px; height: 16px;
-              display: flex; align-items: center; justify-content: center;
-              transform: rotate(${angle}deg);
-              color: #3b82f6; font-size: 12px; opacity: 0.7;
-            ">▶</div>`,
-            iconSize: [16, 16],
-            iconAnchor: [8, 8],
+            html: `<div style="width:16px;height:16px;display:flex;align-items:center;justify-content:center;transform:rotate(${angle}deg);color:#3b82f6;font-size:12px;opacity:0.7;">▶</div>`,
+            iconSize: [16, 16], iconAnchor: [8, 8],
           })
-          try {
-            L.marker([p.lat, p.lng], { icon: arrowIcon, interactive: false }).addTo(map)
-          } catch { /* skip invalid marker */ }
+          try { L.marker([p.lat, p.lng], { icon: arrowIcon, interactive: false }).addTo(tracksLayer) } catch { /* skip */ }
         }
 
-        // Collect bounds
         try {
           const tripBounds = L.latLngBounds(validPoints.map(p => [p.lat, p.lng] as [number, number]))
           allBounds.push(tripBounds)
-        } catch { /* skip invalid bounds */ }
+        } catch { /* skip */ }
       }
 
-      // Render parkings (blue P markers)
+      // Render parkings
       if (trackData.parkings && trackData.parkings.length > 0) {
         for (const parking of trackData.parkings) {
           if (parking.lat == null || parking.lng == null || !isFinite(parking.lat) || !isFinite(parking.lng)) continue
           const parkingIcon = L.divIcon({
             className: 'parking-marker',
-            html: `<div style="
-              width: 28px; height: 28px;
-              background: #3b82f6;
-              border-radius: 6px;
-              border: 2px solid white;
-              box-shadow: 0 2px 6px rgba(0,0,0,0.3);
-              display: flex; align-items: center; justify-content: center;
-              color: white; font-size: 13px; font-weight: bold;
-            ">P</div>`,
-            iconSize: [28, 28],
-            iconAnchor: [14, 14],
+            html: `<div style="width:28px;height:28px;background:#3b82f6;border-radius:6px;border:2px solid white;box-shadow:0 2px 6px rgba(0,0,0,0.3);display:flex;align-items:center;justify-content:center;color:white;font-size:13px;font-weight:bold;">P</div>`,
+            iconSize: [28, 28], iconAnchor: [14, 14],
           })
           try {
             L.marker([parking.lat, parking.lng], { icon: parkingIcon })
-              .addTo(map)
-              .bindPopup(`
-                <div style="font-family: system-ui; font-size: 12px; min-width: 180px;">
-                  <div style="font-weight: 700; color: #3b82f6; margin-bottom: 4px;">🅿️ Стоянка</div>
-                  <div>⏱ Длительность: ${formatDuration(parking.duration)}</div>
-                  <div>📅 С: ${formatDateTime(parking.startDate)}</div>
-                  <div>📅 По: ${formatDateTime(parking.endDate)}</div>
-                  ${parking.ignitionTime != null && parking.ignitionTime > 0 ? `<div>🔑 Моточасы: ${formatDuration(parking.ignitionTime)}</div>` : ''}
-                </div>
-              `, { className: 'track-popup' })
+              .addTo(tracksLayer)
+              .bindPopup(`<div style="font-family:system-ui;font-size:12px;min-width:180px;"><div style="font-weight:700;color:#3b82f6;margin-bottom:4px;">🅿️ Стоянка</div><div>⏱ Длительность: ${formatDuration(parking.duration)}</div><div>📅 С: ${formatDateTime(parking.startDate)}</div><div>📅 По: ${formatDateTime(parking.endDate)}</div>${parking.ignitionTime != null && parking.ignitionTime > 0 ? `<div>🔑 Моточасы: ${formatDuration(parking.ignitionTime)}</div>` : ''}</div>`, { className: 'track-popup' })
             allBounds.push(L.latLngBounds([[parking.lat, parking.lng], [parking.lat, parking.lng]]))
-          } catch { /* skip invalid parking */ }
+          } catch { /* skip */ }
         }
       }
 
-      // Render stops (orange markers)
+      // Render stops
       if (trackData.stops && trackData.stops.length > 0) {
         for (const stop of trackData.stops) {
           if (stop.lat == null || stop.lng == null || !isFinite(stop.lat) || !isFinite(stop.lng)) continue
           const stopIcon = L.divIcon({
             className: 'stop-marker',
-            html: `<div style="
-              width: 22px; height: 22px;
-              background: #f97316;
-              border-radius: 50%;
-              border: 2px solid white;
-              box-shadow: 0 2px 6px rgba(0,0,0,0.3);
-              display: flex; align-items: center; justify-content: center;
-              color: white; font-size: 10px; font-weight: bold;
-            ">⏸</div>`,
-            iconSize: [22, 22],
-            iconAnchor: [11, 11],
+            html: `<div style="width:22px;height:22px;background:#f97316;border-radius:50%;border:2px solid white;box-shadow:0 2px 6px rgba(0,0,0,0.3);display:flex;align-items:center;justify-content:center;color:white;font-size:10px;font-weight:bold;">⏸</div>`,
+            iconSize: [22, 22], iconAnchor: [11, 11],
           })
           try {
             L.marker([stop.lat, stop.lng], { icon: stopIcon })
-              .addTo(map)
-              .bindPopup(`
-                <div style="font-family: system-ui; font-size: 12px; min-width: 180px;">
-                  <div style="font-weight: 700; color: #f97316; margin-bottom: 4px;">⏸ Остановка</div>
-                  <div>⏱ Длительность: ${formatDuration(stop.duration)}</div>
-                  <div>📅 С: ${formatDateTime(stop.startDate)}</div>
-                  <div>📅 По: ${formatDateTime(stop.endDate)}</div>
-                </div>
-              `, { className: 'track-popup' })
+              .addTo(tracksLayer)
+              .bindPopup(`<div style="font-family:system-ui;font-size:12px;min-width:180px;"><div style="font-weight:700;color:#f97316;margin-bottom:4px;">⏸ Остановка</div><div>⏱ Длительность: ${formatDuration(stop.duration)}</div><div>📅 С: ${formatDateTime(stop.startDate)}</div><div>📅 По: ${formatDateTime(stop.endDate)}</div></div>`, { className: 'track-popup' })
             allBounds.push(L.latLngBounds([[stop.lat, stop.lng], [stop.lat, stop.lng]]))
-          } catch { /* skip invalid stop */ }
+          } catch { /* skip */ }
         }
       }
 
-      // Fit bounds to all track data
+      // Fit bounds to track data
       if (allBounds.length > 0) {
         const combined = allBounds.reduce((acc, b) => acc.extend(b), L.latLngBounds(allBounds[0]))
         map.fitBounds(combined, { padding: [40, 40] })
       }
 
-      // Add speed legend to map (remove previous if exists)
-      if (legendRef.current) {
-        map.removeControl(legendRef.current)
-      }
+      // Add speed legend
       const legend = L.control({ position: 'bottomright' })
       legend.onAdd = () => {
         const div = L.DomUtil.create('div', '')
@@ -470,198 +610,31 @@ export default function TrackerMap({ trackers, trackPoints, trackData, onMarkerC
       legendRef.current = legend
 
     } else if (trackPoints && trackPoints.length > 1) {
-      // Remove legend if no rich track data
-      if (legendRef.current && mapInstanceRef.current) {
-        mapInstanceRef.current.removeControl(legendRef.current)
-        legendRef.current = null
-      }
-      // ── SIMPLE TRACK FALLBACK ──────────────────────────────────────
+      // Simple track fallback
       const polyline = L.polyline(
         trackPoints.map(p => [p.lat, p.lng]),
         { color: '#3b82f6', weight: 4, opacity: 0.8 }
-      ).addTo(map)
+      ).addTo(tracksLayer)
       map.fitBounds(polyline.getBounds(), { padding: [30, 30] })
-    } else {
-      // No track data — remove legend if it exists
-      if (legendRef.current && mapInstanceRef.current) {
-        mapInstanceRef.current.removeControl(legendRef.current)
-        legendRef.current = null
-      }
     }
 
-    // ── VEHICLE MARKERS ──────────────────────────────────────────
-    const markers: L.Marker[] = []
-    for (const tracker of trackers) {
-      if (tracker.lastLatitude == null || tracker.lastLongitude == null) continue
-
-      const typeColor = getEquipmentColor(tracker.equipmentType)
-      const statusColor = tracker.isActive ? '#22c55e' : '#ef4444'
-      const typeIcon = getEquipmentIcon(tracker.equipmentType)
-      const regNum = tracker.registrationNum || ''
-
-      // Create custom icon with equipment type emoji + direction arrow + registration number
-      const icon = L.divIcon({
-        className: 'custom-tracker-icon',
-        html: `
-          <div style="position: relative; display: flex; flex-direction: column; align-items: center;">
-            <div style="
-              position: relative;
-              width: 40px; height: 40px;
-              background: ${typeColor};
-              border-radius: 50%;
-              border: 3px solid white;
-              box-shadow: 0 2px 8px rgba(0,0,0,0.4);
-              display: flex; align-items: center; justify-content: center;
-              font-size: 18px;
-            ">
-              ${typeIcon}
-              <div style="
-                position: absolute; bottom: -2px; right: -2px;
-                width: 14px; height: 14px;
-                background: ${statusColor};
-                border-radius: 50%;
-                border: 2px solid white;
-                box-shadow: 0 1px 3px rgba(0,0,0,0.3);
-              "></div>
-              <div style="
-                position: absolute; top: -4px; left: 50%;
-                transform: translateX(-50%) rotate(${tracker.lastCourse || 0}deg);
-                width: 0; height: 0;
-                border-left: 4px solid transparent;
-                border-right: 4px solid transparent;
-                border-bottom: 7px solid white;
-                filter: drop-shadow(0 1px 1px rgba(0,0,0,0.3));
-              "></div>
-            </div>
-            ${regNum ? `<div style="
-              margin-top: 2px;
-              background: rgba(0,0,0,0.75);
-              color: white;
-              font-size: 10px;
-              font-weight: 600;
-              padding: 1px 6px;
-              border-radius: 3px;
-              white-space: nowrap;
-              text-shadow: 0 1px 2px rgba(0,0,0,0.5);
-              letter-spacing: 0.5px;
-            ">${regNum}</div>` : ''}
-          </div>
-        `,
-        iconSize: [40, regNum ? 56 : 40],
-        iconAnchor: [20, 20],
-        popupAnchor: [0, -22],
-      })
-
-      // Build sensor data HTML — only show sensors with actual values
-      const sensorsWithValues = (tracker.sensorData || []).filter(s => s.value != null || (s.stringValue != null && s.stringValue !== ''))
-      let sensorHtml = ''
-      if (sensorsWithValues.length > 0) {
-        sensorHtml = `
-          <div style="margin-top: 8px; border-top: 1px solid #e5e7eb; padding-top: 6px;">
-            <div style="font-size: 10px; font-weight: 600; color: #6b7280; margin-bottom: 4px; text-transform: uppercase;">ДАТЧИКИ</div>
-            ${sensorsWithValues.map(s => `
-              <div style="display: flex; align-items: center; gap: 6px; font-size: 11px; padding: 2px 0;">
-                <span style="font-size: 12px;">${getSensorIcon(s.sensorType)}</span>
-                <span style="color: #6b7280; min-width: 70px;">${s.sensorName || getSensorLabel(s.sensorType)}</span>
-                <strong>${formatSensorValue(s)}</strong>
-              </div>
-            `).join('')}
-          </div>
-        `
-      }
-
-      // Build full tracker info HTML
-      const popupHtml = `
-        <div style="min-width: 240px; max-width: 320px; font-family: system-ui, -apple-system, sans-serif; font-size: 12px; line-height: 1.5;">
-          <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 6px;">
-            <div style="
-              width: 28px; height: 28px; border-radius: 6px;
-              background: ${typeColor}20; display: flex; align-items: center; justify-content: center;
-            ">
-              <span style="font-size: 14px;">${typeIcon}</span>
-            </div>
-            <div>
-              <div style="font-weight: 700; font-size: 13px; ${tracker.equipmentId ? 'color: #3b82f6; cursor: pointer; text-decoration: underline;' : ''}" ${tracker.equipmentId ? `data-equipment-id="${tracker.equipmentId}"` : ''}>${tracker.equipmentName || tracker.trackerName || 'Трекер'}</div>
-              ${regNum ? `<div style="color: #6b7280; font-size: 11px;">${regNum}</div>` : ''}
-            </div>
-            <div style="margin-left: auto;">
-              <span style="
-                display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 10px; font-weight: 600;
-                background: ${tracker.isActive ? '#dcfce7' : '#fee2e2'}; color: ${tracker.isActive ? '#166534' : '#991b1b'};
-              ">${tracker.isActive ? 'Онлайн' : 'Оффлайн'}</span>
-            </div>
-          </div>
-
-          <div style="border-top: 1px solid #e5e7eb; padding-top: 6px;">
-            ${tracker.lastSpeed != null ? `<div style="display: flex; justify-content: space-between; padding: 2px 0;"><span style="color: #6b7280;">🏃 Скорость</span><strong>${tracker.lastSpeed} км/ч</strong></div>` : ''}
-            ${tracker.lastCourse != null ? `<div style="display: flex; justify-content: space-between; padding: 2px 0;"><span style="color: #6b7280;">🧭 Курс</span><strong>${tracker.lastCourse}°</strong></div>` : ''}
-            ${tracker.lastAltitude != null ? `<div style="display: flex; justify-content: space-between; padding: 2px 0;"><span style="color: #6b7280;">⛰️ Высота</span><strong>${tracker.lastAltitude} м</strong></div>` : ''}
-            ${tracker.lastIgnition != null ? `<div style="display: flex; justify-content: space-between; padding: 2px 0;"><span style="color: #6b7280;">🔑 Зажигание</span><strong style="color: ${tracker.lastIgnition ? '#166534' : '#991b1b'};">${tracker.lastIgnition ? 'Вкл' : 'Выкл'}</strong></div>` : ''}
-            ${tracker.lastFuelLevel != null ? `<div style="display: flex; justify-content: space-between; padding: 2px 0;"><span style="color: #6b7280;">⛽ Топливо</span><strong>${tracker.lastFuelLevel} л</strong></div>` : ''}
-            ${tracker.lastMileage != null ? `<div style="display: flex; justify-content: space-between; padding: 2px 0;"><span style="color: #6b7280;">📊 Пробег</span><strong>${tracker.lastMileage} км</strong></div>` : ''}
-            ${tracker.lastEngineTemp != null ? `<div style="display: flex; justify-content: space-between; padding: 2px 0;"><span style="color: #6b7280;">🌡️ Темп. двигателя</span><strong>${tracker.lastEngineTemp}°C</strong></div>` : ''}
-            ${tracker.lastAddress ? `<div style="padding: 4px 0 0;"><span style="color: #6b7280;">📍</span> ${tracker.lastAddress}</div>` : ''}
-            ${tracker.lastSeenAt ? `<div style="color: #9ca3af; font-size: 10px; margin-top: 4px;">⏱ Последняя связь: ${formatDateTime(tracker.lastSeenAt)}</div>` : ''}
-            ${tracker.lastPositionAt ? `<div style="color: #9ca3af; font-size: 10px;">📍 Последняя позиция: ${formatDateTime(tracker.lastPositionAt)}</div>` : ''}
-          </div>
-
-          ${sensorHtml}
-
-
-        </div>
-      `
-
-      const marker = L.marker([tracker.lastLatitude, tracker.lastLongitude], { icon })
-        .addTo(map)
-        .bindPopup(popupHtml, { className: 'tracker-popup', maxWidth: 340 })
-
-      // Show tooltip with equipment name on hover
-      marker.bindTooltip(
-        `<div style="font-family:system-ui;font-size:11px;"><strong>${tracker.equipmentName || tracker.trackerName || 'Трекер'}</strong>${regNum ? `<br/><span style="color:#6b7280">${regNum}</span>` : ''}</div>`,
-        { direction: 'top', offset: [0, -24], className: 'tracker-tooltip' }
-      )
-
-      markers.push(marker)
-    }
-
-    // Handle "Open equipment card" button clicks in popups via event delegation
+    // Handle equipment click via event delegation
     if (onEquipmentClick) {
-      const handlePopupClick = (e: Event) => {
+      const handleClick = (e: Event) => {
         const target = e.target as HTMLElement
         const btn = target.closest('[data-equipment-id]') as HTMLElement | null
         if (btn) {
           const equipmentId = btn.getAttribute('data-equipment-id')
-          if (equipmentId) {
-            onEquipmentClick(equipmentId)
-          }
+          if (equipmentId) onEquipmentClick(equipmentId)
         }
       }
-      map.getContainer().addEventListener('click', handlePopupClick)
-    }
-
-    // Fit bounds to markers if no track data
-    if (markers.length > 0 && allBounds.length === 0 && (!trackPoints || trackPoints.length <= 1)) {
-      const group = L.featureGroup(markers)
-      map.fitBounds(group.getBounds(), { padding: [30, 30] })
+      map.getContainer().addEventListener('click', handleClick)
     }
 
     // Invalidate size after render
     setTimeout(() => map.invalidateSize(), 100)
 
-    return () => {
-      // Cleanup handled by re-running effect
-    }
-  }, [trackers, trackPoints, trackData, onMarkerClick])
-
-  // Cleanup on unmount
-  useEffect(() => {
-    return () => {
-      if (mapInstanceRef.current) {
-        mapInstanceRef.current.remove()
-        mapInstanceRef.current = null
-      }
-    }
-  }, [])
+  }, [trackData, trackPoints, onEquipmentClick])
 
   return <div ref={mapRef} className="w-full h-full" />
 }
