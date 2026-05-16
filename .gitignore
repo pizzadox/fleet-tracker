@@ -30,12 +30,11 @@ yarn-debug.log*
 yarn-error.log*
 .pnpm-debug.log*
 
-# env files (can opt-in for committing if needed)
+# env files
 .env*
 
 # vercel
 .vercel
-
 
 # typescript
 *.tsbuildinfo
@@ -43,12 +42,60 @@ next-env.d.ts
 local-*
 .claude
 .z-ai-config
+
+# logs
 *.log
 dev.log
 dev.out.log
-test
-prompt
-
 server.log
+
 # Skills directory
 /skills/
+
+# Database (contains live data)
+/db/
+
+# Uploads (user-uploaded files)
+/public/uploads/
+
+# Download (generated files)
+/download/
+
+# Upload temp
+/upload/
+
+# Agent context
+/agent-ctx/
+
+# Worklog
+worklog.md
+
+# Server scripts (local runtime)
+launch-server.py
+server-ctl.sh
+persist-server.sh
+immortal-server.sh
+keep-alive.sh
+debug-server.sh
+start-server.sh
+start-prod.sh
+start-dev.sh
+start-pm2.sh
+run.sh
+run-dev.sh
+seed-demo.sh
+seed-equip.sh
+server-launcher.js
+persistent-launcher.js
+ecosystem.config.js
+Caddyfile
+
+# Examples
+/examples/
+
+# Prisma migration lock
+prisma/migrations/migration_lock.toml
+
+# Package lock (optional - uncomment if you want to exclude)
+# package-lock.json
+# bun.lock
