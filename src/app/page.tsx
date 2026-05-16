@@ -3726,13 +3726,13 @@ function TripDetailDialog({ open, onOpenChange, trip, loading, crews, onEdit, on
                                   <tr key={i} className={`border-b last:border-0 ${m.changed ? 'bg-amber-50/50 dark:bg-amber-900/10' : ''}`}>
                                     <td className="py-1 px-1.5 text-muted-foreground">{m.label}</td>
                                     <td className="py-1 px-1.5 text-right font-mono">
-                                      {m.start != null ? (typeof m.start === 'boolean' ? (m.start ? 'Вкл' : 'Выкл') : `${Number(m.start).toFixed(m.unit === 'км' ? 0 : 1)}${m.unit ? ' ' + m.unit : ''}`) : '—'}
+                                      {m.start != null ? (typeof m.start === 'boolean' ? (m.start ? 'Вкл' : 'Выкл') : `${Number(m.start).toFixed(m.unit === 'км' ? 0 : m.unit === '°' ? 6 : 1)}${m.unit ? ' ' + m.unit : ''}`) : '—'}
                                     </td>
                                     <td className="py-1 px-1.5 text-right font-mono">
-                                      {m.end != null ? (typeof m.end === 'boolean' ? (m.end ? 'Вкл' : 'Выкл') : `${Number(m.end).toFixed(m.unit === 'км' ? 0 : 1)}${m.unit ? ' ' + m.unit : ''}`) : '—'}
+                                      {m.end != null ? (typeof m.end === 'boolean' ? (m.end ? 'Вкл' : 'Выкл') : `${Number(m.end).toFixed(m.unit === 'км' ? 0 : m.unit === '°' ? 6 : 1)}${m.unit ? ' ' + m.unit : ''}`) : '—'}
                                     </td>
                                     <td className={`py-1 px-1.5 text-right font-mono font-semibold ${m.changed ? (m.diff != null && m.diff > 0 ? 'text-red-600 dark:text-red-400' : 'text-emerald-600 dark:text-emerald-400') : ''}`}>
-                                      {m.diff != null ? `${m.diff > 0 ? '+' : ''}${m.diff.toFixed(m.unit === 'км' ? 0 : 1)}${m.unit ? ' ' + m.unit : ''}` : '—'}
+                                      {m.diff != null ? `${m.diff > 0 ? '+' : ''}${m.diff.toFixed(m.unit === 'км' ? 0 : m.unit === '°' ? 6 : 1)}${m.unit ? ' ' + m.unit : ''}` : (m.changed ? 'Да' : '—')}
                                     </td>
                                   </tr>
                                 ))}
