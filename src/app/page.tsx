@@ -4788,6 +4788,8 @@ function TripFormDialog({ open, onOpenChange, editData, equipmentId, equipmentLi
   onSaved: () => void;
 }) {
   const [form, setForm] = useState<Record<string, string>>({})
+  const [fetchingStart, setFetchingStart] = useState(false)
+  const [fetchingEnd, setFetchingEnd] = useState(false)
 
   useEffect(() => {
     if (editData) {
@@ -4809,6 +4811,39 @@ function TripFormDialog({ open, onOpenChange, editData, equipmentId, equipmentLi
 
   const f = (key: string) => form[key] || ''
   const setF = (key: string, value: string) => setForm(prev => ({ ...prev, [key]: value }))
+
+  // Fetch snapshot from GLONASS at a specific time
+  const fetchSnapshot = async (type: 'start' | 'end') => {
+    const eqId = f('equipmentId')
+    const dt = type === 'start' ? f('startDate') : f('endDate')
+    if (!eqId) { toast.error('Выберите технику'); return }
+    if (!dt) { toast.error(type === 'start' ? 'Укажите дату начала' : 'Укажите дату окончания'); return }
+
+    if (type === 'start') setFetchingStart(true); else setFetchingEnd(true)
+    try {
+      const res = await fetch(`/api/glonass/snapshot?equipmentId=${eqId}&datetime=${encodeURIComponent(new Date(dt).toISOString())}`)
+      const data = await res.json()
+      if (!res.ok) { toast.error(data.error || 'Ошибка запроса'); return }
+
+      const updates: Record<string, string> = {}
+      if (data.fuel != null) updates[type === 'start' ? 'fuelStart' : 'fuelEnd'] = String(Math.round(data.fuel))
+      if (data.mileage != null) updates[type === 'start' ? 'mileageStart' : 'mileageEnd'] = String(Math.round(data.mileage))
+      if (data.address) updates[type === 'start' ? 'startPoint' : 'endPoint'] = data.address
+
+      if (Object.keys(updates).length > 0) {
+        setForm(prev => ({ ...prev, ...updates }))
+        toast.success(`Данные получены: ${Object.keys(updates).map(k => {
+          if (k.includes('fuel')) return 'топливо'
+          if (k.includes('mileage')) return 'пробег'
+          if (k.includes('Point')) return 'адрес'
+          return k
+        }).join(', ')}`)
+      } else {
+        toast.info('Данные трекера не найдены на указанное время')
+      }
+    } catch { toast.error('Ошибка запроса к ГЛОНАСС') }
+    if (type === 'start') setFetchingStart(false); else setFetchingEnd(false)
+  }
 
   const handleSave = async () => {
     if (!f('equipmentId')) { toast.error('Выберите технику'); return }
@@ -4835,8 +4870,8 @@ function TripFormDialog({ open, onOpenChange, editData, equipmentId, equipmentLi
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div className="sm:col-span-2"><Label className="text-xs">Техника *</Label><Select value={f('equipmentId')} onValueChange={v => setF('equipmentId', v)} disabled={!!editData}><SelectTrigger className="h-9 text-sm"><SelectValue placeholder="Выберите технику" /></SelectTrigger><SelectContent>{equipmentList.map(e => <SelectItem key={e.id} value={e.id}>{e.name} {e.registrationNum ? `(${e.registrationNum})` : ''}</SelectItem>)}</SelectContent></Select></div>
             <div className="sm:col-span-2"><Label className="text-xs">Маршрут *</Label><Input value={f('route')} onChange={e => setF('route', e.target.value)} placeholder="Москва — Санкт-Петербург" autoFocus /></div>
-            <div><Label className="text-xs">Пункт отправления</Label><Input value={f('startPoint')} onChange={e => setF('startPoint', e.target.value)} /></div>
-            <div><Label className="text-xs">Пункт назначения</Label><Input value={f('endPoint')} onChange={e => setF('endPoint', e.target.value)} /></div>
+            <div><Label className="text-xs">Пункт отправления</Label><div className="flex gap-1"><Input value={f('startPoint')} onChange={e => setF('startPoint', e.target.value)} className="flex-1" /><Button type="button" size="sm" variant="outline" className="shrink-0 h-9 px-2 gap-1" onClick={() => fetchSnapshot('start')} disabled={fetchingStart} title="Запросить из ГЛОНАСС на время начала">{fetchingStart ? <Loader2 className="size-3.5 animate-spin" /> : <Navigation className="size-3.5" />}ГЛОНАСС</Button></div></div>
+            <div><Label className="text-xs">Пункт назначения</Label><div className="flex gap-1"><Input value={f('endPoint')} onChange={e => setF('endPoint', e.target.value)} className="flex-1" /><Button type="button" size="sm" variant="outline" className="shrink-0 h-9 px-2 gap-1" onClick={() => fetchSnapshot('end')} disabled={fetchingEnd} title="Запросить из ГЛОНАСС на время окончания">{fetchingEnd ? <Loader2 className="size-3.5 animate-spin" /> : <Navigation className="size-3.5" />}ГЛОНАСС</Button></div></div>
             <div><Label className="text-xs">Экипаж</Label><Select value={f('crewId') || '_none'} onValueChange={v => setF('crewId', v === '_none' ? '' : v)}><SelectTrigger className="h-9 text-sm"><SelectValue placeholder="Без экипажа" /></SelectTrigger><SelectContent><SelectItem value="_none">Без экипажа</SelectItem>{crews.map(c => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}</SelectContent></Select></div>
             <div><Label className="text-xs">Статус</Label><Select value={f('status')} onValueChange={v => setF('status', v)}><SelectTrigger className="h-9 text-sm"><SelectValue /></SelectTrigger><SelectContent>{Object.entries(TRIP_STATUS_MAP).map(([k, v]) => <SelectItem key={k} value={k}>{v.label}</SelectItem>)}</SelectContent></Select></div>
             <div><Label className="text-xs">Груз</Label><Input value={f('cargo')} onChange={e => setF('cargo', e.target.value)} /></div>
@@ -4845,8 +4880,8 @@ function TripFormDialog({ open, onOpenChange, editData, equipmentId, equipmentLi
             <div><Label className="text-xs">Дата и время начала</Label><Input type="datetime-local" value={f('startDate')} onChange={e => setF('startDate', e.target.value)} /></div>
             <div><Label className="text-xs">Планируемое окончание</Label><Input type="datetime-local" value={f('plannedEndDate')} onChange={e => setF('plannedEndDate', e.target.value)} /></div>
             <div><Label className="text-xs">Дата и время окончания</Label><Input type="datetime-local" value={f('endDate')} onChange={e => setF('endDate', e.target.value)} /></div>
-            <div><Label className="text-xs">Топливо на старте (л)</Label><Input type="number" value={f('fuelStart')} onChange={e => setF('fuelStart', e.target.value)} /></div>
-            <div><Label className="text-xs">Топливо на финише (л)</Label><Input type="number" value={f('fuelEnd')} onChange={e => setF('fuelEnd', e.target.value)} /></div>
+            <div><Label className="text-xs">Топливо на старте (л)</Label><div className="flex gap-1"><Input type="number" value={f('fuelStart')} onChange={e => setF('fuelStart', e.target.value)} className="flex-1" /><Button type="button" size="sm" variant="outline" className="shrink-0 h-9 px-2" onClick={() => fetchSnapshot('start')} disabled={fetchingStart} title="Запросить из ГЛОНАСС">{fetchingStart ? <Loader2 className="size-3.5 animate-spin" /> : <Fuel className="size-3.5" />}</Button></div></div>
+            <div><Label className="text-xs">Топливо на финише (л)</Label><div className="flex gap-1"><Input type="number" value={f('fuelEnd')} onChange={e => setF('fuelEnd', e.target.value)} className="flex-1" /><Button type="button" size="sm" variant="outline" className="shrink-0 h-9 px-2" onClick={() => fetchSnapshot('end')} disabled={fetchingEnd} title="Запросить из ГЛОНАСС">{fetchingEnd ? <Loader2 className="size-3.5 animate-spin" /> : <Fuel className="size-3.5" />}</Button></div></div>
             <div><Label className="text-xs">Пробег на старте</Label><Input type="number" value={f('mileageStart')} onChange={e => setF('mileageStart', e.target.value)} /></div>
             <div><Label className="text-xs">Пробег на финише</Label><Input type="number" value={f('mileageEnd')} onChange={e => setF('mileageEnd', e.target.value)} /></div>
             <div><Label className="text-xs">Стоимость (₽)</Label><Input type="number" value={f('cost')} onChange={e => setF('cost', e.target.value)} /></div>
