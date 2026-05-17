@@ -4707,7 +4707,7 @@ function TripDetailDialog({ open, onOpenChange, trip, loading, crews, onEdit, on
                         {(trackData as any).refuels && (trackData as any).refuels.length > 0 && <span className="inline-flex items-center gap-0.5 bg-emerald-50 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400 px-1.5 py-0.5 rounded">⛽ {(trackData as any).refuels.length} заправок</span>}
                         {(trackData as any).plums && (trackData as any).plums.length > 0 && <span className="inline-flex items-center gap-0.5 bg-red-50 dark:bg-red-900/30 text-red-600 dark:text-red-400 px-1.5 py-0.5 rounded">🔻 {(trackData as any).plums.length} сливов</span>}
                         <span className="inline-flex items-center gap-0.5 bg-sky-50 dark:bg-sky-900/30 text-sky-600 dark:text-sky-400 px-1.5 py-0.5 rounded font-medium">
-                          📏 {(trackData as any).trips?.reduce((s: number, trip: any) => s + (Number(trip.distance) || 0), 0).toFixed(1) ?? '0'} км
+                          📏 {((trackData as any).trips?.reduce((s: number, trip: any) => s + (Number(trip.distance) || 0), 0) ?? 0).toFixed(1)} км
                         </span>
                       </div>
                       {/* Collapsible trip segments */}
@@ -4726,7 +4726,7 @@ function TripDetailDialog({ open, onOpenChange, trip, loading, crews, onEdit, on
                                   <span className="text-muted-foreground">→</span>
                                   <span className="font-semibold text-red-500">🔴</span>
                                   <span>{formatTime(trip.endDate)}</span>
-                                  <span className="text-muted-foreground ml-auto">{trip.distance.toFixed(1)} км • {trip.points?.length || 0} т.</span>
+                                  <span className="text-muted-foreground ml-auto">{trip.distance != null ? trip.distance.toFixed(1) : '—'} км • {trip.points?.length || 0} т.</span>
                                 </div>
                               ))}
                             </div>
@@ -6167,7 +6167,7 @@ function MapTab({ equipment, onSync, onOpenDetail }: {
                             <span className="text-muted-foreground">→</span>
                             <span className="font-semibold text-red-500">🔴 B</span>
                             <span>{formatTime(trip.endDate)}</span>
-                            <span className="text-muted-foreground ml-auto">{trip.distance.toFixed(1)} км • {trip.points.length} т.</span>
+                            <span className="text-muted-foreground ml-auto">{trip.distance != null ? trip.distance.toFixed(1) : '—'} км • {trip.points?.length || 0} т.</span>
                             {selectedTripIndex === i && <X className="size-3 text-muted-foreground shrink-0" />}
                           </div>
                         ))}
