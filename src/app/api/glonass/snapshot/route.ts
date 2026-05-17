@@ -107,6 +107,21 @@ async function reverseGeocode(
       if (addr) return addr
     }
   } catch { /* ignore */ }
+
+  // Fallback: Nominatim (OpenStreetMap) — free, no key required
+  try {
+    const nomUrl = `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json&accept-language=ru`
+    const nomRes = await fetch(nomUrl, {
+      headers: { 'User-Agent': 'FleetTracker/1.0' },
+      signal: AbortSignal.timeout(5000),
+    })
+    if (nomRes.ok) {
+      const nomData = await nomRes.json()
+      const addr = nomData.display_name || null
+      if (addr) return addr
+    }
+  } catch { /* ignore */ }
+
   return null
 }
 

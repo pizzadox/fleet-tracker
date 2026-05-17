@@ -4830,6 +4830,15 @@ function TripFormDialog({ open, onOpenChange, editData, equipmentId, equipmentLi
       if (data.mileage != null) updates[type === 'start' ? 'mileageStart' : 'mileageEnd'] = String(Math.round(data.mileage))
       if (data.address) updates[type === 'start' ? 'startPoint' : 'endPoint'] = data.address
 
+      // If no address but we have coordinates, try reverse geocoding
+      if (!data.address && data.lat && data.lng) {
+        try {
+          const geoRes = await fetch(`/api/glonass/geocode?lat=${data.lat}&lng=${data.lng}`)
+          const geoData = await geoRes.json()
+          if (geoData.address) updates[type === 'start' ? 'startPoint' : 'endPoint'] = geoData.address
+        } catch { /* ignore geocoding errors */ }
+      }
+
       if (Object.keys(updates).length > 0) {
         setForm(prev => ({ ...prev, ...updates }))
         const sourceLabel = data.source === 'cached' ? ' (последние известные)' : data.source === 'none' ? '' : ''

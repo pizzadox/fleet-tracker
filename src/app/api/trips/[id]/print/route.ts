@@ -93,6 +93,32 @@ async function reverseGeocode(apiUrl: string, token: string, lat: number, lng: n
       }
     } catch { /* try next */ }
   }
+  // Try POST method
+  try {
+    const geoRes = await fetch(`${apiUrl}/api/geocode/reverse/`, {
+      method: 'POST',
+      headers: { 'Authorization': `Token ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ lat, lng }),
+      signal: AbortSignal.timeout(5000),
+    })
+    if (geoRes.ok) {
+      const geoData = await geoRes.json()
+      const addr = geoData.address || geoData.display_name || geoData.formatted || geoData.text || null
+      if (addr) return addr
+    }
+  } catch { /* ignore */ }
+  // Fallback: Nominatim (OpenStreetMap)
+  try {
+    const nomUrl = `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json&accept-language=ru`
+    const nomRes = await fetch(nomUrl, {
+      headers: { 'User-Agent': 'FleetTracker/1.0' },
+      signal: AbortSignal.timeout(5000),
+    })
+    if (nomRes.ok) {
+      const nomData = await nomRes.json()
+      if (nomData.display_name) return nomData.display_name
+    }
+  } catch { /* ignore */ }
   return null
 }
 
@@ -248,13 +274,81 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
     // ═══ Reverse geocode start/end points ═══
     let startAddress = trip.startPoint || ''
     let endAddress = trip.endPoint || ''
-    if (settings?.apiUrl && settings?.apiKey && tracker) {
+    const needGeocodeStart = !startAddress && (trip.status === 'completed' || !trip.startPoint)
+    const needGeocodeEnd = !endAddress && (trip.status === 'completed' || !trip.endPoint)
+
+    if ((needGeocodeStart || needGeocodeEnd) && settings?.apiUrl && settings?.apiKey && tracker) {
       const token = await getValidToken(settings as any)
-      if (startSnap?.latitude && !startAddress) {
-        startAddress = await reverseGeocode(settings.apiUrl, token, Number(startSnap.latitude), Number(startSnap.longitude)) || ''
+
+      // Get start coordinates from snapshot or track data
+      let startLat: number | null = startSnap?.latitude ? Number(startSnap.latitude) : null
+      let startLng: number | null = startSnap?.longitude ? Number(startSnap.longitude) : null
+      let endLat: number | null = endSnap?.latitude ? Number(endSnap.latitude) : null
+      let endLng: number | null = endSnap?.longitude ? Number(endSnap.longitude) : null
+
+      // Fallback: get coordinates from track data (first/last point of first/last trip)
+      if (trackData && trackData.trips.length > 0) {
+        const firstTrip = trackData.trips[0]
+        const lastTrip = trackData.trips[trackData.trips.length - 1]
+        if (firstTrip.points.length > 0 && (startLat == null || startLng == null)) {
+          startLat = firstTrip.points[0].lat
+          startLng = firstTrip.points[0].lng
+        }
+        if (lastTrip.points.length > 0 && (endLat == null || endLng == null)) {
+          endLat = lastTrip.points[lastTrip.points.length - 1].lat
+          endLng = lastTrip.points[lastTrip.points.length - 1].lng
+        }
       }
-      if (endSnap?.latitude && !endAddress) {
-        endAddress = await reverseGeocode(settings.apiUrl, token, Number(endSnap.latitude), Number(endSnap.longitude)) || ''
+
+      // Fallback: get from tracker last known position
+      if (startLat == null || startLng == null) {
+        startLat = tracker.lastLatitude
+        startLng = tracker.lastLongitude
+      }
+      if (endLat == null || endLng == null) {
+        endLat = tracker.lastLatitude
+        endLng = tracker.lastLongitude
+      }
+
+      // Geocode start
+      if (needGeocodeStart && startLat && startLng && !startAddress) {
+        startAddress = await reverseGeocode(settings.apiUrl, token, startLat, startLng) || ''
+        // Also try via geocode API (includes Nominatim fallback)
+        if (!startAddress) {
+          try {
+            const geoRes = await fetch(`http://localhost:3000/api/glonass/geocode?lat=${startLat}&lng=${startLng}`, {
+              signal: AbortSignal.timeout(10000),
+            })
+            if (geoRes.ok) {
+              const geoData = await geoRes.json()
+              if (geoData.address) startAddress = geoData.address
+            }
+          } catch { /* ignore */ }
+        }
+      }
+
+      // Geocode end
+      if (needGeocodeEnd && endLat && endLng && !endAddress) {
+        endAddress = await reverseGeocode(settings.apiUrl, token, endLat, endLng) || ''
+        if (!endAddress) {
+          try {
+            const geoRes = await fetch(`http://localhost:3000/api/glonass/geocode?lat=${endLat}&lng=${endLng}`, {
+              signal: AbortSignal.timeout(10000),
+            })
+            if (geoRes.ok) {
+              const geoData = await geoRes.json()
+              if (geoData.address) endAddress = geoData.address
+            }
+          } catch { /* ignore */ }
+        }
+      }
+
+      // Save resolved addresses back to the trip (so they are available next time)
+      if (startAddress && !trip.startPoint) {
+        try { await db.trip.update({ where: { id: trip.id }, data: { startPoint: startAddress } }) } catch {}
+      }
+      if (endAddress && !trip.endPoint) {
+        try { await db.trip.update({ where: { id: trip.id }, data: { endPoint: endAddress } }) } catch {}
       }
     }
 
