@@ -393,6 +393,11 @@ function formatDateTime(d?: string | null): string {
   try { return new Date(d).toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }) } catch { return '—' }
 }
 
+function formatTime(d?: string | null): string {
+  if (!d) return '—'
+  try { return new Date(d).toLocaleString('ru-RU', { hour: '2-digit', minute: '2-digit' }) } catch { return '—' }
+}
+
 function formatPrice(p?: number | null): string {
   if (p == null) return '—'
   return new Intl.NumberFormat('ru-RU', { style: 'currency', currency: 'RUB', maximumFractionDigits: 0 }).format(p)
@@ -5885,11 +5890,6 @@ function MapTab({ equipment, onSync, onOpenDetail }: {
     const h = Math.floor(seconds / 3600)
     const m = Math.floor((seconds % 3600) / 60)
     return h > 0 ? `${h} ч ${m} мин` : `${m} мин`
-  }
-
-  function formatTime(d?: string | null): string {
-    if (!d) return '—'
-    try { return new Date(d).toLocaleString('ru-RU', { hour: '2-digit', minute: '2-digit' }) } catch { return '—' }
   }
 
   const loadRules = useCallback(async () => {
