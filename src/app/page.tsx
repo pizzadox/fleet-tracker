@@ -50,6 +50,7 @@ import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle
 } from '@/components/ui/alert-dialog'
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
 
 // ─── Lucide Icons ─────────────────────────────────────────────
 import {
@@ -4031,13 +4032,13 @@ function TripDetailDialog({ open, onOpenChange, trip, loading, crews, onEdit, on
     setTripSaved(false)
   }, [trip?.id])
 
-  // Auto-load track and sensor comparison when dialog opens or trip changes
+  // Auto-load track when dialog opens or trip changes (sensor comparison only on request)
   useEffect(() => {
     if (!open || !trip?.id || !trip.startDate) return
     let cancelled = false
 
     const autoLoad = async () => {
-      // Auto-load track
+      // Auto-load track only
       setTrackLoading(true)
       setTrackError(null)
       try {
@@ -4062,25 +4063,6 @@ function TripDetailDialog({ open, onOpenChange, trip, loading, crews, onEdit, on
         if (!cancelled) setTrackError(e.message || 'Ошибка загрузки трека')
       }
       if (!cancelled) setTrackLoading(false)
-
-      // Auto-load sensor comparison
-      setCompareLoading(true)
-      setCompareError(null)
-      try {
-        const res = await fetch(`/api/trips/${trip.id}?action=sensor-compare`)
-        if (!cancelled) {
-          if (res.ok) {
-            const data = await res.json()
-            setCompareData(data)
-          } else {
-            const errData = await res.json().catch(() => null)
-            setCompareError(errData?.error || 'Не удалось загрузить данные')
-          }
-        }
-      } catch (e: any) {
-        if (!cancelled) setCompareError(e.message || 'Ошибка загрузки')
-      }
-      if (!cancelled) setCompareLoading(false)
     }
 
     autoLoad()
@@ -4417,6 +4399,14 @@ function TripDetailDialog({ open, onOpenChange, trip, loading, crews, onEdit, on
                 <DetailRow label="Пункт отправления" value={t.startPoint} />
                 <DetailRow label="Пункт назначения" value={t.endPoint} />
                 <DetailRow label="Расстояние" value={displayDist != null ? `${displayDist.toFixed(1)} км` : undefined} />
+                {trackData && (trackData as any).trips && (
+                  <DetailRow label="По трекеру" value={
+                    <span className="font-medium text-sky-600 dark:text-sky-400">
+                      {(trackData as any).trips.reduce((s: number, trip: any) => s + (Number(trip.distance) || 0), 0).toFixed(1)} км
+                      <span className="text-muted-foreground font-normal ml-1">({(trackData as any).trips.length} сегм.)</span>
+                    </span> as any
+                  } />
+                )}
               </DetailSection>
               <DetailSection title="Груз" icon={<Package className="size-3.5" />}>
                 <DetailRow label="Груз" value={t.cargo} />
@@ -4656,14 +4646,21 @@ function TripDetailDialog({ open, onOpenChange, trip, loading, crews, onEdit, on
                 )}
               </div>
 
-              {/* ── ТРЕК НА КАРТЕ (АВТОМАТИЧЕСКАЯ ЗАГРУЗКА) ── */}
+              {/* ── ТРЕК НА КАРТЕ ── */}
               {t.startDate && (
                 <div className="space-y-2">
                   <div className="flex items-center justify-between">
                     <h4 className="text-xs font-semibold flex items-center gap-1.5"><Map className="size-3.5" />Трек на карте</h4>
-                    <Button variant="ghost" size="sm" className="h-7 text-[10px] gap-1" onClick={reloadTrack} disabled={trackLoading}>
-                      <RefreshCw className={`size-3 ${trackLoading ? 'animate-spin' : ''}`} />
-                    </Button>
+                    <div className="flex items-center gap-1">
+                      <Button variant="ghost" size="sm" className="h-7 text-[10px] gap-1" onClick={reloadTrack} disabled={trackLoading} title="Обновить трек">
+                        <RefreshCw className={`size-3 ${trackLoading ? 'animate-spin' : ''}`} />
+                      </Button>
+                      <Button variant="outline" size="sm" className="h-7 text-[10px] gap-1" onClick={reloadSensors} disabled={compareLoading} title="Загрузить показания датчиков">
+                        <CircuitBoard className="size-3" />
+                        {compareLoading ? <Loader2 className="size-3 animate-spin" /> : null}
+                        Датчики
+                      </Button>
+                    </div>
                   </div>
                   {/* Date range for track */}
                   <div className="grid grid-cols-2 gap-2">
@@ -4698,9 +4695,107 @@ function TripDetailDialog({ open, onOpenChange, trip, loading, crews, onEdit, on
                     </div>
                   )}
                   {trackData && !trackLoading && (
-                    <div className="h-64 rounded-lg overflow-hidden border">
-                      <TrackerMap trackers={[]} trackData={trackData as any} />
-                    </div>
+                    <>
+                      <div className="h-64 rounded-lg overflow-hidden border">
+                        <TrackerMap trackers={[]} trackData={trackData as any} />
+                      </div>
+                      {/* Track summary badges */}
+                      <div className="flex flex-wrap items-center gap-2 text-[10px]">
+                        {(trackData as any).trips && <span className="inline-flex items-center gap-0.5 bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 px-1.5 py-0.5 rounded">🚗 {(trackData as any).trips.length} поездок</span>}
+                        {(trackData as any).parkings && <span className="inline-flex items-center gap-0.5 bg-amber-50 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400 px-1.5 py-0.5 rounded">🅿️ {(trackData as any).parkings.length} стоянок</span>}
+                        {(trackData as any).stops && <span className="inline-flex items-center gap-0.5 bg-gray-50 dark:bg-gray-900/30 text-gray-600 dark:text-gray-400 px-1.5 py-0.5 rounded">⏸ {(trackData as any).stops.length} остановок</span>}
+                        {(trackData as any).refuels && (trackData as any).refuels.length > 0 && <span className="inline-flex items-center gap-0.5 bg-emerald-50 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400 px-1.5 py-0.5 rounded">⛽ {(trackData as any).refuels.length} заправок</span>}
+                        {(trackData as any).plums && (trackData as any).plums.length > 0 && <span className="inline-flex items-center gap-0.5 bg-red-50 dark:bg-red-900/30 text-red-600 dark:text-red-400 px-1.5 py-0.5 rounded">🔻 {(trackData as any).plums.length} сливов</span>}
+                        <span className="inline-flex items-center gap-0.5 bg-sky-50 dark:bg-sky-900/30 text-sky-600 dark:text-sky-400 px-1.5 py-0.5 rounded font-medium">
+                          📏 {(trackData as any).trips?.reduce((s: number, trip: any) => s + (Number(trip.distance) || 0), 0).toFixed(1) ?? '0'} км
+                        </span>
+                      </div>
+                      {/* Collapsible trip segments */}
+                      {(trackData as any).trips && (trackData as any).trips.length > 0 && (
+                        <Collapsible>
+                          <CollapsibleTrigger className="flex items-center gap-1.5 w-full text-[10px] font-medium text-muted-foreground hover:text-foreground transition-colors py-1 px-2 rounded hover:bg-muted/50">
+                            <ChevronRight className="size-3 transition-transform [[data-state=open]>&]:rotate-90" />
+                            Сегменты поездок ({(trackData as any).trips.length})
+                          </CollapsibleTrigger>
+                          <CollapsibleContent>
+                            <div className="space-y-1 mt-1">
+                              {(trackData as any).trips.map((trip: any, i: number) => (
+                                <div key={i} className="flex items-center gap-2 text-[10px] rounded px-2 py-1.5 bg-muted/50">
+                                  <span className="font-semibold text-emerald-600">🟢</span>
+                                  <span>{formatTime(trip.startDate)}</span>
+                                  <span className="text-muted-foreground">→</span>
+                                  <span className="font-semibold text-red-500">🔴</span>
+                                  <span>{formatTime(trip.endDate)}</span>
+                                  <span className="text-muted-foreground ml-auto">{trip.distance.toFixed(1)} км • {trip.points?.length || 0} т.</span>
+                                </div>
+                              ))}
+                            </div>
+                          </CollapsibleContent>
+                        </Collapsible>
+                      )}
+                      {/* Collapsible parkings */}
+                      {(trackData as any).parkings && (trackData as any).parkings.length > 0 && (
+                        <Collapsible>
+                          <CollapsibleTrigger className="flex items-center gap-1.5 w-full text-[10px] font-medium text-muted-foreground hover:text-foreground transition-colors py-1 px-2 rounded hover:bg-muted/50">
+                            <ChevronRight className="size-3 transition-transform [[data-state=open]>&]:rotate-90" />
+                            Стоянки ({(trackData as any).parkings.length})
+                          </CollapsibleTrigger>
+                          <CollapsibleContent>
+                            <div className="space-y-1 mt-1">
+                              {(trackData as any).parkings.map((p: any, i: number) => (
+                                <div key={i} className="flex items-center gap-2 text-[10px] rounded px-2 py-1.5 bg-amber-50/50 dark:bg-amber-900/10">
+                                  <span>🅿️</span>
+                                  <span>{formatTime(p.startDate)}</span>
+                                  <span className="text-muted-foreground">→</span>
+                                  <span>{formatTime(p.endDate)}</span>
+                                  <span className="text-muted-foreground ml-auto">{p.duration ? `${Math.floor(p.duration / 60)} мин` : '—'}</span>
+                                </div>
+                              ))}
+                            </div>
+                          </CollapsibleContent>
+                        </Collapsible>
+                      )}
+                      {/* Collapsible refuels */}
+                      {(trackData as any).refuels && (trackData as any).refuels.length > 0 && (
+                        <Collapsible>
+                          <CollapsibleTrigger className="flex items-center gap-1.5 w-full text-[10px] font-medium text-muted-foreground hover:text-foreground transition-colors py-1 px-2 rounded hover:bg-muted/50">
+                            <ChevronRight className="size-3 transition-transform [[data-state=open]>&]:rotate-90" />
+                            Заправки ({(trackData as any).refuels.length})
+                          </CollapsibleTrigger>
+                          <CollapsibleContent>
+                            <div className="space-y-1 mt-1">
+                              {(trackData as any).refuels.map((r: any, i: number) => (
+                                <div key={i} className="flex items-center gap-2 text-[10px] rounded px-2 py-1.5 bg-emerald-50/50 dark:bg-emerald-900/10">
+                                  <span>⛽</span>
+                                  <span>{formatTime(r.startDate)}</span>
+                                  <span className="text-emerald-600 dark:text-emerald-400 ml-auto font-medium">+{r.volume?.toFixed(1) || '?'} л</span>
+                                </div>
+                              ))}
+                            </div>
+                          </CollapsibleContent>
+                        </Collapsible>
+                      )}
+                      {/* Collapsible plums */}
+                      {(trackData as any).plums && (trackData as any).plums.length > 0 && (
+                        <Collapsible>
+                          <CollapsibleTrigger className="flex items-center gap-1.5 w-full text-[10px] font-medium text-muted-foreground hover:text-foreground transition-colors py-1 px-2 rounded hover:bg-muted/50">
+                            <ChevronRight className="size-3 transition-transform [[data-state=open]>&]:rotate-90" />
+                            Сливы ({(trackData as any).plums.length})
+                          </CollapsibleTrigger>
+                          <CollapsibleContent>
+                            <div className="space-y-1 mt-1">
+                              {(trackData as any).plums.map((p: any, i: number) => (
+                                <div key={i} className="flex items-center gap-2 text-[10px] rounded px-2 py-1.5 bg-red-50/50 dark:bg-red-900/10">
+                                  <span>🔻</span>
+                                  <span>{formatTime(p.startDate)}</span>
+                                  <span className="text-red-600 dark:text-red-400 ml-auto font-medium">-{p.volume?.toFixed(1) || '?'} л</span>
+                                </div>
+                              ))}
+                            </div>
+                          </CollapsibleContent>
+                        </Collapsible>
+                      )}
+                    </>
                   )}
                 </div>
               )}
