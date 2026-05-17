@@ -725,8 +725,8 @@ export default function Home() {
     setEqDetailLoading(false)
   }
 
-  const openEquipmentDetail = (eq: Equipment) => {
-    setEqDetailTab('info')
+  const openEquipmentDetail = (eq: Equipment, tab?: string) => {
+    setEqDetailTab(tab || 'info')
     setEqDetailOpen(true)
     fetchEquipmentDetail(eq.id)
   }
@@ -979,7 +979,7 @@ export default function Home() {
             <TabsTrigger value="map" className="gap-1.5"><Map className="size-4" />Карта</TabsTrigger>
           </TabsList>
           <TabsContent value="equipment">
-            <EquipmentTab equipment={equipment} companies={companies} eqSearch={eqSearch} setEqSearch={setEqSearch} eqStatusFilter={eqStatusFilter} setEqStatusFilter={setEqStatusFilter} eqTypeFilter={eqTypeFilter} setEqTypeFilter={setEqTypeFilter} onOpenDetail={openEquipmentDetail} onAdd={() => { setEqFormEdit(null); setEqFormStep(0); setEqFormOpen(true) }} onEdit={(eq) => { setEqFormEdit(eq); setEqFormStep(0); setEqFormOpen(true) }} onDelete={(eq) => setDeleteDialog({ open: true, type: 'equipment', id: eq.id, name: eq.name })} />
+            <EquipmentTab equipment={equipment} companies={companies} eqSearch={eqSearch} setEqSearch={setEqSearch} eqStatusFilter={eqStatusFilter} setEqStatusFilter={setEqStatusFilter} eqTypeFilter={eqTypeFilter} setEqTypeFilter={setEqTypeFilter} onOpenDetail={openEquipmentDetail} onAdd={() => { setEqFormEdit(null); setEqFormStep(0); setEqFormOpen(true) }} onEdit={(eq) => { setEqFormEdit(eq); setEqFormStep(0); setEqFormOpen(true) }} onDelete={(eq) => setDeleteDialog({ open: true, type: 'equipment', id: eq.id, name: eq.name })} onGoToMap={(eq) => openEquipmentDetail(eq, 'glonass')} />
           </TabsContent>
           <TabsContent value="repairs">
             <RepairsTab repairs={repairs} equipment={equipment} onOpenDetail={openRepairDetail} onAdd={(eqId) => { setRepairFormEdit(null); setRepairFormEquipmentId(eqId || ''); setRepairFormOpen(true) }} onDelete={(r) => setDeleteDialog({ open: true, type: 'repair', id: r.id, name: r.description })} />
@@ -1000,7 +1000,7 @@ export default function Home() {
 
         {/* Mobile: show active tab content directly */}
         <div className="md:hidden">
-          {mainTab === 'equipment' && <EquipmentTab equipment={equipment} companies={companies} eqSearch={eqSearch} setEqSearch={setEqSearch} eqStatusFilter={eqStatusFilter} setEqStatusFilter={setEqStatusFilter} eqTypeFilter={eqTypeFilter} setEqTypeFilter={setEqTypeFilter} onOpenDetail={openEquipmentDetail} onAdd={() => { setEqFormEdit(null); setEqFormStep(0); setEqFormOpen(true) }} onEdit={(eq) => { setEqFormEdit(eq); setEqFormStep(0); setEqFormOpen(true) }} onDelete={(eq) => setDeleteDialog({ open: true, type: 'equipment', id: eq.id, name: eq.name })} />}
+          {mainTab === 'equipment' && <EquipmentTab equipment={equipment} companies={companies} eqSearch={eqSearch} setEqSearch={setEqSearch} eqStatusFilter={eqStatusFilter} setEqStatusFilter={setEqStatusFilter} eqTypeFilter={eqTypeFilter} setEqTypeFilter={setEqTypeFilter} onOpenDetail={openEquipmentDetail} onAdd={() => { setEqFormEdit(null); setEqFormStep(0); setEqFormOpen(true) }} onEdit={(eq) => { setEqFormEdit(eq); setEqFormStep(0); setEqFormOpen(true) }} onDelete={(eq) => setDeleteDialog({ open: true, type: 'equipment', id: eq.id, name: eq.name })} onGoToMap={(eq) => openEquipmentDetail(eq, 'glonass')} />}
           {mainTab === 'repairs' && <RepairsTab repairs={repairs} equipment={equipment} onOpenDetail={openRepairDetail} onAdd={(eqId) => { setRepairFormEdit(null); setRepairFormEquipmentId(eqId || ''); setRepairFormOpen(true) }} onDelete={(r) => setDeleteDialog({ open: true, type: 'repair', id: r.id, name: r.description })} />}
           {mainTab === 'trips' && <TripsTab trips={trips} equipment={equipment} crews={crews} onOpenDetail={openTripDetail} onAdd={(eqId) => { setTripFormEdit(null); setTripFormEquipmentId(eqId || ''); setTripFormOpen(true) }} onDelete={(t) => setDeleteDialog({ open: true, type: 'trip', id: t.id, name: t.route })} onAddCrew={() => { setCrewFormEdit(null); setCrewFormOpen(true) }} onEditCrew={(c) => { setCrewFormEdit(c); setCrewFormOpen(true) }} onDeleteCrew={(c) => setDeleteDialog({ open: true, type: 'crew', id: c.id, name: c.name })} />}
           {mainTab === 'employees' && <EmployeesTab employees={employees} crews={crews} empSearch={empSearch} setEmpSearch={setEmpSearch} empPositionFilter={empPositionFilter} setEmpPositionFilter={setEmpPositionFilter} empStatusFilter={empStatusFilter} setEmpStatusFilter={setEmpStatusFilter} onOpenDetail={openEmployeeDetail} onAdd={() => { setEmpFormEdit(null); setEmpFormOpen(true) }} onEdit={(emp) => { setEmpFormEdit(emp); setEmpFormOpen(true) }} onDelete={(emp) => setDeleteDialog({ open: true, type: 'employee', id: emp.id, name: emp.fullName })} />}
@@ -1206,13 +1206,14 @@ function StatCard({ icon, label, value, color }: { icon: React.ReactNode; label:
 // EQUIPMENT TAB
 // ═══════════════════════════════════════════════════════════════
 
-function EquipmentTab({ equipment, companies, eqSearch, setEqSearch, eqStatusFilter, setEqStatusFilter, eqTypeFilter, setEqTypeFilter, onOpenDetail, onAdd, onEdit, onDelete }: {
+function EquipmentTab({ equipment, companies, eqSearch, setEqSearch, eqStatusFilter, setEqStatusFilter, eqTypeFilter, setEqTypeFilter, onOpenDetail, onAdd, onEdit, onDelete, onGoToMap }: {
   equipment: Equipment[]; companies: Company[];
   eqSearch: string; setEqSearch: (v: string) => void;
   eqStatusFilter: string; setEqStatusFilter: (v: string) => void;
   eqTypeFilter: string; setEqTypeFilter: (v: string) => void;
   onOpenDetail: (eq: Equipment) => void;
   onAdd: () => void; onEdit: (eq: Equipment) => void; onDelete: (eq: Equipment) => void;
+  onGoToMap: (eq: Equipment) => void;
 }) {
   const [copiedId, setCopiedId] = useState<string | null>(null)
   const containerRef = useRef<HTMLDivElement>(null)
@@ -1347,69 +1348,62 @@ function EquipmentTab({ equipment, companies, eqSearch, setEqSearch, eqStatusFil
               >
                 {/* ── Шапка (всегда видна) — клик раскрывает/сворачивает ── */}
                 <div
-                  className="flex items-center gap-2.5 px-3 py-2.5 cursor-pointer select-none"
+                  className="flex items-center gap-2.5 px-3 pt-2 pb-0.5 cursor-pointer select-none"
                   onClick={() => setExpandedId(isExpanded ? null : eq.id)}
                 >
                   <div className={`flex items-center justify-center size-9 rounded-lg shrink-0 ${typeInfo.color} ${typeInfo.darkColor}`}>
                     {typeInfo.icon}
                   </div>
                   <div className="flex-1 min-w-0">
-                    {/* Строка 1: Название + статус-индикаторы */}
+                    {/* Строка 1: Онлайн-кнопка + Название + Госномер ... Справа — статус */}
                     <div className="flex items-center gap-1.5">
-                      <span className="font-semibold text-sm truncate">{eq.name}</span>
-                      {tracker && (
-                        <span className={`size-2.5 rounded-full shrink-0 ${trackerOnline ? 'bg-emerald-500 animate-pulse' : 'bg-red-400'}`} title={trackerOnline ? 'Онлайн' : 'Офлайн'} />
-                      )}
-                      {hasWarnings && <AlertTriangle className="size-3.5 text-amber-500 shrink-0" />}
+                      <div className="flex items-center gap-1.5 min-w-0 flex-1">
+                        {tracker && (
+                          <span className={`size-3 rounded-full shrink-0 ${trackerOnline ? 'bg-emerald-500 animate-pulse' : 'bg-red-400'}`} title={trackerOnline ? 'Онлайн' : 'Офлайн'} />
+                        )}
+                        <span className="font-semibold text-sm truncate">{eq.name}</span>
+                        {hasWarnings && <AlertTriangle className="size-3.5 text-amber-500 shrink-0" />}
+                      </div>
+                      <Badge variant="secondary" className={`text-[10px] px-1.5 py-0 h-4 shrink-0 ${statusInfo?.color || ''}`}>
+                        {statusInfo?.label || eq.status}
+                      </Badge>
                     </div>
-                    {/* Строка 2: Госномер + бренд/модель + год + категория */}
+                    {/* Строка 2: Госномер + скорость справа */}
                     <div className="flex items-center gap-2 mt-0.5">
                       {eq.registrationNum && (
-                        <span className="font-mono text-xs text-muted-foreground cursor-pointer hover:text-primary inline-flex items-center gap-0.5"
+                        <span className="font-mono text-xs text-muted-foreground cursor-pointer hover:text-primary shrink-0 inline-flex items-center gap-0.5"
                           onClick={(e) => { e.stopPropagation(); copyRegNum(eq.registrationNum!, eq.id) }}
                           title={copiedId === eq.id ? 'Скопировано!' : 'Копировать номер'}>
                           {eq.registrationNum}
                           <Copy className="size-3" />
                         </span>
                       )}
+                      {tracker?.lastSpeed != null && tracker.lastSpeed > 0 && (
+                        <span className="ml-auto inline-flex items-center gap-0.5 text-xs text-emerald-600 dark:text-emerald-400 font-medium shrink-0">
+                          <Navigation className="size-3" />{tracker.lastSpeed} км/ч
+                        </span>
+                      )}
+                    </div>
+                    {/* Строка 3: Бренд/модель + год + категория */}
+                    <div className="flex items-center gap-2 mt-0.5">
                       {brandModel && <span className="text-xs text-muted-foreground truncate">{brandModel}</span>}
                       {eq.year && <span className="text-xs text-muted-foreground">{eq.year} г.</span>}
                       {eq.category && <span className="text-xs text-muted-foreground font-medium">кат. {eq.category}</span>}
                     </div>
-                    {/* Строка 3: Датчики (скорость / топливо / пробег) */}
-                    {(tracker?.lastSpeed != null || tracker?.lastFuelLevel != null || eq.mileage != null) && (
-                      <div className="flex items-center gap-3 mt-1">
-                        {tracker?.lastSpeed != null && tracker.lastSpeed > 0 && (
-                          <span className="inline-flex items-center gap-1 text-xs text-emerald-600 dark:text-emerald-400 font-medium">
-                            <Navigation className="size-3.5" />{tracker.lastSpeed} км/ч
-                          </span>
-                        )}
-                        {tracker?.lastFuelLevel != null && (
-                          <span className="inline-flex items-center gap-1 text-xs text-amber-600 dark:text-amber-400 font-medium">
-                            <Fuel className="size-3.5" />{tracker.lastFuelLevel} л
-                          </span>
-                        )}
-                        {eq.mileage != null && (
-                          <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
-                            <Gauge className="size-3.5" />{eq.mileage >= 1000 ? `${(eq.mileage / 1000).toFixed(1)} тыс.км` : `${eq.mileage} км`}
-                          </span>
-                        )}
-                        {tracker?.lastIgnition != null && (
-                          <span className={`inline-flex items-center gap-1 text-xs font-medium ${tracker.lastIgnition ? 'text-emerald-600 dark:text-emerald-400' : 'text-muted-foreground'}`}>
-                            <Zap className="size-3.5" />{tracker.lastIgnition ? 'Двигатель' : 'Стоп'}
-                          </span>
-                        )}
-                        {tracker?.lastEngineTemp != null && (
-                          <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
-                            <Thermometer className="size-3.5" />{tracker.lastEngineTemp}°C
-                          </span>
-                        )}
-                      </div>
-                    )}
+                    {/* Строка 4: Владелец / Арендатор */}
+                    <div className="flex items-center gap-2 mt-0.5">
+                      {eq.owner && (
+                        <span className="inline-flex items-center gap-1 text-xs text-muted-foreground" title={`Владелец: ${eq.owner.name}${eq.owner.inn ? ` (ИНН: ${eq.owner.inn})` : ''}`}>
+                          <Building2 className="size-3" />{eq.owner.name}
+                        </span>
+                      )}
+                      {eq.renter && (
+                        <span className="inline-flex items-center gap-1 text-xs text-sky-600 dark:text-sky-400 font-medium" title={`Арендатор: ${eq.renter.name}${eq.renter.inn ? ` (ИНН: ${eq.renter.inn})` : ''}`}>
+                          <Users className="size-3" />{eq.renter.name}
+                        </span>
+                      )}
+                    </div>
                   </div>
-                  <Badge variant="secondary" className={`text-[11px] px-2 py-0.5 h-5 shrink-0 ${statusInfo?.color || ''}`}>
-                    {statusInfo?.label || eq.status}
-                  </Badge>
                   <ChevronDown className={`size-5 text-muted-foreground shrink-0 transition-transform duration-200 ${isExpanded ? 'rotate-180' : ''}`} />
                 </div>
 
@@ -1568,16 +1562,34 @@ function EquipmentTab({ equipment, companies, eqSearch, setEqSearch, eqStatusFil
 
                     {/* Подвал: сотрудники / ремонты / фото / документы / действия */}
                     <div className="flex items-center gap-2 flex-wrap pt-2 border-t border-border/50">
-                      {/* Сотрудники */}
+                      {/* Сотрудники — одна иконка с попапом */}
                       {eq.employees && eq.employees.length > 0 && (
-                        <div className="flex items-center -space-x-1">
-                          {eq.employees.slice(0, 5).map(emp => (
-                            <span key={emp.id} className="inline-flex items-center justify-center size-6 rounded-full text-[10px] font-bold bg-primary/15 text-primary ring-1 ring-background" title={`${emp.fullName}${emp.position ? ` — ${emp.position}` : ''}${emp.phone ? ` • ${emp.phone}` : ''}`}>
-                              {emp.fullName.split(' ').map(n => n[0]).slice(0, 2).join('')}
-                            </span>
-                          ))}
-                          {eq.employees.length > 5 && <span className="text-xs text-muted-foreground ml-1">+{eq.employees.length - 5}</span>}
-                        </div>
+                        <Popover>
+                          <PopoverTrigger asChild>
+                            <button className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-primary transition-colors" title="Водители">
+                              <Users className="size-3.5" />{eq.employees.length}
+                            </button>
+                          </PopoverTrigger>
+                          <PopoverContent className="p-2 w-[280px]" align="start">
+                            <div className="space-y-1.5">
+                              <p className="text-xs font-semibold text-muted-foreground mb-1">Водители ({eq.employees.length})</p>
+                              {eq.employees.map(emp => (
+                                <div key={emp.id} className="flex items-center gap-2 p-1.5 rounded-md hover:bg-accent">
+                                  <div className={`size-7 rounded-full flex items-center justify-center text-[10px] font-bold shrink-0 ${EMPLOYEE_POSITION_MAP[emp.position]?.color || 'bg-gray-100 text-gray-600'} ${EMPLOYEE_POSITION_MAP[emp.position]?.darkColor || ''}`}>
+                                    {emp.fullName.split(' ').map(n => n[0]).slice(0, 2).join('')}
+                                  </div>
+                                  <div className="flex-1 min-w-0">
+                                    <p className="text-xs font-medium truncate">{emp.fullName}</p>
+                                    <p className="text-[10px] text-muted-foreground">
+                                      {EMPLOYEE_POSITION_MAP[emp.position]?.label || emp.position || ''}
+                                      {emp.phone ? ` • ${emp.phone}` : ''}
+                                    </p>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          </PopoverContent>
+                        </Popover>
                       )}
                       {/* Ремонты */}
                       {eq._count?.repairs != null && eq._count.repairs > 0 && (
@@ -1607,6 +1619,9 @@ function EquipmentTab({ equipment, companies, eqSearch, setEqSearch, eqStatusFil
                       <div className="ml-auto flex items-center gap-1">
                         <Button size="sm" variant="ghost" className="size-7 p-0" onClick={() => onOpenDetail(eq)} title="Подробнее">
                           <Eye className="size-3.5" />
+                        </Button>
+                        <Button size="sm" variant="ghost" className="size-7 p-0" onClick={() => onGoToMap(eq)} title="Карта">
+                          <MapPin className="size-3.5" />
                         </Button>
                         <Button size="sm" variant="ghost" className="size-7 p-0" onClick={() => onEdit(eq)} title="Редактировать">
                           <Edit className="size-3.5" />
