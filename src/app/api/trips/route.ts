@@ -18,6 +18,7 @@ export async function GET(request: NextRequest) {
       include: {
         equipment: { select: { id: true, name: true, registrationNum: true, brand: true, model: true } },
         crew: { select: { id: true, name: true, members: { select: { fullName: true, role: true } } } },
+        routePoints: { orderBy: { sortOrder: 'asc' } },
       },
       orderBy: { startDate: 'desc' },
     })
@@ -37,11 +38,19 @@ export async function POST(request: NextRequest) {
       cargo, cargoWeight, distance, startDate, endDate,
       plannedEndDate, status, fuelStart, fuelEnd,
       mileageStart, mileageEnd, cost, revenue, notes,
+      routePoints: inputRoutePoints,
     } = body
 
     if (!equipmentId) return NextResponse.json({ error: 'Equipment ID is required' }, { status: 400 })
     if (!route?.trim()) return NextResponse.json({ error: 'Route is required' }, { status: 400 })
     if (!startDate) return NextResponse.json({ error: 'Start date is required' }, { status: 400 })
+
+    // Calculate total distance from route points if not provided
+    let totalDistance = distance ? parseFloat(distance) : null
+    if (!totalDistance && Array.isArray(inputRoutePoints) && inputRoutePoints.length > 1) {
+      const sumDist = inputRoutePoints.reduce((s: number, p: Record<string, unknown>) => s + (Number(p.distanceFromPrev) || 0), 0)
+      if (sumDist > 0) totalDistance = sumDist
+    }
 
     const trip = await db.trip.create({
       data: {
@@ -52,7 +61,7 @@ export async function POST(request: NextRequest) {
         endPoint: endPoint || null,
         cargo: cargo || null,
         cargoWeight: cargoWeight ? parseFloat(cargoWeight) : null,
-        distance: distance ? parseFloat(distance) : null,
+        distance: totalDistance,
         startDate: new Date(startDate),
         endDate: endDate ? new Date(endDate) : null,
         plannedEndDate: plannedEndDate ? new Date(plannedEndDate) : null,
@@ -64,10 +73,24 @@ export async function POST(request: NextRequest) {
         cost: cost ? parseFloat(cost) : null,
         revenue: revenue ? parseFloat(revenue) : null,
         notes: notes || null,
+        routePoints: Array.isArray(inputRoutePoints) && inputRoutePoints.length > 0 ? {
+          create: inputRoutePoints.map((p: Record<string, unknown>, i: number) => ({
+            name: String(p.name || `Точка ${i + 1}`),
+            address: p.address ? String(p.address) : null,
+            latitude: p.latitude ? Number(p.latitude) : null,
+            longitude: p.longitude ? Number(p.longitude) : null,
+            sortOrder: i,
+            plannedArrival: p.plannedArrival ? new Date(String(p.plannedArrival)) : null,
+            plannedDeparture: p.plannedDeparture ? new Date(String(p.plannedDeparture)) : null,
+            distanceFromPrev: p.distanceFromPrev ? Number(p.distanceFromPrev) : null,
+            notes: p.notes ? String(p.notes) : null,
+          }))
+        } : undefined,
       },
       include: {
         equipment: { select: { id: true, name: true, registrationNum: true } },
         crew: { select: { id: true, name: true } },
+        routePoints: { orderBy: { sortOrder: 'asc' } },
       },
     })
 

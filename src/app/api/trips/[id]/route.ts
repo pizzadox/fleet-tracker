@@ -1257,6 +1257,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
       include: {
         equipment: { select: { id: true, name: true, registrationNum: true, brand: true, model: true } },
         crew: { select: { id: true, name: true, members: { select: { fullName: true, role: true, phone: true } } } },
+        routePoints: { orderBy: { sortOrder: 'asc' } },
       },
     })
     if (!trip) return NextResponse.json({ error: 'Trip not found' }, { status: 404 })
@@ -1483,12 +1484,74 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
       parkingsDuration: body.parkingsDuration !== undefined ? (body.parkingsDuration ? parseInt(body.parkingsDuration) : null) : undefined,
     }
 
+    // Handle route points upsert/delete
+    if (Array.isArray(body.routePoints)) {
+      const existingPoints = await db.routePoint.findMany({ where: { tripId: id } })
+      const existingIds = new Set(existingPoints.map(p => p.id))
+      const inputIds = new Set(body.routePoints.filter((p: Record<string, unknown>) => p.id).map((p: Record<string, unknown>) => p.id))
+
+      // Delete points not in the input
+      const toDelete = existingPoints.filter(p => !inputIds.has(p.id)).map(p => p.id)
+      if (toDelete.length > 0) {
+        await db.routePoint.deleteMany({ where: { id: { in: toDelete } } })
+      }
+
+      // Upsert points
+      for (let i = 0; i < body.routePoints.length; i++) {
+        const p = body.routePoints[i] as Record<string, unknown>
+        if (p.id && existingIds.has(p.id)) {
+          await db.routePoint.update({
+            where: { id: p.id },
+            data: {
+              name: String(p.name || `Точка ${i + 1}`),
+              address: p.address ? String(p.address) : null,
+              latitude: p.latitude ? Number(p.latitude) : null,
+              longitude: p.longitude ? Number(p.longitude) : null,
+              sortOrder: i,
+              plannedArrival: p.plannedArrival ? new Date(String(p.plannedArrival)) : null,
+              plannedDeparture: p.plannedDeparture ? new Date(String(p.plannedDeparture)) : null,
+              actualArrival: p.actualArrival ? new Date(String(p.actualArrival)) : null,
+              distanceFromPrev: p.distanceFromPrev ? Number(p.distanceFromPrev) : null,
+              notes: p.notes ? String(p.notes) : null,
+            },
+          })
+        } else {
+          await db.routePoint.create({
+            data: {
+              tripId: id,
+              name: String(p.name || `Точка ${i + 1}`),
+              address: p.address ? String(p.address) : null,
+              latitude: p.latitude ? Number(p.latitude) : null,
+              longitude: p.longitude ? Number(p.longitude) : null,
+              sortOrder: i,
+              plannedArrival: p.plannedArrival ? new Date(String(p.plannedArrival)) : null,
+              plannedDeparture: p.plannedDeparture ? new Date(String(p.plannedDeparture)) : null,
+              actualArrival: p.actualArrival ? new Date(String(p.actualArrival)) : null,
+              distanceFromPrev: p.distanceFromPrev ? Number(p.distanceFromPrev) : null,
+              notes: p.notes ? String(p.notes) : null,
+            },
+          })
+        }
+      }
+
+      // Auto-calculate total distance from route points
+      const allPoints = await db.routePoint.findMany({
+        where: { tripId: id },
+        orderBy: { sortOrder: 'asc' },
+      })
+      const sumDist = allPoints.reduce((s, p) => s + (p.distanceFromPrev || 0), 0)
+      if (sumDist > 0 && !updateData.distance) {
+        updateData.distance = sumDist
+      }
+    }
+
     const trip = await db.trip.update({
       where: { id },
       data: updateData,
       include: {
         equipment: { select: { id: true, name: true, registrationNum: true } },
         crew: { select: { id: true, name: true } },
+        routePoints: { orderBy: { sortOrder: 'asc' } },
       },
     })
 

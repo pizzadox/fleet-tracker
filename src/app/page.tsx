@@ -68,7 +68,8 @@ import {
   TrendingUp, TrendingDown, Copy, Timer, Droplets, Zap as Lightning,
   Hash, Calculator, StickyNote, CircleDot, FileBadge, Fuel as FuelIcon,
   Armchair, Anchor, TimerReset, MoveRight, Tag, BadgeCheck,
-  ScanLine, Receipt, Truck as TruckIcon, Flame
+  ScanLine, Receipt, Truck as TruckIcon, Flame,
+  ArrowUp, ArrowDown, GripVertical, MapPinned, ToggleRight
 } from 'lucide-react'
 
 // ═══════════════════════════════════════════════════════════════
@@ -203,6 +204,14 @@ interface Crew {
   members?: CrewMember[]; employees?: Employee[]; _count?: { trips: number };
 }
 
+interface RoutePoint {
+  id: string; tripId: string; name: string; address?: string | null;
+  latitude?: number | null; longitude?: number | null; sortOrder: number;
+  plannedArrival?: string | null; plannedDeparture?: string | null;
+  actualArrival?: string | null; distanceFromPrev?: number | null;
+  notes?: string | null; createdAt: string; updatedAt: string;
+}
+
 interface Trip {
   id: string; equipmentId: string; crewId?: string | null;
   route: string; startPoint?: string | null; endPoint?: string | null;
@@ -219,6 +228,7 @@ interface Trip {
   createdAt: string; updatedAt: string;
   equipment?: { id: string; name: string; registrationNum?: string | null; brand?: string | null; model?: string | null };
   crew?: { id: string; name: string; members?: { fullName: string; role: string }[] } | null;
+  routePoints?: RoutePoint[];
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -4413,6 +4423,79 @@ function TripDetailDialog({ open, onOpenChange, trip, loading, crews, onEdit, on
                   } />
                 )}
               </DetailSection>
+              {/* ── ROUTE POINTS TIMELINE ── */}
+              {t.routePoints && t.routePoints.length > 0 && (
+                <div>
+                  <div className="flex items-center gap-1.5 mb-1.5">
+                    <span className="text-muted-foreground"><MapPinned className="size-3.5" /></span>
+                    <h3 className="text-xs font-semibold">Точки маршрута</h3>
+                    <Badge variant="secondary" className="text-[9px] h-4 px-1.5">{t.routePoints.length}</Badge>
+                    {(() => {
+                      const totalDist = t.routePoints.reduce((s, p) => s + (p.distanceFromPrev || 0), 0)
+                      return totalDist > 0 ? (
+                        <span className="text-[10px] text-sky-600 dark:text-sky-400 ml-auto font-medium">
+                          Итого: {totalDist.toFixed(1)} км
+                        </span>
+                      ) : null
+                    })()}
+                  </div>
+                  <div className="pl-2 space-y-0">
+                    {t.routePoints.map((rp, idx) => (
+                      <div key={rp.id} className="flex gap-2">
+                        {/* Timeline circle + line */}
+                        <div className="flex flex-col items-center w-6 shrink-0 pt-1">
+                          <div className={`size-5 rounded-full flex items-center justify-center text-[9px] font-bold shrink-0 ${
+                            idx === 0 ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-400' :
+                            idx === t.routePoints!.length - 1 ? 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-400' :
+                            'bg-primary/10 text-primary'
+                          }`}>
+                            {idx + 1}
+                          </div>
+                          {idx < t.routePoints!.length - 1 && (
+                            <div className="w-0.5 flex-1 bg-border/60 min-h-[16px]" />
+                          )}
+                        </div>
+                        {/* Point content */}
+                        <div className="flex-1 pb-2">
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-xs font-medium">{rp.name}</span>
+                            {rp.distanceFromPrev != null && rp.distanceFromPrev > 0 && (
+                              <span className="text-[9px] text-sky-600 dark:text-sky-400 bg-sky-50 dark:bg-sky-950/30 px-1 py-0 rounded">
+                                +{rp.distanceFromPrev.toFixed(1)} км
+                              </span>
+                            )}
+                          </div>
+                          {rp.address && (
+                            <div className="text-[10px] text-muted-foreground flex items-center gap-0.5">
+                              <MapPin className="size-2.5 shrink-0" />{rp.address}
+                            </div>
+                          )}
+                          <div className="flex flex-wrap gap-x-3 gap-y-0 text-[9px] text-muted-foreground">
+                            {rp.plannedArrival && (
+                              <span className="flex items-center gap-0.5">
+                                <Clock className="size-2.5" />Прибытие: {formatDateTime(rp.plannedArrival)}
+                              </span>
+                            )}
+                            {rp.plannedDeparture && (
+                              <span className="flex items-center gap-0.5">
+                                <Clock className="size-2.5" />Отправление: {formatDateTime(rp.plannedDeparture)}
+                              </span>
+                            )}
+                            {rp.actualArrival && (
+                              <span className="flex items-center gap-0.5 text-emerald-600 dark:text-emerald-400">
+                                <CheckCircle2 className="size-2.5" />Факт: {formatDateTime(rp.actualArrival)}
+                              </span>
+                            )}
+                          </div>
+                          {rp.notes && (
+                            <div className="text-[9px] text-muted-foreground italic mt-0.5">{rp.notes}</div>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
               <DetailSection title="Груз" icon={<Package className="size-3.5" />}>
                 <DetailRow label="Груз" value={t.cargo} />
                 <DetailRow label="Вес (т)" value={t.cargoWeight?.toString()} />
@@ -4890,6 +4973,12 @@ function TripFormDialog({ open, onOpenChange, editData, equipmentId, equipmentLi
   const [form, setForm] = useState<Record<string, string>>({})
   const [fetchingStart, setFetchingStart] = useState(false)
   const [fetchingEnd, setFetchingEnd] = useState(false)
+  const [routePoints, setRoutePoints] = useState<Array<{
+    id?: string; name: string; address: string; latitude: string; longitude: string;
+    plannedArrival: string; plannedDeparture: string; distanceFromPrev: string; notes: string;
+  }>>([])
+  const [geocodingIdx, setGeocodingIdx] = useState<number | null>(null)
+  const [optimizingRoute, setOptimizingRoute] = useState(false)
 
   useEffect(() => {
     if (editData) {
@@ -4904,13 +4993,184 @@ function TripFormDialog({ open, onOpenChange, editData, equipmentId, equipmentLi
         mileageStart: editData.mileageStart?.toString() || '', mileageEnd: editData.mileageEnd?.toString() || '',
         cost: editData.cost?.toString() || '', revenue: editData.revenue?.toString() || '', notes: editData.notes || '',
       })
+      setRoutePoints(
+        (editData.routePoints || []).map(p => ({
+          id: p.id, name: p.name || '', address: p.address || '',
+          latitude: p.latitude?.toString() || '', longitude: p.longitude?.toString() || '',
+          plannedArrival: p.plannedArrival ? toLocalDatetime(p.plannedArrival) : '',
+          plannedDeparture: p.plannedDeparture ? toLocalDatetime(p.plannedDeparture) : '',
+          distanceFromPrev: p.distanceFromPrev?.toString() || '', notes: p.notes || '',
+        }))
+      )
     } else {
       setForm({ equipmentId: equipmentId || '', startDate: toLocalDatetime(new Date()), status: 'planned' })
+      setRoutePoints([])
     }
   }, [editData, equipmentId, open])
 
   const f = (key: string) => form[key] || ''
   const setF = (key: string, value: string) => setForm(prev => ({ ...prev, [key]: value }))
+
+  // Haversine distance calculation
+  const haversineDistance = (lat1: number, lng1: number, lat2: number, lng2: number): number => {
+    const R = 6371
+    const dLat = (lat2 - lat1) * Math.PI / 180
+    const dLng = (lng2 - lng1) * Math.PI / 180
+    const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+      Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+      Math.sin(dLng / 2) * Math.sin(dLng / 2)
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
+    return R * c
+  }
+
+  // Recalculate distances between consecutive points
+  const recalcDistances = (points: typeof routePoints) => {
+    return points.map((p, i) => {
+      if (i === 0) return { ...p, distanceFromPrev: '' }
+      const prev = points[i - 1]
+      const lat1 = parseFloat(prev.latitude)
+      const lng1 = parseFloat(prev.longitude)
+      const lat2 = parseFloat(p.latitude)
+      const lng2 = parseFloat(p.longitude)
+      if (isFinite(lat1) && isFinite(lng1) && isFinite(lat2) && isFinite(lng2)) {
+        return { ...p, distanceFromPrev: haversineDistance(lat1, lng1, lat2, lng2).toFixed(1) }
+      }
+      return p
+    })
+  }
+
+  // Geocode a single address
+  const geocodeAddress = async (address: string): Promise<{ latitude: number; longitude: number; address: string } | null> => {
+    try {
+      const res = await fetch(`/api/glonass/geocode?address=${encodeURIComponent(address)}`)
+      if (!res.ok) return null
+      const data = await res.json()
+      if (data.latitude && data.longitude) {
+        return { latitude: data.latitude, longitude: data.longitude, address: data.address || address }
+      }
+    } catch { /* ignore */ }
+    return null
+  }
+
+  // Geocode a single route point
+  const handleGeocodePoint = async (idx: number) => {
+    const p = routePoints[idx]
+    if (!p.address.trim()) { toast.error('Введите адрес для геокодирования'); return }
+    setGeocodingIdx(idx)
+    try {
+      const result = await geocodeAddress(p.address)
+      if (result) {
+        const newPoints = [...routePoints]
+        newPoints[idx] = { ...newPoints[idx], latitude: result.latitude.toString(), longitude: result.longitude.toString(), address: result.address }
+        const withDist = recalcDistances(newPoints)
+        setRoutePoints(withDist)
+        toast.success(`Координаты получены: ${result.latitude.toFixed(4)}, ${result.longitude.toFixed(4)}`)
+      } else {
+        toast.error('Не удалось определить координаты по адресу')
+      }
+    } catch { toast.error('Ошибка геокодирования') }
+    setGeocodingIdx(null)
+  }
+
+  // Auto-sort route points using nearest neighbor algorithm
+  const handleAutoSort = async () => {
+    if (routePoints.length < 2) { toast.info('Добавьте минимум 2 точки для оптимизации'); return }
+    setOptimizingRoute(true)
+    try {
+      // Geocode all points without coordinates
+      const geocoded = [...routePoints]
+      for (let i = 0; i < geocoded.length; i++) {
+        if (!geocoded[i].latitude && !geocoded[i].longitude && geocoded[i].address.trim()) {
+          const result = await geocodeAddress(geocoded[i].address)
+          if (result) {
+            geocoded[i] = { ...geocoded[i], latitude: result.latitude.toString(), longitude: result.longitude.toString(), address: result.address }
+          }
+        }
+      }
+
+      // Check we have enough points with coordinates
+      const pointsWithCoords = geocoded.filter(p => p.latitude && p.longitude)
+      if (pointsWithCoords.length < 2) {
+        toast.error('Недостаточно точек с координатами для оптимизации. Используйте кнопку геокодирования.')
+        setOptimizingRoute(false)
+        return
+      }
+
+      // Build index mapping
+      const coordIndices: number[] = []
+      const coords: { lat: number; lng: number; origIdx: number }[] = []
+      for (let i = 0; i < geocoded.length; i++) {
+        if (geocoded[i].latitude && geocoded[i].longitude) {
+          coordIndices.push(i)
+          coords.push({ lat: parseFloat(geocoded[i].latitude), lng: parseFloat(geocoded[i].longitude), origIdx: i })
+        }
+      }
+
+      // Nearest neighbor starting from first point with coords
+      const n = coords.length
+      const visited = new Set<number>()
+      const order: number[] = [0] // Start from first point
+      visited.add(0)
+      while (visited.size < n) {
+        const current = order[order.length - 1]
+        let nearest = -1, nearestDist = Infinity
+        for (let i = 0; i < n; i++) {
+          if (visited.has(i)) continue
+          const dist = haversineDistance(coords[current].lat, coords[current].lng, coords[i].lat, coords[i].lng)
+          if (dist < nearestDist) { nearestDist = dist; nearest = i }
+        }
+        if (nearest >= 0) { order.push(nearest); visited.add(nearest) }
+      }
+
+      // Reorder: points with coords in optimized order, points without coords at the end
+      const orderedCoords = order.map(i => geocoded[coordIndices[i]])
+      const noCoords = geocoded.filter(p => !p.latitude && !p.longitude)
+      const result = [...orderedCoords, ...noCoords]
+
+      // Recalculate distances
+      const withDist = recalcDistances(result)
+      setRoutePoints(withDist)
+
+      // Update startPoint/endPoint from first/last route point
+      if (withDist.length > 0) {
+        if (withDist[0].address) setF('startPoint', withDist[0].address)
+        if (withDist[withDist.length - 1].address) setF('endPoint', withDist[withDist.length - 1].address)
+      }
+
+      const totalDist = withDist.reduce((s, p) => s + (parseFloat(p.distanceFromPrev) || 0), 0)
+      if (totalDist > 0) setF('distance', totalDist.toFixed(1))
+
+      toast.success(`Маршрут оптимизирован. Общее расстояние: ${totalDist.toFixed(1)} км`)
+    } catch { toast.error('Ошибка оптимизации маршрута') }
+    setOptimizingRoute(false)
+  }
+
+  // Route point operations
+  const addRoutePoint = () => {
+    setRoutePoints(prev => [...prev, { name: `Точка ${prev.length + 1}`, address: '', latitude: '', longitude: '', plannedArrival: '', plannedDeparture: '', distanceFromPrev: '', notes: '' }])
+  }
+  const removeRoutePoint = (idx: number) => {
+    setRoutePoints(prev => recalcDistances(prev.filter((_, i) => i !== idx)))
+  }
+  const moveRoutePoint = (idx: number, direction: 'up' | 'down') => {
+    const newIdx = direction === 'up' ? idx - 1 : idx + 1
+    if (newIdx < 0 || newIdx >= routePoints.length) return
+    const newPoints = [...routePoints]
+    const temp = newPoints[idx]
+    newPoints[idx] = newPoints[newIdx]
+    newPoints[newIdx] = temp
+    setRoutePoints(recalcDistances(newPoints))
+  }
+  const updateRoutePoint = (idx: number, field: string, value: string) => {
+    setRoutePoints(prev => {
+      const newPoints = prev.map((p, i) => i === idx ? { ...p, [field]: value } : p)
+      // If coordinates changed, recalculate distances
+      if (field === 'latitude' || field === 'longitude') {
+        return recalcDistances(newPoints)
+      }
+      return newPoints
+    })
+  }
 
   // Fetch snapshot from GLONASS at a specific time
   const fetchSnapshot = async (type: 'start' | 'end') => {
@@ -4962,7 +5222,22 @@ function TripFormDialog({ open, onOpenChange, editData, equipmentId, equipmentLi
     try {
       const url = editData ? `/api/trips/${editData.id}` : '/api/trips'
       const method = editData ? 'PUT' : 'POST'
-      const res = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(form) })
+      const payload = {
+        ...form,
+        routePoints: routePoints.map((p, i) => ({
+          id: p.id || undefined,
+          name: p.name || `Точка ${i + 1}`,
+          address: p.address || null,
+          latitude: p.latitude ? parseFloat(p.latitude) : null,
+          longitude: p.longitude ? parseFloat(p.longitude) : null,
+          sortOrder: i,
+          plannedArrival: p.plannedArrival || null,
+          plannedDeparture: p.plannedDeparture || null,
+          distanceFromPrev: p.distanceFromPrev ? parseFloat(p.distanceFromPrev) : null,
+          notes: p.notes || null,
+        })),
+      }
+      const res = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })
       if (!res.ok) throw new Error()
       toast.success(editData ? 'Рейс обновлён' : 'Рейс добавлен')
       onSaved()
@@ -4970,13 +5245,16 @@ function TripFormDialog({ open, onOpenChange, editData, equipmentId, equipmentLi
     setSaving(false)
   }
 
+  // Calculate total route distance from points
+  const totalRouteDistance = routePoints.reduce((s, p) => s + (parseFloat(p.distanceFromPrev) || 0), 0)
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-2xl">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">{editData ? <Edit className="size-4" /> : <Plus className="size-4" />}{editData ? 'Редактирование рейса' : 'Новый рейс'}</DialogTitle>
         </DialogHeader>
-        <div className="space-y-3 px-4 sm:px-5 overflow-y-auto flex-1 min-h-0">
+        <div className="space-y-3 px-4 sm:px-5 overflow-y-auto flex-1 min-h-0 max-h-[70vh]">
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div className="sm:col-span-2"><Label className="text-xs">Техника *</Label><Select value={f('equipmentId')} onValueChange={v => setF('equipmentId', v)} disabled={!!editData}><SelectTrigger className="h-9 text-sm"><SelectValue placeholder="Выберите технику" /></SelectTrigger><SelectContent>{equipmentList.map(e => <SelectItem key={e.id} value={e.id}>{e.name} {e.registrationNum ? `(${e.registrationNum})` : ''}</SelectItem>)}</SelectContent></Select></div>
             <div className="sm:col-span-2"><Label className="text-xs">Маршрут *</Label><Input value={f('route')} onChange={e => setF('route', e.target.value)} placeholder="Москва — Санкт-Петербург" autoFocus /></div>
@@ -4997,6 +5275,99 @@ function TripFormDialog({ open, onOpenChange, editData, equipmentId, equipmentLi
             <div><Label className="text-xs">Стоимость (₽)</Label><Input type="number" value={f('cost')} onChange={e => setF('cost', e.target.value)} /></div>
             <div><Label className="text-xs">Доход (₽)</Label><Input type="number" value={f('revenue')} onChange={e => setF('revenue', e.target.value)} /></div>
             <div className="sm:col-span-2"><Label className="text-xs">Заметки</Label><Textarea value={f('notes')} onChange={e => setF('notes', e.target.value)} rows={2} /></div>
+          </div>
+
+          {/* ── ROUTE POINTS (WAYPOINTS) SECTION ── */}
+          <div className="space-y-2 pt-2 border-t">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-1.5">
+                <MapPinned className="size-3.5 text-primary" />
+                <Label className="text-xs font-semibold">Точки маршрута</Label>
+                {routePoints.length > 0 && (
+                  <Badge variant="secondary" className="text-[9px] h-4 px-1.5">{routePoints.length}</Badge>
+                )}
+              </div>
+              <div className="flex items-center gap-1">
+                {routePoints.length >= 2 && (
+                  <Button type="button" size="sm" variant="outline" className="h-7 text-[10px] gap-1" onClick={handleAutoSort} disabled={optimizingRoute}>
+                    {optimizingRoute ? <Loader2 className="size-3 animate-spin" /> : <ToggleRight className="size-3" />}
+                    Оптимизировать
+                  </Button>
+                )}
+                <Button type="button" size="sm" variant="outline" className="h-7 text-[10px] gap-1" onClick={addRoutePoint}>
+                  <Plus className="size-3" />Добавить точку
+                </Button>
+              </div>
+            </div>
+            {totalRouteDistance > 0 && (
+              <div className="flex items-center gap-2 text-[10px] px-2 py-1 rounded bg-sky-50 dark:bg-sky-950/30 text-sky-700 dark:text-sky-400">
+                <Navigation className="size-3" />
+                <span>Общее расстояние по точкам: <strong>{totalRouteDistance.toFixed(1)} км</strong></span>
+              </div>
+            )}
+            {routePoints.length > 0 && (
+              <div className="space-y-0">
+                {routePoints.map((p, idx) => (
+                  <div key={idx} className="flex gap-2 group">
+                    {/* Timeline visualization */}
+                    <div className="flex flex-col items-center w-6 shrink-0 pt-2">
+                      <div className={`size-6 rounded-full flex items-center justify-center text-[10px] font-bold shrink-0 ${
+                        idx === 0 ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-400' :
+                        idx === routePoints.length - 1 ? 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-400' :
+                        'bg-primary/10 text-primary'
+                      }`}>
+                        {idx + 1}
+                      </div>
+                      {idx < routePoints.length - 1 && (
+                        <div className="w-0.5 flex-1 bg-border/60 min-h-[24px]" />
+                      )}
+                    </div>
+                    {/* Point content */}
+                    <div className="flex-1 space-y-1.5 pb-3">
+                      <div className="flex items-center gap-1">
+                        <Input value={p.name} onChange={e => updateRoutePoint(idx, 'name', e.target.value)} placeholder="Название" className="h-7 text-xs flex-1" />
+                        <Button type="button" size="sm" variant="ghost" className="size-7 p-0 shrink-0" onClick={() => moveRoutePoint(idx, 'up')} disabled={idx === 0} title="Вверх">
+                          <ArrowUp className="size-3" />
+                        </Button>
+                        <Button type="button" size="sm" variant="ghost" className="size-7 p-0 shrink-0" onClick={() => moveRoutePoint(idx, 'down')} disabled={idx === routePoints.length - 1} title="Вниз">
+                          <ArrowDown className="size-3" />
+                        </Button>
+                        <Button type="button" size="sm" variant="ghost" className="size-7 p-0 shrink-0 text-red-500 hover:text-red-700" onClick={() => removeRoutePoint(idx)} title="Удалить">
+                          <Trash2 className="size-3" />
+                        </Button>
+                      </div>
+                      <div className="flex gap-1">
+                        <Input value={p.address} onChange={e => updateRoutePoint(idx, 'address', e.target.value)} placeholder="Адрес" className="h-7 text-xs flex-1" />
+                        <Button type="button" size="sm" variant="outline" className="h-7 px-2 shrink-0" onClick={() => handleGeocodePoint(idx)} disabled={geocodingIdx === idx} title="Геокодировать адрес">
+                          {geocodingIdx === idx ? <Loader2 className="size-3 animate-spin" /> : <MapPin className="size-3" />}
+                        </Button>
+                      </div>
+                      {(p.latitude || p.longitude) && (
+                        <div className="text-[9px] text-muted-foreground px-0.5">
+                          📍 {p.latitude && parseFloat(p.latitude).toFixed(4)}{p.longitude && `, ${parseFloat(p.longitude).toFixed(4)}`}
+                        </div>
+                      )}
+                      <div className="grid grid-cols-2 gap-1">
+                        <div>
+                          <Label className="text-[9px] text-muted-foreground">Прибытие</Label>
+                          <Input type="datetime-local" value={p.plannedArrival} onChange={e => updateRoutePoint(idx, 'plannedArrival', e.target.value)} className="h-6 text-[10px]" />
+                        </div>
+                        <div>
+                          <Label className="text-[9px] text-muted-foreground">Отправление</Label>
+                          <Input type="datetime-local" value={p.plannedDeparture} onChange={e => updateRoutePoint(idx, 'plannedDeparture', e.target.value)} className="h-6 text-[10px]" />
+                        </div>
+                      </div>
+                      {idx > 0 && p.distanceFromPrev && (
+                        <div className="text-[9px] text-muted-foreground px-0.5">
+                          📏 {parseFloat(p.distanceFromPrev).toFixed(1)} км от предыдущей точки
+                        </div>
+                      )}
+                      <Input value={p.notes} onChange={e => updateRoutePoint(idx, 'notes', e.target.value)} placeholder="Заметки" className="h-6 text-[10px]" />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         </div>
         <DialogFooter>
