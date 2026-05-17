@@ -523,14 +523,69 @@ export async function GET(request: NextRequest) {
     }
 
     // ═══════════════════════════════════════════════════════════
-    // SOURCE 5: Reverse geocoding
+    // SOURCE 5: Local DB cache (last known values from sync)
+    // Uses data stored in GlonassTracker + GlonassSensorData
+    // ═══════════════════════════════════════════════════════════
+    if (fuel === null || mileage === null || (lat === null && lng === null) || !address) {
+      console.log('[GLONASS Snapshot] Trying local DB cache...')
+      try {
+        // Re-read tracker with latest cached values
+        const cachedTracker = await db.glonassTracker.findFirst({ where: { equipmentId } })
+        if (cachedTracker) {
+          if (fuel === null && cachedTracker.lastFuelLevel != null) {
+            fuel = cachedTracker.lastFuelLevel
+            console.log('[GLONASS Snapshot] DB cache: fuel =', fuel)
+          }
+          if (mileage === null && cachedTracker.lastMileage != null) {
+            mileage = cachedTracker.lastMileage
+            console.log('[GLONASS Snapshot] DB cache: mileage =', mileage)
+          }
+          if (lat === null && cachedTracker.lastLatitude != null) lat = cachedTracker.lastLatitude
+          if (lng === null && cachedTracker.lastLongitude != null) lng = cachedTracker.lastLongitude
+          if (speed === null && cachedTracker.lastSpeed != null) speed = cachedTracker.lastSpeed
+          if (ignition === null && cachedTracker.lastIgnition != null) ignition = cachedTracker.lastIgnition
+          if (!address && cachedTracker.lastAddress) address = cachedTracker.lastAddress
+        }
+
+        // Also check GlonassSensorData for more granular sensor values
+        if (fuel === null || mileage === null) {
+          const sensorRecords = await db.glonassSensorData.findMany({
+            where: { trackerId: tracker.id },
+            orderBy: { timestamp: 'desc' },
+            take: 20,
+          })
+          for (const rec of sensorRecords) {
+            const sType = (rec.sensorType || '').toLowerCase()
+            const sName = (rec.sensorName || '').toLowerCase()
+            if (isFuelSensorType(sType, sName) && fuel === null && rec.value != null) {
+              fuel = rec.value
+              console.log('[GLONASS Snapshot] DB sensor cache: fuel =', fuel, '(from', rec.timestamp.toISOString(), ')')
+            }
+            if (isMileageSensorType(sType, sName) && mileage === null && rec.value != null) {
+              mileage = rec.value
+              console.log('[GLONASS Snapshot] DB sensor cache: mileage =', mileage, '(from', rec.timestamp.toISOString(), ')')
+            }
+          }
+        }
+      } catch (dbErr) {
+        console.error('[GLONASS Snapshot] DB cache error:', dbErr)
+      }
+    }
+
+    // ═══════════════════════════════════════════════════════════
+    // SOURCE 6: Reverse geocoding
     // ═══════════════════════════════════════════════════════════
     if (lat && lng && !address) {
       console.log('[GLONASS Snapshot] Trying reverse geocoding for', lat, lng)
       address = await reverseGeocode(settings as any, lat, lng, token)
     }
 
-    console.log('[GLONASS Snapshot] Result — fuel:', fuel, 'mileage:', mileage, 'lat:', lat, 'lng:', lng, 'address:', address, 'speed:', speed, 'ignition:', ignition)
+    // Flag which source provided the data (for UI feedback)
+    const source = fuel !== null || mileage !== null || lat !== null
+      ? (fuel != null && fuel !== tracker.lastFuelLevel ? 'historical' : 'cached')
+      : 'none'
+
+    console.log('[GLONASS Snapshot] Result — fuel:', fuel, 'mileage:', mileage, 'lat:', lat, 'lng:', lng, 'address:', address, 'speed:', speed, 'ignition:', ignition, 'source:', source)
 
     return NextResponse.json({
       fuel,
@@ -540,6 +595,7 @@ export async function GET(request: NextRequest) {
       address,
       speed,
       ignition,
+      source,
       datetime: targetTime.toISOString(),
     })
   } catch (error) {

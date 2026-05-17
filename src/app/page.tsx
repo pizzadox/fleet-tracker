@@ -4832,7 +4832,8 @@ function TripFormDialog({ open, onOpenChange, editData, equipmentId, equipmentLi
 
       if (Object.keys(updates).length > 0) {
         setForm(prev => ({ ...prev, ...updates }))
-        toast.success(`Данные получены: ${Object.keys(updates).map(k => {
+        const sourceLabel = data.source === 'cached' ? ' (последние известные)' : data.source === 'none' ? '' : ''
+        toast.success(`Данные получены${sourceLabel}: ${Object.keys(updates).map(k => {
           if (k.includes('fuel')) return 'топливо'
           if (k.includes('mileage')) return 'пробег'
           if (k.includes('Point')) return 'адрес'
