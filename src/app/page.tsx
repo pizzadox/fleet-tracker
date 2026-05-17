@@ -1347,110 +1347,126 @@ function EquipmentTab({ equipment, companies, eqSearch, setEqSearch, eqStatusFil
               >
                 {/* ── Шапка (всегда видна) — клик раскрывает/сворачивает ── */}
                 <div
-                  className="flex items-center gap-2 px-3 py-2 cursor-pointer select-none"
+                  className="flex items-center gap-2.5 px-3 py-2.5 cursor-pointer select-none"
                   onClick={() => setExpandedId(isExpanded ? null : eq.id)}
                 >
-                  <div className={`flex items-center justify-center size-8 rounded-lg shrink-0 ${typeInfo.color} ${typeInfo.darkColor}`}>
+                  <div className={`flex items-center justify-center size-9 rounded-lg shrink-0 ${typeInfo.color} ${typeInfo.darkColor}`}>
                     {typeInfo.icon}
                   </div>
                   <div className="flex-1 min-w-0">
+                    {/* Строка 1: Название + статус-индикаторы */}
                     <div className="flex items-center gap-1.5">
-                      <span className="font-semibold text-xs truncate">{eq.name}</span>
+                      <span className="font-semibold text-sm truncate">{eq.name}</span>
                       {tracker && (
-                        <span className={`size-2 rounded-full shrink-0 ${trackerOnline ? 'bg-emerald-500 animate-pulse' : 'bg-red-400'}`} title={trackerOnline ? 'Онлайн' : 'Офлайн'} />
+                        <span className={`size-2.5 rounded-full shrink-0 ${trackerOnline ? 'bg-emerald-500 animate-pulse' : 'bg-red-400'}`} title={trackerOnline ? 'Онлайн' : 'Офлайн'} />
                       )}
-                      {hasWarnings && <AlertTriangle className="size-3 text-amber-500 shrink-0" />}
+                      {hasWarnings && <AlertTriangle className="size-3.5 text-amber-500 shrink-0" />}
                     </div>
-                    <div className="flex items-center gap-1.5 mt-0.5">
+                    {/* Строка 2: Госномер + бренд/модель + год + категория */}
+                    <div className="flex items-center gap-2 mt-0.5">
                       {eq.registrationNum && (
-                        <span className="font-mono text-[11px] text-muted-foreground cursor-pointer hover:text-primary inline-flex items-center gap-0.5"
+                        <span className="font-mono text-xs text-muted-foreground cursor-pointer hover:text-primary inline-flex items-center gap-0.5"
                           onClick={(e) => { e.stopPropagation(); copyRegNum(eq.registrationNum!, eq.id) }}
                           title={copiedId === eq.id ? 'Скопировано!' : 'Копировать номер'}>
                           {eq.registrationNum}
-                          <Copy className="size-2.5" />
+                          <Copy className="size-3" />
                         </span>
                       )}
-                      {brandModel && <span className="text-[10px] text-muted-foreground truncate">{brandModel}</span>}
-                      {eq.year && <span className="text-[10px] text-muted-foreground">{eq.year} г.</span>}
-                      {eq.category && <span className="text-[10px] text-muted-foreground font-medium">кат. {eq.category}</span>}
-                      {/* Мини-индикаторы в шапке */}
-                      {tracker?.lastSpeed != null && tracker.lastSpeed > 0 && (
-                        <span className="inline-flex items-center gap-0.5 text-[9px] text-emerald-600 dark:text-emerald-400 font-medium">
-                          <Navigation className="size-2.5" />{tracker.lastSpeed} км/ч
-                        </span>
-                      )}
-                      {tracker?.lastFuelLevel != null && (
-                        <span className="inline-flex items-center gap-0.5 text-[9px] text-amber-600 dark:text-amber-400">
-                          <Fuel className="size-2.5" />{tracker.lastFuelLevel} л
-                        </span>
-                      )}
-                      {eq.mileage != null && (
-                        <span className="inline-flex items-center gap-0.5 text-[9px] text-muted-foreground">
-                          <Gauge className="size-2.5" />{eq.mileage >= 1000 ? `${(eq.mileage / 1000).toFixed(1)} тыс.км` : `${eq.mileage} км`}
-                        </span>
-                      )}
+                      {brandModel && <span className="text-xs text-muted-foreground truncate">{brandModel}</span>}
+                      {eq.year && <span className="text-xs text-muted-foreground">{eq.year} г.</span>}
+                      {eq.category && <span className="text-xs text-muted-foreground font-medium">кат. {eq.category}</span>}
                     </div>
+                    {/* Строка 3: Датчики (скорость / топливо / пробег) */}
+                    {(tracker?.lastSpeed != null || tracker?.lastFuelLevel != null || eq.mileage != null) && (
+                      <div className="flex items-center gap-3 mt-1">
+                        {tracker?.lastSpeed != null && tracker.lastSpeed > 0 && (
+                          <span className="inline-flex items-center gap-1 text-xs text-emerald-600 dark:text-emerald-400 font-medium">
+                            <Navigation className="size-3.5" />{tracker.lastSpeed} км/ч
+                          </span>
+                        )}
+                        {tracker?.lastFuelLevel != null && (
+                          <span className="inline-flex items-center gap-1 text-xs text-amber-600 dark:text-amber-400 font-medium">
+                            <Fuel className="size-3.5" />{tracker.lastFuelLevel} л
+                          </span>
+                        )}
+                        {eq.mileage != null && (
+                          <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
+                            <Gauge className="size-3.5" />{eq.mileage >= 1000 ? `${(eq.mileage / 1000).toFixed(1)} тыс.км` : `${eq.mileage} км`}
+                          </span>
+                        )}
+                        {tracker?.lastIgnition != null && (
+                          <span className={`inline-flex items-center gap-1 text-xs font-medium ${tracker.lastIgnition ? 'text-emerald-600 dark:text-emerald-400' : 'text-muted-foreground'}`}>
+                            <Zap className="size-3.5" />{tracker.lastIgnition ? 'Двигатель' : 'Стоп'}
+                          </span>
+                        )}
+                        {tracker?.lastEngineTemp != null && (
+                          <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
+                            <Thermometer className="size-3.5" />{tracker.lastEngineTemp}°C
+                          </span>
+                        )}
+                      </div>
+                    )}
                   </div>
-                  <Badge variant="secondary" className={`text-[9px] px-1.5 py-0 h-4 shrink-0 ${statusInfo?.color || ''}`}>
+                  <Badge variant="secondary" className={`text-[11px] px-2 py-0.5 h-5 shrink-0 ${statusInfo?.color || ''}`}>
                     {statusInfo?.label || eq.status}
                   </Badge>
-                  <ChevronDown className={`size-4 text-muted-foreground shrink-0 transition-transform duration-200 ${isExpanded ? 'rotate-180' : ''}`} />
+                  <ChevronDown className={`size-5 text-muted-foreground shrink-0 transition-transform duration-200 ${isExpanded ? 'rotate-180' : ''}`} />
                 </div>
 
                 {/* ── Тело (свёрнуто/развёрнуто) ── */}
                 <div className={`overflow-hidden transition-all duration-200 ${isExpanded ? 'max-h-[800px] opacity-100' : 'max-h-0 opacity-0'}`}>
-                  <div className="px-3 pb-2.5 pt-0 border-t border-border/50">
+                  <div className="px-4 pb-3 pt-0 border-t border-border/50">
                     {/* Характеристики: двиг / топливо / пробег / мощность / объём */}
-                    <div className="flex flex-wrap items-center gap-1.5 mt-2 mb-1.5">
+                    <div className="flex flex-wrap items-center gap-2 mt-2 mb-2">
                       {eq.engineType && <span className="inline-flex items-center gap-0.5">{getEngineIcon(eq.engineType)}</span>}
-                      {eq.fuelType && <span className={`inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-medium ${getFuelColor(eq.fuelType)}`}>{eq.fuelType}</span>}
-                      {eq.engineVolume && <span className="text-[10px] text-muted-foreground">{eq.engineVolume} л</span>}
-                      {eq.enginePower && <span className="text-[10px] text-muted-foreground">{eq.enginePower} л.с.</span>}
+                      {eq.fuelType && <span className={`inline-flex items-center rounded px-2 py-0.5 text-xs font-medium ${getFuelColor(eq.fuelType)}`}>{eq.fuelType}</span>}
+                      {eq.engineVolume && <span className="text-xs text-muted-foreground">{eq.engineVolume} л</span>}
+                      {eq.enginePower && <span className="text-xs text-muted-foreground">{eq.enginePower} л.с.</span>}
                       {eq.loadCapacity && (
-                        <span className="inline-flex items-center gap-0.5 text-[10px] text-muted-foreground">
-                          <Weight className="size-3" />{eq.loadCapacity} т
+                        <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
+                          <Weight className="size-3.5" />{eq.loadCapacity} т
                         </span>
                       )}
                       {eq.passengerSeats && (
-                        <span className="inline-flex items-center gap-0.5 text-[10px] text-muted-foreground">
-                          <Users className="size-3" />{eq.passengerSeats} мест
+                        <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
+                          <Users className="size-3.5" />{eq.passengerSeats} мест
                         </span>
                       )}
-                      {eq.color && <span className="text-[10px] text-muted-foreground">Цвет: {eq.color}</span>}
+                      {eq.color && <span className="text-xs text-muted-foreground">Цвет: {eq.color}</span>}
                     </div>
 
                     {/* Трекер данные */}
                     {tracker && (
-                      <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 mb-1.5 px-2 py-1.5 rounded bg-muted/50 text-[10px]">
+                      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mb-2 px-3 py-2 rounded bg-muted/50 text-xs">
                         {tracker.lastSpeed != null && (
-                          <span className="inline-flex items-center gap-0.5">
-                            <Navigation className="size-3" />
+                          <span className="inline-flex items-center gap-1">
+                            <Navigation className="size-3.5" />
                             <span className={tracker.lastSpeed > 0 ? 'text-emerald-600 dark:text-emerald-400 font-medium' : 'text-muted-foreground'}>
                               {tracker.lastSpeed} км/ч
                             </span>
                           </span>
                         )}
                         {tracker.lastFuelLevel != null && (
-                          <span className="inline-flex items-center gap-0.5">
-                            <Fuel className="size-3 text-amber-600 dark:text-amber-400" />
+                          <span className="inline-flex items-center gap-1">
+                            <Fuel className="size-3.5 text-amber-600 dark:text-amber-400" />
                             {tracker.lastFuelLevel} л
                           </span>
                         )}
                         {tracker.lastMileage != null && (
-                          <span className="inline-flex items-center gap-0.5 text-muted-foreground">
-                            <Gauge className="size-3" />
+                          <span className="inline-flex items-center gap-1 text-muted-foreground">
+                            <Gauge className="size-3.5" />
                             {(tracker.lastMileage / 1000).toFixed(1)} тыс.км
                           </span>
                         )}
                         {tracker.lastIgnition != null && (
-                          <span className={`inline-flex items-center gap-0.5 ${tracker.lastIgnition ? 'text-emerald-600 dark:text-emerald-400' : 'text-muted-foreground'}`}>
-                            <Zap className="size-3" />
+                          <span className={`inline-flex items-center gap-1 ${tracker.lastIgnition ? 'text-emerald-600 dark:text-emerald-400' : 'text-muted-foreground'}`}>
+                            <Zap className="size-3.5" />
                             {tracker.lastIgnition ? 'Зажигание ВКЛ' : 'Зажигание ВЫКЛ'}
                           </span>
                         )}
                         {tracker.lastEngineTemp != null && (
-                          <span className="inline-flex items-center gap-0.5 text-muted-foreground">
-                            <Thermometer className="size-3" />
+                          <span className="inline-flex items-center gap-1 text-muted-foreground">
+                            <Thermometer className="size-3.5" />
                             {tracker.lastEngineTemp}°C
                           </span>
                         )}
@@ -1459,14 +1475,14 @@ function EquipmentTab({ equipment, companies, eqSearch, setEqSearch, eqStatusFil
 
                     {/* Трекер инфо: название / IMEI / телефон / адрес */}
                     {tracker && (
-                      <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 mb-1.5 text-[9px] text-muted-foreground">
-                        {tracker.trackerName && <span className="inline-flex items-center gap-0.5"><Cpu className="size-2.5" />{tracker.trackerName}</span>}
+                      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mb-2 text-xs text-muted-foreground">
+                        {tracker.trackerName && <span className="inline-flex items-center gap-1"><Cpu className="size-3" />{tracker.trackerName}</span>}
                         {tracker.imei && <span className="font-mono" title="IMEI">IMEI: {tracker.imei}</span>}
-                        {tracker.phoneNumber && <span className="inline-flex items-center gap-0.5"><Phone className="size-2.5" />{tracker.phoneNumber}</span>}
-                        {tracker.lastAddress && <span className="inline-flex items-center gap-0.5 truncate max-w-[280px]" title={tracker.lastAddress}><MapPin className="size-2.5 shrink-0" />{tracker.lastAddress}</span>}
+                        {tracker.phoneNumber && <span className="inline-flex items-center gap-1"><Phone className="size-3" />{tracker.phoneNumber}</span>}
+                        {tracker.lastAddress && <span className="inline-flex items-center gap-1 truncate max-w-[300px]" title={tracker.lastAddress}><MapPin className="size-3 shrink-0" />{tracker.lastAddress}</span>}
                         {tracker.lastSeenAt && (
-                          <span className="inline-flex items-center gap-0.5" title={`Последняя активность: ${formatDateTime(tracker.lastSeenAt)}`}>
-                            <Clock className="size-2.5" />{new Date(tracker.lastSeenAt).toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit', year: '2-digit' })} {new Date(tracker.lastSeenAt).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}
+                          <span className="inline-flex items-center gap-1" title={`Последняя активность: ${formatDateTime(tracker.lastSeenAt)}`}>
+                            <Clock className="size-3" />{new Date(tracker.lastSeenAt).toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit', year: '2-digit' })} {new Date(tracker.lastSeenAt).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}
                           </span>
                         )}
                       </div>
@@ -1474,30 +1490,30 @@ function EquipmentTab({ equipment, companies, eqSearch, setEqSearch, eqStatusFil
 
                     {/* Документы: VIN / СТС / ПТС / Серийный */}
                     {(eq.vin || eq.stsNumber || eq.ptsNumber || eq.serialNumber) && (
-                      <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 mb-1.5 text-[9px] text-muted-foreground">
+                      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mb-2 text-xs text-muted-foreground">
                         {eq.vin && <span className="font-mono" title={`VIN: ${eq.vin}`}><span className="font-medium text-foreground">VIN:</span> {eq.vin}</span>}
-                        {eq.stsNumber && <span className="inline-flex items-center gap-0.5" title={`СТС: ${eq.stsNumber}`}><FileBadge className="size-2.5" />СТС: {eq.stsNumber}</span>}
-                        {eq.ptsNumber && <span className="inline-flex items-center gap-0.5" title={`ПТС: ${eq.ptsNumber}`}><FileBadge className="size-2.5" />ПТС: {eq.ptsNumber}</span>}
-                        {eq.serialNumber && <span className="inline-flex items-center gap-0.5" title={`Сер. №: ${eq.serialNumber}`}><Hash className="size-2.5" />С/Н: {eq.serialNumber}</span>}
+                        {eq.stsNumber && <span className="inline-flex items-center gap-1" title={`СТС: ${eq.stsNumber}`}><FileBadge className="size-3" />СТС: {eq.stsNumber}</span>}
+                        {eq.ptsNumber && <span className="inline-flex items-center gap-1" title={`ПТС: ${eq.ptsNumber}`}><FileBadge className="size-3" />ПТС: {eq.ptsNumber}</span>}
+                        {eq.serialNumber && <span className="inline-flex items-center gap-1" title={`Сер. №: ${eq.serialNumber}`}><Hash className="size-3" />С/Н: {eq.serialNumber}</span>}
                       </div>
                     )}
 
                     {/* Страховка / ТО */}
                     {(eq.insuranceNumber || eq.insuranceExpiry || eq.inspectionExpiry) && (
-                      <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 mb-1.5 text-[9px]">
+                      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mb-2 text-xs">
                         {eq.insuranceNumber && (
-                          <span className="inline-flex items-center gap-0.5 text-muted-foreground" title={`Полис: ${eq.insuranceNumber}`}>
-                            <Shield className="size-2.5" />Полис: {eq.insuranceNumber}
+                          <span className="inline-flex items-center gap-1 text-muted-foreground" title={`Полис: ${eq.insuranceNumber}`}>
+                            <Shield className="size-3" />Полис: {eq.insuranceNumber}
                           </span>
                         )}
                         {insDays != null && (
-                          <span className={`inline-flex items-center gap-0.5 font-medium ${insDays < 0 ? 'text-red-600 dark:text-red-400' : insDays < 30 ? 'text-amber-600 dark:text-amber-400' : 'text-emerald-600 dark:text-emerald-400'}`}>
-                            <Shield className="size-2.5" />ОСАГО {insDays < 0 ? `истекло ${Math.abs(insDays)}д` : `${insDays}д`}
+                          <span className={`inline-flex items-center gap-1 font-medium ${insDays < 0 ? 'text-red-600 dark:text-red-400' : insDays < 30 ? 'text-amber-600 dark:text-amber-400' : 'text-emerald-600 dark:text-emerald-400'}`}>
+                            <Shield className="size-3" />ОСАГО {insDays < 0 ? `истекло ${Math.abs(insDays)}д` : `${insDays}д`}
                           </span>
                         )}
                         {inspDays != null && (
-                          <span className={`inline-flex items-center gap-0.5 font-medium ${inspDays < 0 ? 'text-red-600 dark:text-red-400' : inspDays < 30 ? 'text-amber-600 dark:text-amber-400' : 'text-emerald-600 dark:text-emerald-400'}`}>
-                            <ClipboardCheck className="size-2.5" />ТО {inspDays < 0 ? `истекло ${Math.abs(inspDays)}д` : `${inspDays}д`}
+                          <span className={`inline-flex items-center gap-1 font-medium ${inspDays < 0 ? 'text-red-600 dark:text-red-400' : inspDays < 30 ? 'text-amber-600 dark:text-amber-400' : 'text-emerald-600 dark:text-emerald-400'}`}>
+                            <ClipboardCheck className="size-3" />ТО {inspDays < 0 ? `истекло ${Math.abs(inspDays)}д` : `${inspDays}д`}
                           </span>
                         )}
                       </div>
@@ -1505,15 +1521,15 @@ function EquipmentTab({ equipment, companies, eqSearch, setEqSearch, eqStatusFil
 
                     {/* Владелец / Арендатор */}
                     {(eq.owner || eq.renter) && (
-                      <div className="flex flex-wrap items-center gap-1.5 mb-1.5">
+                      <div className="flex flex-wrap items-center gap-2 mb-2">
                         {eq.owner && (
-                          <span className="inline-flex items-center gap-0.5 rounded px-2 py-0.5 text-[10px] font-medium bg-muted" title={`Владелец: ${eq.owner.name}${eq.owner.inn ? ` (ИНН: ${eq.owner.inn})` : ''}${eq.owner.phone ? ` • ${eq.owner.phone}` : ''}`}>
-                            <Building2 className="size-3 shrink-0" />{eq.owner.name}
+                          <span className="inline-flex items-center gap-1 rounded px-2.5 py-1 text-xs font-medium bg-muted" title={`Владелец: ${eq.owner.name}${eq.owner.inn ? ` (ИНН: ${eq.owner.inn})` : ''}${eq.owner.phone ? ` • ${eq.owner.phone}` : ''}`}>
+                            <Building2 className="size-3.5 shrink-0" />{eq.owner.name}
                           </span>
                         )}
                         {eq.renter && (
-                          <span className="inline-flex items-center gap-0.5 rounded px-2 py-0.5 text-[10px] font-medium bg-sky-100 dark:bg-sky-900/40 text-sky-700 dark:text-sky-400" title={`Арендатор: ${eq.renter.name}${eq.renter.inn ? ` (ИНН: ${eq.renter.inn})` : ''}${eq.renter.phone ? ` • ${eq.renter.phone}` : ''}`}>
-                            <Users className="size-3 shrink-0" />{eq.renter.name}
+                          <span className="inline-flex items-center gap-1 rounded px-2.5 py-1 text-xs font-medium bg-sky-100 dark:bg-sky-900/40 text-sky-700 dark:text-sky-400" title={`Арендатор: ${eq.renter.name}${eq.renter.inn ? ` (ИНН: ${eq.renter.inn})` : ''}${eq.renter.phone ? ` • ${eq.renter.phone}` : ''}`}>
+                            <Users className="size-3.5 shrink-0" />{eq.renter.name}
                           </span>
                         )}
                       </div>
@@ -1521,7 +1537,7 @@ function EquipmentTab({ equipment, companies, eqSearch, setEqSearch, eqStatusFil
 
                     {/* Стоимость / износ / возраст */}
                     {(eq.purchasePrice || eq.currentPrice || age != null || depreciation != null) && (
-                      <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 mb-1.5 text-[9px]">
+                      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mb-2 text-xs">
                         {eq.purchasePrice != null && (
                           <span className="text-muted-foreground" title="Цена приобретения">
                             Покупка: {eq.purchasePrice.toLocaleString('ru-RU')} ₽
@@ -1545,58 +1561,58 @@ function EquipmentTab({ equipment, companies, eqSearch, setEqSearch, eqStatusFil
 
                     {/* Заметки */}
                     {eq.notes && (
-                      <div className="mb-1.5 text-[9px] text-muted-foreground italic" title={eq.notes}>
-                        <StickyNote className="inline size-2.5 mr-0.5" />{eq.notes}
+                      <div className="mb-2 text-xs text-muted-foreground italic" title={eq.notes}>
+                        <StickyNote className="inline size-3 mr-0.5" />{eq.notes}
                       </div>
                     )}
 
                     {/* Подвал: сотрудники / ремонты / фото / документы / действия */}
-                    <div className="flex items-center gap-1.5 flex-wrap pt-1.5 border-t border-border/50">
+                    <div className="flex items-center gap-2 flex-wrap pt-2 border-t border-border/50">
                       {/* Сотрудники */}
                       {eq.employees && eq.employees.length > 0 && (
                         <div className="flex items-center -space-x-1">
                           {eq.employees.slice(0, 5).map(emp => (
-                            <span key={emp.id} className="inline-flex items-center justify-center size-5 rounded-full text-[8px] font-bold bg-primary/15 text-primary ring-1 ring-background" title={`${emp.fullName}${emp.position ? ` — ${emp.position}` : ''}${emp.phone ? ` • ${emp.phone}` : ''}`}>
+                            <span key={emp.id} className="inline-flex items-center justify-center size-6 rounded-full text-[10px] font-bold bg-primary/15 text-primary ring-1 ring-background" title={`${emp.fullName}${emp.position ? ` — ${emp.position}` : ''}${emp.phone ? ` • ${emp.phone}` : ''}`}>
                               {emp.fullName.split(' ').map(n => n[0]).slice(0, 2).join('')}
                             </span>
                           ))}
-                          {eq.employees.length > 5 && <span className="text-[9px] text-muted-foreground ml-1">+{eq.employees.length - 5}</span>}
+                          {eq.employees.length > 5 && <span className="text-xs text-muted-foreground ml-1">+{eq.employees.length - 5}</span>}
                         </div>
                       )}
                       {/* Ремонты */}
                       {eq._count?.repairs != null && eq._count.repairs > 0 && (
-                        <span className="inline-flex items-center gap-0.5 text-[9px] text-muted-foreground" title="Ремонтов">
-                          <Wrench className="size-2.5" />{eq._count.repairs}
+                        <span className="inline-flex items-center gap-1 text-xs text-muted-foreground" title="Ремонтов">
+                          <Wrench className="size-3.5" />{eq._count.repairs}
                         </span>
                       )}
                       {/* Фото */}
                       {eq._count?.photos != null && eq._count.photos > 0 && (
-                        <span className="inline-flex items-center gap-0.5 text-[9px] text-muted-foreground" title="Фотографий">
-                          <Camera className="size-2.5" />{eq._count.photos}
+                        <span className="inline-flex items-center gap-1 text-xs text-muted-foreground" title="Фотографий">
+                          <Camera className="size-3.5" />{eq._count.photos}
                         </span>
                       )}
                       {/* Документы */}
                       {eq.documents && eq.documents.length > 0 && (
-                        <span className="inline-flex items-center gap-0.5 text-[9px] text-muted-foreground" title="Документов">
-                          <FileText className="size-2.5" />{eq.documents.length}
+                        <span className="inline-flex items-center gap-1 text-xs text-muted-foreground" title="Документов">
+                          <FileText className="size-3.5" />{eq.documents.length}
                         </span>
                       )}
                       {/* Трекеры кол-во */}
                       {eq.trackers && eq.trackers.length > 1 && (
-                        <span className="inline-flex items-center gap-0.5 text-[9px] text-muted-foreground" title={`Трекеров: ${eq.trackers.length}`}>
-                          <Cpu className="size-2.5" />{eq.trackers.length}
+                        <span className="inline-flex items-center gap-1 text-xs text-muted-foreground" title={`Трекеров: ${eq.trackers.length}`}>
+                          <Cpu className="size-3.5" />{eq.trackers.length}
                         </span>
                       )}
                       {/* Действия справа */}
                       <div className="ml-auto flex items-center gap-1">
-                        <Button size="sm" variant="ghost" className="size-6 p-0" onClick={() => onOpenDetail(eq)} title="Подробнее">
-                          <Eye className="size-3" />
+                        <Button size="sm" variant="ghost" className="size-7 p-0" onClick={() => onOpenDetail(eq)} title="Подробнее">
+                          <Eye className="size-3.5" />
                         </Button>
-                        <Button size="sm" variant="ghost" className="size-6 p-0" onClick={() => onEdit(eq)} title="Редактировать">
-                          <Edit className="size-3" />
+                        <Button size="sm" variant="ghost" className="size-7 p-0" onClick={() => onEdit(eq)} title="Редактировать">
+                          <Edit className="size-3.5" />
                         </Button>
-                        <Button size="sm" variant="ghost" className="size-6 p-0 text-destructive hover:text-destructive" onClick={() => onDelete(eq)} title="Удалить">
-                          <Trash2 className="size-3" />
+                        <Button size="sm" variant="ghost" className="size-7 p-0 text-destructive hover:text-destructive" onClick={() => onDelete(eq)} title="Удалить">
+                          <Trash2 className="size-3.5" />
                         </Button>
                       </div>
                     </div>
