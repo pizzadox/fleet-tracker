@@ -3,6 +3,9 @@
 import { useEffect, useRef, useCallback, useState } from 'react'
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
+import 'leaflet.markercluster'
+import 'leaflet.markercluster/dist/MarkerCluster.css'
+import 'leaflet.markercluster/dist/MarkerCluster.Default.css'
 
 // Fix default marker icons for webpack/next.js
 delete (L.Icon.Default.prototype as any)._getIconUrl
@@ -370,7 +373,7 @@ export default function TrackerMap({
   const mapInstanceRef = useRef<L.Map | null>(null)
   const legendRef = useRef<L.Control | null>(null)
   // Layer groups for efficient updates
-  const markersLayerRef = useRef<L.LayerGroup | null>(null)
+  const markersLayerRef = useRef<L.MarkerClusterGroup | null>(null)
   const tracksLayerRef = useRef<L.LayerGroup | null>(null)
   // Track marker objects by tracker ID for incremental updates
   const markerByIdRef = useRef<Map<string, L.Marker>>(new Map())
@@ -396,8 +399,24 @@ export default function TrackerMap({
       maxZoom: 19,
     }).addTo(map)
 
-    // Create layer groups for markers and tracks
-    markersLayerRef.current = L.layerGroup().addTo(map)
+    // Create marker cluster group for markers (clusters when zoomed out)
+    markersLayerRef.current = L.markerClusterGroup({
+      maxClusterRadius: 50,
+      spiderfyOnMaxZoom: true,
+      showCoverageOnHover: false,
+      iconCreateFunction: (cluster) => {
+        const count = cluster.getChildCount()
+        let size = 'small'
+        let dim = 40
+        if (count > 100) { size = 'large'; dim = 56 }
+        else if (count > 10) { size = 'medium'; dim = 48 }
+        return L.divIcon({
+          html: `<div><span>${count}</span></div>`,
+          className: `marker-cluster marker-cluster-${size}`,
+          iconSize: L.point(dim, dim),
+        })
+      },
+    }).addTo(map)
     tracksLayerRef.current = L.layerGroup().addTo(map)
 
     mapInstanceRef.current = map
@@ -437,6 +456,39 @@ export default function TrackerMap({
     const map = mapInstanceRef.current
     const markersLayer = markersLayerRef.current
     if (!map || !markersLayer) return
+
+    // Create a new marker and add to layer group (supports both LayerGroup and MarkerClusterGroup)
+    const createMarker = (tracker: TrackerInfo, layer: L.LayerGroup | L.MarkerClusterGroup): L.Marker | null => {
+      if (tracker.lastLatitude == null || tracker.lastLongitude == null) return null
+      try {
+        const marker = L.marker([tracker.lastLatitude, tracker.lastLongitude], {
+          icon: buildVehicleIcon(tracker),
+        })
+          .bindPopup(buildVehiclePopup(tracker), { className: 'tracker-popup', maxWidth: 340 })
+          .bindTooltip(buildVehicleTooltip(tracker), { direction: 'top', offset: [0, -24], className: 'tracker-tooltip' })
+
+        // Handle equipment click via popup link instead of marker click
+        if (onEquipmentClick && tracker.equipmentId) {
+          marker.on('popupopen', () => {
+            const popupEl = marker.getPopup()?.getElement()
+            if (!popupEl) return
+            const link = popupEl.querySelector('[data-equipment-id]')
+            if (link && !link.dataset.bound) {
+              link.dataset.bound = 'true'
+              link.addEventListener('click', (e: Event) => {
+                e.stopPropagation()
+                onEquipmentClick(tracker.equipmentId!)
+              })
+            }
+          })
+        }
+
+        layer.addLayer(marker)
+        return marker
+      } catch {
+        return null
+      }
+    }
 
     const existingMarkers = markerByIdRef.current
     const newTrackerIds = new Set(trackers.map(t => t.id))
@@ -488,41 +540,6 @@ export default function TrackerMap({
       }
     }
   }, [trackers, onEquipmentClick])
-
-  // Create a new marker and add to layer group
-  function createMarker(tracker: TrackerInfo, layer: L.LayerGroup): L.Marker | null {
-    if (tracker.lastLatitude == null || tracker.lastLongitude == null) return null
-    try {
-      const marker = L.marker([tracker.lastLatitude, tracker.lastLongitude], {
-        icon: buildVehicleIcon(tracker),
-      })
-        .bindPopup(buildVehiclePopup(tracker), { className: 'tracker-popup', maxWidth: 340 })
-        .bindTooltip(buildVehicleTooltip(tracker), { direction: 'top', offset: [0, -24], className: 'tracker-tooltip' })
-
-      // Handle equipment click via popup link instead of marker click
-      // so the popup shows first, and the card only opens when user
-      // explicitly clicks the equipment name inside the popup.
-      if (onEquipmentClick && tracker.equipmentId) {
-        marker.on('popupopen', () => {
-          const popupEl = marker.getPopup()?.getElement()
-          if (!popupEl) return
-          const link = popupEl.querySelector('[data-equipment-id]')
-          if (link && !link.dataset.bound) {
-            link.dataset.bound = 'true'
-            link.addEventListener('click', (e: Event) => {
-              e.stopPropagation()
-              onEquipmentClick(tracker.equipmentId!)
-            })
-          }
-        })
-      }
-
-      layer.addLayer(marker)
-      return marker
-    } catch {
-      return null
-    }
-  }
 
   // ─── Update markers effect ────────────────────────────────────
   useEffect(() => {

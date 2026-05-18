@@ -491,6 +491,17 @@ function formatDurationShort(seconds: number): string {
   return h > 0 ? `${h}ч ${m}мин` : `${m}мин`
 }
 
+// Format duration from seconds to human-readable string (used in TripDetailDialog and auto-populate logic)
+function fmtDuration(sec: number | null | undefined): string | null {
+  if (sec == null) return null
+  const h = Math.floor(sec / 3600)
+  const m = Math.floor((sec % 3600) / 60)
+  const s = Math.floor(sec % 60)
+  if (h > 0) return `${h} ч ${m} мин`
+  if (m > 0) return `${m} мин ${s} сек`
+  return `${s} сек`
+}
+
 // Debounce hook
 function useDebounce<T>(value: T, delay: number): T {
   const [debouncedValue, setDebouncedValue] = useState(value)
@@ -989,15 +1000,23 @@ export default function Home() {
           </div>
           {/* Right: actions */}
           <div className="flex items-center gap-0.5 shrink-0">
-            {/* Mobile stats as compact text */}
-            <div className="sm:hidden flex items-center gap-1 text-[10px] text-muted-foreground mr-1">
-              <span className="text-primary font-bold">{stats.total}</span>
-              <span>/</span>
-              <span className="text-emerald-600">{stats.active}</span>
-              <span>/</span>
-              <span className="text-amber-600">{stats.repair}</span>
-              <span>/</span>
-              <span className="text-sky-600">{stats.rented}</span>
+            {/* Mobile stats as compact clickable badges */}
+            <div className="sm:hidden flex items-center gap-1 overflow-x-auto mr-1 scrollbar-none">
+              <button onClick={() => setMainTab('equipment')} className="inline-flex items-center gap-0.5 rounded bg-muted px-1 py-0.5 text-[9px] font-medium shrink-0 hover:bg-muted/80 transition-colors" title={`Всего техники: ${stats.total}`}>
+                <Truck className="size-2.5" />{stats.total}
+              </button>
+              <button onClick={() => setMainTab('equipment')} className="inline-flex items-center gap-0.5 rounded bg-emerald-100 dark:bg-emerald-900/40 px-1 py-0.5 text-[9px] font-medium text-emerald-700 dark:text-emerald-400 shrink-0 hover:bg-emerald-200 dark:hover:bg-emerald-900/60 transition-colors" title={`В эксплуатации: ${stats.active}`}>
+                <CheckCircle2 className="size-2.5" />{stats.active}
+              </button>
+              <button onClick={() => setMainTab('repairs')} className="inline-flex items-center gap-0.5 rounded bg-amber-100 dark:bg-amber-900/40 px-1 py-0.5 text-[9px] font-medium text-amber-700 dark:text-amber-400 shrink-0 hover:bg-amber-200 dark:hover:bg-amber-900/60 transition-colors" title={`На ремонте: ${stats.repair}`}>
+                <Wrench className="size-2.5" />{stats.repair}
+              </button>
+              <button onClick={() => setMainTab('trips')} className="inline-flex items-center gap-0.5 rounded bg-violet-100 dark:bg-violet-900/40 px-1 py-0.5 text-[9px] font-medium text-violet-700 dark:text-violet-400 shrink-0 hover:bg-violet-200 dark:hover:bg-violet-900/60 transition-colors" title={`Рейсов: ${stats.tripsTotal}`}>
+                <Route className="size-2.5" />{stats.tripsTotal}
+              </button>
+              <span className="inline-flex items-center gap-0.5 rounded bg-green-100 dark:bg-green-900/40 px-1 py-0.5 text-[9px] font-medium text-green-700 dark:text-green-400 shrink-0" title={`Онлайн трекеры: ${stats.onlineTrackers}`}>
+                <Wifi className="size-2.5" />{stats.onlineTrackers}
+              </span>
             </div>
             {/* Global search button */}
             <Button variant="ghost" size="icon" className="size-7" onClick={() => setGlobalSearchOpen(true)} aria-label="Поиск (Ctrl+K)" title="Поиск (Ctrl+K)">
@@ -1135,7 +1154,7 @@ export default function Home() {
       <StageFormDialog open={stageFormOpen} onOpenChange={setStageFormOpen} repairId={stageFormRepairId} editData={stageFormEdit} saving={stageFormSaving} setSaving={setStageFormSaving} onSaved={() => { setStageFormOpen(false); if (selectedRepair) { fetchRepairDetail(selectedRepair.id); fetchRepairs(); if (selectedEq) fetchEquipmentDetail(selectedEq.id) } }} />
       <PhotoUploadDialog open={!!photoUploadEq} onOpenChange={(v) => { if (!v) setPhotoUploadEq(null) }} targetId={photoUploadEq || ''} targetType="equipment" onUploaded={() => { setPhotoUploadEq(null); if (selectedEq) fetchEquipmentDetail(selectedEq.id); fetchAll() }} />
       <RepairPhotoUploadDialog open={!!photoUploadRepair} onOpenChange={(v) => { if (!v) setPhotoUploadRepair(null) }} targetId={photoUploadRepair || ''} stages={selectedRepair?.stages || []} onUploaded={() => { setPhotoUploadRepair(null); if (selectedRepair) fetchRepairDetail(selectedRepair.id) }} />
-      <TripDetailDialog open={tripDetailOpen} onOpenChange={setTripDetailOpen} trip={selectedTrip} loading={tripDetailLoading} crews={crews} focusTrack={tripDetailFocusTrack} onEdit={(t) => { setTripDetailOpen(false); setTripFormEdit(t); setTripFormEquipmentId(t.equipmentId); setTripFormOpen(true) }} onDelete={(t) => { setTripDetailOpen(false); setDeleteDialog({ open: true, type: 'trip', id: t.id, name: t.route }) }} onStart={async (t) => { try { const res = await fetch(`/api/trips/${t.id}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'start' }) }); if (!res.ok) { const errData = await res.json().catch(() => null); throw new Error(errData?.error || 'Ошибка') } toast.success('Рейс начат, данные трекера заполнены'); fetchTripDetail(t.id); fetchAll() } catch (e: any) { toast.error(e.message || 'Ошибка') } }} onComplete={async (t) => { try { const res = await fetch(`/api/trips/${t.id}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'complete' }) }); if (!res.ok) { const errData = await res.json().catch(() => null); throw new Error(errData?.error || 'Ошибка') } toast.success('Рейс завершён, данные трекера заполнены'); fetchTripDetail(t.id); fetchAll() } catch (e: any) { toast.error(e.message || 'Ошибка завершения рейса') } }} onRefresh={() => selectedTrip && fetchTripDetail(selectedTrip.id)} />
+      <TripDetailDialog open={tripDetailOpen} onOpenChange={setTripDetailOpen} trip={selectedTrip} loading={tripDetailLoading} crews={crews} focusTrack={tripDetailFocusTrack} onEdit={(t) => { setTripDetailOpen(false); setTripFormEdit(t); setTripFormEquipmentId(t.equipmentId); setTripFormOpen(true) }} onDelete={(t) => { setTripDetailOpen(false); setDeleteDialog({ open: true, type: 'trip', id: t.id, name: t.route }) }} onStart={async (t) => { try { const res = await fetch(`/api/trips/${t.id}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'start' }) }); if (!res.ok) { const errData = await res.json().catch(() => null); throw new Error(errData?.error || 'Ошибка') } toast.success('Рейс начат, данные трекера заполнены'); fetchTripDetail(t.id); fetchAll() } catch (e: any) { toast.error(e.message || 'Ошибка') } }} onComplete={async (t) => { try { const res = await fetch(`/api/trips/${t.id}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'complete' }) }); if (!res.ok) { const errData = await res.json().catch(() => null); throw new Error(errData?.error || 'Ошибка') } toast.success('Рейс завершён, данные трекера заполнены'); fetchTripDetail(t.id); fetchAll() } catch (e: any) { toast.error(e.message || 'Ошибка завершения рейса') } }} onRefresh={() => { if (selectedTrip) fetchTripDetail(selectedTrip.id); fetchAll() }} />
       <TripFormDialog open={tripFormOpen} onOpenChange={setTripFormOpen} editData={tripFormEdit} equipmentId={tripFormEquipmentId} equipmentList={equipment} crews={crews} routeTemplates={routeTemplates} saving={tripFormSaving} setSaving={setTripFormSaving} onSaved={() => { setTripFormOpen(false); fetchAll() }} />
       <CrewFormDialog open={crewFormOpen} onOpenChange={setCrewFormOpen} editData={crewFormEdit} saving={crewFormSaving} setSaving={setCrewFormSaving} onSaved={() => { setCrewFormOpen(false); fetchAll() }} employees={employees} />
       <RouteTemplateFormDialog open={routeTemplateFormOpen} setOpen={setRouteTemplateFormOpen} editData={routeTemplateFormEdit} onSaved={fetchRouteTemplates} />
@@ -4256,8 +4275,10 @@ function TripDetailDialog({ open, onOpenChange, trip, loading, crews, onEdit, on
   const [compareError, setCompareError] = useState<string | null>(null)
   const [applySuccess, setApplySuccess] = useState<string | null>(null)
   const [discrepancyDialog, setDiscrepancyDialog] = useState<{
-    open: boolean; diffs: Array<{ field: string; current: string; tracker: string }>; onReplace: () => void
-  }>({ open: false, diffs: [], onReplace: () => {} })
+    open: boolean;
+    diffs: Array<{ field: string; fieldKey: string; current: string; tracker: string; selected: boolean }>;
+    autoFields: Record<string, unknown>;
+  }>({ open: false, diffs: [], autoFields: {} })
   const [tripSaved, setTripSaved] = useState(false)
   const [savingTrip, setSavingTrip] = useState(false)
   const [showRouteMap, setShowRouteMap] = useState(false)
@@ -4301,7 +4322,98 @@ function TripDetailDialog({ open, onOpenChange, trip, loading, crews, onEdit, on
     setRouteMapTrackData(null)
     setSelectedTripIndex(null)
     setFocusedPoint(null)
+    setStatsApplied(null)
   }, [trip?.id])
+
+  // ─── Auto-populate trip card fields from statistics when loaded ───
+  // When tripStats is loaded/refreshed, compare with existing trip fields.
+  // Null fields → auto-fill. Different values → show discrepancy dialog.
+  const [statsApplied, setStatsApplied] = useState<string | null>(null) // track which stats version was applied
+  useEffect(() => {
+    if (!compareData?.tripStats || !trip) return
+    const stats = compareData.tripStats as Record<string, unknown>
+    // Use a version key to avoid re-triggering on same data
+    const versionKey = `${stats.mileage}_${stats.fuelConsumption}_${stats.tripsDuration}_${stats.parkingsDuration}_${stats.engineHours}_${stats.refuelVolume}_${stats.avgFuelConsumption}`
+    if (versionKey === statsApplied) return
+
+    const t = trip
+    const autoFields: Record<string, unknown> = {}
+    const diffs: Array<{ field: string; fieldKey: string; current: string; tracker: string; selected: boolean }> = []
+
+    // Map stats fields to trip fields with comparison logic
+    const fieldMappings: Array<{
+      statKey: string; tripKey: keyof Trip; label: string;
+      formatVal: (v: unknown) => string; transform: (v: unknown) => unknown;
+      tolerance?: number
+    }> = [
+      { statKey: 'tripsDuration', tripKey: 'tripDuration', label: 'Длительность поездок', formatVal: v => fmtDuration(Number(v)) || '—', transform: v => Number(v) },
+      { statKey: 'fuelConsumption', tripKey: 'fuelConsumed', label: 'Расход топлива', formatVal: v => `${Number(v).toFixed(1)} л`, transform: v => Math.round(Number(v) * 100) / 100 },
+      { statKey: 'avgFuelConsumption', tripKey: 'avgFuelRate', label: 'Ср. расход', formatVal: v => `${Number(v).toFixed(1)} л/100км`, transform: v => Math.round(Number(v) * 100) / 100 },
+      { statKey: 'refuelVolume', tripKey: 'refuelVolume', label: 'Заправки', formatVal: v => `${Number(v).toFixed(1)} л`, transform: v => Math.round(Number(v) * 100) / 100 },
+      { statKey: 'engineHours', tripKey: 'engineHours', label: 'Моточасы', formatVal: v => fmtDuration(Number(v)) || `${Number(v).toFixed(1)}`, transform: v => Number(v) },
+      { statKey: 'parkingsDuration', tripKey: 'parkingsDuration', label: 'Время стоянок', formatVal: v => fmtDuration(Number(v)) || '—', transform: v => Number(v) },
+      { statKey: 'mileage', tripKey: 'distance', label: 'Пробег', formatVal: v => `${Number(v).toFixed(1)} км`, transform: v => Number(v) },
+      { statKey: 'avgSpeed', tripKey: 'avgSpeed', label: 'Ср. скорость', formatVal: v => `${Number(v).toFixed(1)} км/ч`, transform: v => Math.round(Number(v) * 100) / 100 },
+      { statKey: 'maxSpeed', tripKey: 'maxSpeed', label: 'Макс. скорость', formatVal: v => `${Number(v).toFixed(0)} км/ч`, transform: v => Math.round(Number(v)) },
+      { statKey: 'idleTime', tripKey: 'idleTime', label: 'Холостой ход', formatVal: v => fmtDuration(Number(v)) || '—', transform: v => Number(v) },
+      { statKey: 'plumVolume', tripKey: 'plumVolume', label: 'Сливы', formatVal: v => `${Number(v).toFixed(1)} л`, transform: v => Math.round(Number(v) * 100) / 100 },
+    ]
+
+    for (const fm of fieldMappings) {
+      const statVal = stats[fm.statKey]
+      if (statVal == null || Number(statVal) === 0 && fm.statKey !== 'idleTime' && fm.statKey !== 'parkingsDuration' && fm.statKey !== 'tripsDuration') continue
+
+      const transformedVal = fm.transform(statVal)
+      const currentVal = t[fm.tripKey]
+
+      if (currentVal == null) {
+        // Auto-fill null fields
+        autoFields[fm.tripKey] = transformedVal
+      } else {
+        // Check if values differ (with tolerance for floating point)
+        const numCurrent = Number(currentVal)
+        const numNew = Number(transformedVal)
+        if (Math.abs(numCurrent - numNew) > 0.1) {
+          diffs.push({
+            field: fm.label,
+            fieldKey: fm.tripKey as string,
+            current: fm.formatVal(currentVal),
+            tracker: fm.formatVal(statVal),
+            selected: true, // default: replace with tracker value
+          })
+        }
+      }
+    }
+
+    // Apply auto-fill fields immediately
+    if (Object.keys(autoFields).length > 0) {
+      fetch(`/api/trips/${t.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(autoFields),
+      }).then(res => {
+        if (res.ok) {
+          onRefresh()
+          const fieldNames = Object.keys(autoFields).map(k => {
+            const fm = fieldMappings.find(m => m.tripKey === k)
+            return fm?.label || k
+          })
+          toast.success(`Заполнено: ${fieldNames.join(', ')}`)
+        }
+      }).catch(() => {})
+    }
+
+    // Show discrepancy dialog if there are differences
+    if (diffs.length > 0) {
+      setDiscrepancyDialog({
+        open: true,
+        diffs,
+        autoFields,
+      })
+    }
+
+    setStatsApplied(versionKey)
+  }, [compareData?.tripStats, trip?.id])
 
   // Auto-load track data when focusTrack is set and dialog opens with a trip
   useEffect(() => {
@@ -4619,7 +4731,7 @@ function TripDetailDialog({ open, onOpenChange, trip, loading, crews, onEdit, on
     const startSnap = compareData.startSnapshot as Record<string, unknown> | null
     if (!startSnap) return
     const fields: Record<string, unknown> = {}
-    const diffs: Array<{ field: string; current: string; tracker: string }> = []
+    const diffs: Array<{ field: string; fieldKey: string; current: string; tracker: string; selected: boolean }> = []
 
     // Fuel start
     if (startSnap.fuelLevel != null) {
@@ -4627,7 +4739,7 @@ function TripDetailDialog({ open, onOpenChange, trip, loading, crews, onEdit, on
       if (t.fuelStart == null) {
         fields.fuelStart = trackerVal
       } else if (Math.abs(t.fuelStart - trackerVal) > 0.01) {
-        diffs.push({ field: 'Топливо на старте', current: `${t.fuelStart} л`, tracker: `${trackerVal.toFixed(1)} л` })
+        diffs.push({ field: 'Топливо на старте', fieldKey: 'fuelStart', current: `${t.fuelStart} л`, tracker: `${trackerVal.toFixed(1)} л`, selected: true })
       }
     }
     // Mileage start
@@ -4636,7 +4748,7 @@ function TripDetailDialog({ open, onOpenChange, trip, loading, crews, onEdit, on
       if (t.mileageStart == null) {
         fields.mileageStart = trackerVal
       } else if (t.mileageStart !== trackerVal) {
-        diffs.push({ field: 'Пробег на старте', current: `${t.mileageStart} км`, tracker: `${trackerVal} км` })
+        diffs.push({ field: 'Пробег на старте', fieldKey: 'mileageStart', current: `${t.mileageStart} км`, tracker: `${trackerVal} км`, selected: true })
       }
     }
 
@@ -4651,15 +4763,11 @@ function TripDetailDialog({ open, onOpenChange, trip, loading, crews, onEdit, on
       return
     }
 
-    // Show conflict resolution — replace all (tracker) or keep existing
-    const fieldsWithReplace: Record<string, unknown> = { ...fields }
-    if (startSnap.fuelLevel != null) fieldsWithReplace.fuelStart = Number(startSnap.fuelLevel)
-    if (startSnap.mileage != null) fieldsWithReplace.mileageStart = Math.round(Number(startSnap.mileage))
-
+    // Show conflict resolution
     setDiscrepancyDialog({
       open: true,
       diffs,
-      onReplace: () => { applySensorFields(fieldsWithReplace); setDiscrepancyDialog(d => ({ ...d, open: false })) },
+      autoFields: fields,
     })
   }
 
@@ -4669,7 +4777,7 @@ function TripDetailDialog({ open, onOpenChange, trip, loading, crews, onEdit, on
     const endSnap = compareData.endSnapshot as Record<string, unknown> | null
     const stats = compareData.tripStats as Record<string, unknown> | null
     const fields: Record<string, unknown> = {}
-    const diffs: Array<{ field: string; current: string; tracker: string }> = []
+    const diffs: Array<{ field: string; fieldKey: string; current: string; tracker: string; selected: boolean }> = []
 
     // Fuel end
     if (endSnap?.fuelLevel != null) {
@@ -4677,7 +4785,7 @@ function TripDetailDialog({ open, onOpenChange, trip, loading, crews, onEdit, on
       if (t.fuelEnd == null) {
         fields.fuelEnd = trackerVal
       } else if (Math.abs(t.fuelEnd - trackerVal) > 0.01) {
-        diffs.push({ field: 'Топливо на финише', current: `${t.fuelEnd} л`, tracker: `${trackerVal.toFixed(1)} л` })
+        diffs.push({ field: 'Топливо на финише', fieldKey: 'fuelEnd', current: `${t.fuelEnd} л`, tracker: `${trackerVal.toFixed(1)} л`, selected: true })
       }
     }
     // Mileage end
@@ -4686,7 +4794,7 @@ function TripDetailDialog({ open, onOpenChange, trip, loading, crews, onEdit, on
       if (t.mileageEnd == null) {
         fields.mileageEnd = trackerVal
       } else if (t.mileageEnd !== trackerVal) {
-        diffs.push({ field: 'Пробег на финише', current: `${t.mileageEnd} км`, tracker: `${trackerVal} км` })
+        diffs.push({ field: 'Пробег на финише', fieldKey: 'mileageEnd', current: `${t.mileageEnd} км`, tracker: `${trackerVal} км`, selected: true })
       }
     }
 
@@ -4724,29 +4832,17 @@ function TripDetailDialog({ open, onOpenChange, trip, loading, crews, onEdit, on
       return
     }
 
-    // Show conflict resolution — replace all (tracker) or keep existing
-    const fieldsWithReplace: Record<string, unknown> = { ...fields }
-    if (endSnap?.fuelLevel != null) fieldsWithReplace.fuelEnd = Number(endSnap.fuelLevel)
-    if (endSnap?.mileage != null) fieldsWithReplace.mileageEnd = Math.round(Number(endSnap.mileage))
-    // Recalculate derived values
-    if (fieldsWithReplace.fuelEnd != null && t.fuelStart != null) {
-      fieldsWithReplace.fuelConsumed = Math.round((t.fuelStart! - (fieldsWithReplace.fuelEnd as number)) * 100) / 100
-      if (fieldsWithReplace.fuelConsumed < 0) fieldsWithReplace.fuelConsumed = 0
-    }
-    if (fieldsWithReplace.mileageEnd != null && t.mileageStart != null) {
-      fieldsWithReplace.distance = (fieldsWithReplace.mileageEnd as number) - t.mileageStart!
-    }
-
+    // Show conflict resolution
     setDiscrepancyDialog({
       open: true,
       diffs,
-      onReplace: () => { applySensorFields(fieldsWithReplace); setDiscrepancyDialog(d => ({ ...d, open: false })) },
+      autoFields: fields,
     })
   }
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-3xl max-h-[90vh]">
+      <DialogContent className="sm:max-w-3xl max-h-[90vh] flex flex-col">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2"><Route className="size-4" />{t.route}</DialogTitle>
           <DialogDescription className="flex items-center gap-2 flex-wrap">
@@ -5312,7 +5408,7 @@ function TripDetailDialog({ open, onOpenChange, trip, loading, crews, onEdit, on
             </div>
           )}
         </div>
-        <DialogFooter className="gap-1.5 sm:gap-0 flex-wrap">
+        <DialogFooter className="gap-1.5 sm:gap-0 flex-wrap sticky bottom-0 bg-card z-10 border-t pt-2">
           {t.status === 'planned' && (
             <Button variant="outline" size="sm" className="h-8 gap-1 text-xs" onClick={() => onStart(t)}><Navigation className="size-3.5" />Начать</Button>
           )}
@@ -5337,16 +5433,17 @@ function TripDetailDialog({ open, onOpenChange, trip, loading, crews, onEdit, on
       </DialogContent>
       {/* Discrepancy resolution dialog */}
       <AlertDialog open={discrepancyDialog.open} onOpenChange={(v) => setDiscrepancyDialog(d => ({ ...d, open: v }))}>
-        <AlertDialogContent>
+        <AlertDialogContent className="max-w-lg">
           <AlertDialogHeader>
             <AlertDialogTitle className="flex items-center gap-2"><AlertTriangle className="size-4 text-amber-500" />Расхождения с данными трекера</AlertDialogTitle>
             <AlertDialogDescription asChild>
               <div className="space-y-2">
-                <p className="text-sm">Обнаружены расхождения между текущими значениями и данными трекера:</p>
+                <p className="text-sm">Обнаружены расхождения между текущими значениями и данными трекера. Отметьте поля, которые нужно заменить:</p>
                 <div className="rounded-md border overflow-hidden">
                   <table className="w-full text-xs">
                     <thead>
                       <tr className="border-b bg-muted/50">
+                        <th className="text-left py-1.5 px-2 font-medium w-6"></th>
                         <th className="text-left py-1.5 px-2 font-medium">Показатель</th>
                         <th className="text-right py-1.5 px-2 font-medium">Сейчас</th>
                         <th className="text-right py-1.5 px-2 font-medium">Трекер</th>
@@ -5354,21 +5451,101 @@ function TripDetailDialog({ open, onOpenChange, trip, loading, crews, onEdit, on
                     </thead>
                     <tbody>
                       {discrepancyDialog.diffs.map((d, i) => (
-                        <tr key={i} className="border-b last:border-0">
+                        <tr key={i} className={`border-b last:border-0 transition-colors ${d.selected ? 'bg-amber-50/50 dark:bg-amber-900/10' : ''}`}>
+                          <td className="py-1.5 px-2">
+                            <input
+                              type="checkbox"
+                              checked={d.selected}
+                              onChange={() => setDiscrepancyDialog(prev => ({
+                                ...prev,
+                                diffs: prev.diffs.map((dd, ii) => ii === i ? { ...dd, selected: !dd.selected } : dd)
+                              }))}
+                              className="rounded border-muted-foreground/30"
+                            />
+                          </td>
                           <td className="py-1.5 px-2 font-medium">{d.field}</td>
-                          <td className="py-1.5 px-2 text-right text-muted-foreground">{d.current}</td>
-                          <td className="py-1.5 px-2 text-right font-semibold text-amber-600 dark:text-amber-400">{d.tracker}</td>
+                          <td className={`py-1.5 px-2 text-right ${d.selected ? 'text-muted-foreground line-through' : ''}`}>{d.current}</td>
+                          <td className={`py-1.5 px-2 text-right font-semibold ${d.selected ? 'text-amber-600 dark:text-amber-400' : 'text-muted-foreground'}`}>{d.tracker}</td>
                         </tr>
                       ))}
                     </tbody>
                   </table>
+                </div>
+                <div className="flex items-center gap-2 text-[10px] text-muted-foreground">
+                  <Button variant="ghost" size="sm" className="h-5 text-[9px] px-1.5" onClick={() => setDiscrepancyDialog(prev => ({ ...prev, diffs: prev.diffs.map(d => ({ ...d, selected: true })) }))}>Выбрать все</Button>
+                  <Button variant="ghost" size="sm" className="h-5 text-[9px] px-1.5" onClick={() => setDiscrepancyDialog(prev => ({ ...prev, diffs: prev.diffs.map(d => ({ ...d, selected: false })) }))}>Снять все</Button>
                 </div>
               </div>
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel onClick={() => setDiscrepancyDialog(d => ({ ...d, open: false }))}>Оставить текущие</AlertDialogCancel>
-            <AlertDialogAction onClick={discrepancyDialog.onReplace} className="bg-amber-600 text-white hover:bg-amber-700">Заменить данными трекера</AlertDialogAction>
+            <AlertDialogAction onClick={() => {
+              // Only apply selected fields
+              const selectedDiffs = discrepancyDialog.diffs.filter(d => d.selected)
+              if (selectedDiffs.length === 0 || !trip) { setDiscrepancyDialog(d => ({ ...d, open: false })); return }
+              const stats = (compareData?.tripStats as Record<string, unknown>) || {}
+              const startSnap = compareData?.startSnapshot as Record<string, unknown> | null
+              const endSnap = compareData?.endSnapshot as Record<string, unknown> | null
+              const fields: Record<string, unknown> = {}
+              const keyToStatKey: Record<string, string> = {
+                tripDuration: 'tripsDuration', fuelConsumed: 'fuelConsumption', avgFuelRate: 'avgFuelConsumption',
+                refuelVolume: 'refuelVolume', engineHours: 'engineHours', parkingsDuration: 'parkingsDuration',
+                distance: 'mileage', avgSpeed: 'avgSpeed', maxSpeed: 'maxSpeed', idleTime: 'idleTime', plumVolume: 'plumVolume',
+              }
+              for (const diff of selectedDiffs) {
+                const key = diff.fieldKey
+                // Check stat-based keys first
+                const statKey = keyToStatKey[key]
+                if (statKey && stats[statKey] != null) {
+                  const val = Number(stats[statKey])
+                  if (key === 'fuelConsumed' || key === 'avgFuelRate' || key === 'refuelVolume' || key === 'plumVolume') {
+                    fields[key] = Math.round(val * 100) / 100
+                  } else if (key === 'maxSpeed') {
+                    fields[key] = Math.round(val)
+                  } else {
+                    fields[key] = val
+                  }
+                }
+                // Handle snapshot-based keys
+                else if (key === 'fuelStart' && startSnap?.fuelLevel != null) {
+                  fields.fuelStart = Number(startSnap.fuelLevel)
+                } else if (key === 'mileageStart' && startSnap?.mileage != null) {
+                  fields.mileageStart = Math.round(Number(startSnap.mileage))
+                } else if (key === 'fuelEnd' && endSnap?.fuelLevel != null) {
+                  fields.fuelEnd = Number(endSnap.fuelLevel)
+                } else if (key === 'mileageEnd' && endSnap?.mileage != null) {
+                  fields.mileageEnd = Math.round(Number(endSnap.mileage))
+                }
+              }
+              // Recalculate derived values if fuel or mileage changed
+              if (fields.fuelEnd != null && (fields.fuelStart != null || trip.fuelStart != null)) {
+                const fs = (fields.fuelStart as number) ?? trip.fuelStart!
+                fields.fuelConsumed = Math.round((fs - (fields.fuelEnd as number)) * 100) / 100
+                if (fields.fuelConsumed < 0) fields.fuelConsumed = 0
+              }
+              if (fields.mileageEnd != null && (fields.mileageStart != null || trip.mileageStart != null)) {
+                const ms = (fields.mileageStart as number) ?? trip.mileageStart!
+                fields.distance = (fields.mileageEnd as number) - ms
+              }
+              if (Object.keys(fields).length > 0) {
+                fetch(`/api/trips/${trip.id}`, {
+                  method: 'PUT',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify(fields),
+                }).then(res => {
+                  if (res.ok) {
+                    toast.success(`Заменено: ${selectedDiffs.map(d => d.field).join(', ')}`)
+                    onRefresh()
+                  } else {
+                    toast.error('Ошибка сохранения')
+                  }
+                }).catch(() => toast.error('Ошибка сохранения'))
+              }
+              setDiscrepancyDialog(d => ({ ...d, open: false }))
+            }} className="bg-amber-600 text-white hover:bg-amber-700">
+              Заменить выбранные ({discrepancyDialog.diffs.filter(d => d.selected).length})
+            </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
@@ -5883,11 +6060,11 @@ function TripFormDialog({ open, onOpenChange, editData, equipmentId, equipmentLi
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-2xl">
+      <DialogContent className="sm:max-w-2xl flex flex-col max-h-[90vh]">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">{editData ? <Edit className="size-4" /> : <Plus className="size-4" />}{editData ? 'Редактирование рейса' : 'Новый рейс'}</DialogTitle>
         </DialogHeader>
-        <div className="space-y-3 px-4 sm:px-5 overflow-y-auto flex-1 min-h-0 max-h-[70vh]">
+        <div className="space-y-3 px-4 sm:px-5 overflow-y-auto flex-1 min-h-0">
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div className="sm:col-span-2"><Label className="text-xs">Техника *</Label><Select value={f('equipmentId')} onValueChange={v => setF('equipmentId', v)} disabled={!!editData}><SelectTrigger className="h-9 text-sm"><SelectValue placeholder="Выберите технику" /></SelectTrigger><SelectContent>{equipmentList.map(e => <SelectItem key={e.id} value={e.id}>{e.name} {e.registrationNum ? `(${e.registrationNum})` : ''}</SelectItem>)}</SelectContent></Select></div>
             <div className="sm:col-span-2"><Label className="text-xs">Маршрут *</Label><Input value={f('route')} onChange={e => setF('route', e.target.value)} placeholder="Москва — Санкт-Петербург" autoFocus /></div>
@@ -6047,7 +6224,7 @@ function TripFormDialog({ open, onOpenChange, editData, equipmentId, equipmentLi
             )}
           </div>
         </div>
-        <DialogFooter>
+        <DialogFooter className="sticky bottom-0 bg-card z-10 border-t pt-2">
           <Button size="sm" onClick={handleSave} disabled={saving}>{saving ? <Loader2 className="size-3.5 animate-spin" /> : <CheckCircle2 className="size-3.5" />}{editData ? 'Сохранить' : 'Добавить'}</Button>
         </DialogFooter>
       </DialogContent>

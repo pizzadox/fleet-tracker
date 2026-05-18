@@ -472,7 +472,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
       }
     }
 
-    // ═══ SVG Track Map ═══
+    // ═══ SVG Track Map with OpenStreetMap tiles ═══
     let trackSvg = ''
     if (trackData && trackData.trips.length > 0) {
       const allPoints = trackData.trips.flatMap(t => t.points)
@@ -481,24 +481,122 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
         const lngs = allPoints.map(p => p.lng)
         const minLat = Math.min(...lats), maxLat = Math.max(...lats)
         const minLng = Math.min(...lngs), maxLng = Math.max(...lngs)
-        const pad = 0.005
-        const rangeLat = (maxLat - minLat) + pad * 2 || 0.01
-        const rangeLng = (maxLng - minLng) + pad * 2 || 0.01
-        const svgW = 700, svgH = 300
+
+        // Add padding (15% on each side)
+        const padLat = (maxLat - minLat) * 0.15 || 0.005
+        const padLng = (maxLng - minLng) * 0.15 || 0.005
+        const boundsMinLat = minLat - padLat
+        const boundsMaxLat = maxLat + padLat
+        const boundsMinLng = minLng - padLng
+        const boundsMaxLng = maxLng + padLng
+
+        const svgW = 700, svgH = 350
+        const rangeLat = boundsMaxLat - boundsMinLat
+        const rangeLng = boundsMaxLng - boundsMinLng
         const scale = Math.min(svgW / rangeLng, svgH / rangeLat)
-        const offsetX = (svgW - rangeLng * scale) / 2
-        const offsetY = (svgH - rangeLat * scale) / 2
 
-        const toX = (lng: number) => offsetX + (lng - minLng + pad) * scale
-        const toY = (lat: number) => svgH - offsetY - (lat - minLat + pad) * scale
+        const toX = (lng: number) => (lng - boundsMinLng) * scale
+        const toY = (lat: number) => svgH - (lat - boundsMinLat) * scale
 
-        // Build polyline
-        let pathD = ''
+        // ── Fetch OSM tiles as base64 ──
+        // Determine zoom level based on track span
+        const spanLng = rangeLng
+        const spanLat = rangeLat
+        let zoom = 13
+        for (let z = 5; z <= 16; z++) {
+          const tilesAtZoom = 360 / Math.pow(2, z)
+          if (tilesAtZoom * 4 > Math.max(spanLng, spanLat)) { zoom = z; break }
+          zoom = z
+        }
+        // Clamp zoom to reasonable range for print
+        zoom = Math.max(8, Math.min(15, zoom))
+
+        // Tile coordinates
+        const tile2lng = (x: number, z: number) => x / Math.pow(2, z) * 360 - 180
+        const tile2lat = (y: number, z: number) => {
+          const n = Math.PI - 2 * Math.PI * y / Math.pow(2, z)
+          return 180 / Math.PI * Math.atan(0.5 * (Math.exp(n) - Math.exp(-n)))
+        }
+
+        const minTileX = Math.floor((boundsMinLng + 180) / 360 * Math.pow(2, zoom))
+        const maxTileX = Math.floor((boundsMaxLng + 180) / 360 * Math.pow(2, zoom))
+        const minTileY = Math.floor((1 - Math.log(Math.tan(boundsMaxLat * Math.PI / 180) + 1 / Math.cos(boundsMaxLat * Math.PI / 180)) / Math.PI) / 2 * Math.pow(2, zoom))
+        const maxTileY = Math.floor((1 - Math.log(Math.tan(boundsMinLat * Math.PI / 180) + 1 / Math.cos(boundsMinLat * Math.PI / 180)) / Math.PI) / 2 * Math.pow(2, zoom))
+
+        // Fetch tiles
+        const tileImages: Map<string, string> = new Map()
+        const tilePromises: Promise<void>[] = []
+        for (let tx = minTileX; tx <= maxTileX; tx++) {
+          for (let ty = minTileY; ty <= maxTileY; ty++) {
+            const key = `${tx}_${ty}`
+            const tileUrl = `https://tile.openstreetmap.org/${zoom}/${tx}/${ty}.png`
+            tilePromises.push(
+              fetch(tileUrl, {
+                headers: { 'User-Agent': 'FleetTracker/1.0' },
+                signal: AbortSignal.timeout(5000),
+              }).then(async res => {
+                if (res.ok) {
+                  const buf = Buffer.from(await res.arrayBuffer())
+                  tileImages.set(key, `data:image/png;base64,${buf.toString('base64')}`)
+                }
+              }).catch(() => {})
+            )
+          }
+        }
+        await Promise.all(tilePromises)
+
+        // Build SVG tile layer
+        const tileSize = 256
+        let tileSvgImages = ''
+        for (let tx = minTileX; tx <= maxTileX; tx++) {
+          for (let ty = minTileY; ty <= maxTileY; ty++) {
+            const key = `${tx}_${ty}`
+            const imgData = tileImages.get(key)
+            if (!imgData) continue
+
+            // Convert tile coords to SVG coords
+            const tileMinLng = tile2lng(tx, zoom)
+            const tileMaxLng = tile2lng(tx + 1, zoom)
+            const tileMaxLat = tile2lat(ty, zoom)
+            const tileMinLat = tile2lat(ty + 1, zoom)
+
+            const imgX = toX(tileMinLng)
+            const imgY = toY(tileMaxLat)
+            const imgW = (tileMaxLng - tileMinLng) * scale
+            const imgH = (tileMaxLat - tileMinLat) * scale
+
+            tileSvgImages += `<image href="${imgData}" x="${imgX.toFixed(2)}" y="${imgY.toFixed(2)}" width="${imgW.toFixed(2)}" height="${imgH.toFixed(2)}" preserveAspectRatio="none"/>`
+          }
+        }
+
+        // Build polyline with speed-based coloring
+        let trackPaths = ''
+        for (const t of trackData.trips) {
+          // Split track into segments by speed for coloring
+          let currentColor = '#3b82f6'
+          let segmentD = ''
+          for (let i = 0; i < t.points.length; i++) {
+            const p = t.points[i]
+            const cmd = i === 0 ? 'M' : 'L'
+            segmentD += `${cmd}${toX(p.lng).toFixed(2)},${toY(p.lat).toFixed(2)} `
+            // Determine color by speed
+            if (p.speed <= 0) currentColor = '#9ca3af'        // gray - stationary
+            else if (p.speed <= 20) currentColor = '#22c55e'  // green
+            else if (p.speed <= 40) currentColor = '#84cc16'  // lime
+            else if (p.speed <= 60) currentColor = '#eab308'  // yellow
+            else if (p.speed <= 80) currentColor = '#f97316'  // orange
+            else currentColor = '#ef4444'                      // red
+          }
+          trackPaths += `<path d="${segmentD}" fill="none" stroke="${currentColor}" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" opacity="0.9"/>`
+        }
+
+        // If we have enough points, draw a thicker main track outline for visibility
+        let mainTrackD = ''
         for (const t of trackData.trips) {
           for (let i = 0; i < t.points.length; i++) {
             const p = t.points[i]
-            const cmd = (i === 0 && !pathD) ? 'M' : 'L'
-            pathD += `${cmd}${toX(p.lng).toFixed(2)},${toY(p.lat).toFixed(2)} `
+            const cmd = i === 0 && !mainTrackD ? 'M' : 'L'
+            mainTrackD += `${cmd}${toX(p.lng).toFixed(2)},${toY(p.lat).toFixed(2)} `
           }
         }
 
@@ -506,7 +604,8 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
         let parkingMarkers = ''
         for (const p of trackData.parkings) {
           if (p.lat != null && p.lng != null) {
-            parkingMarkers += `<rect x="${toX(p.lng) - 4}" y="${toY(p.lat) - 4}" width="8" height="8" fill="#f59e0b" stroke="#fff" stroke-width="1" rx="2"/>`
+            const px = toX(p.lng), py = toY(p.lat)
+            parkingMarkers += `<rect x="${px - 5}" y="${py - 5}" width="10" height="10" fill="#f59e0b" stroke="#fff" stroke-width="1.5" rx="2"/>`
           }
         }
 
@@ -514,7 +613,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
         let refuelMarkers = ''
         for (const r of trackData.refuels) {
           if (r.lat != null && r.lng != null) {
-            refuelMarkers += `<circle cx="${toX(r.lng)}" cy="${toY(r.lat)}" r="5" fill="#10b981" stroke="#fff" stroke-width="1"/>`
+            refuelMarkers += `<circle cx="${toX(r.lng)}" cy="${toY(r.lat)}" r="6" fill="#10b981" stroke="#fff" stroke-width="1.5"/>`
           }
         }
 
@@ -522,7 +621,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
         let plumMarkers = ''
         for (const p of trackData.plums) {
           if (p.lat != null && p.lng != null) {
-            plumMarkers += `<circle cx="${toX(p.lng)}" cy="${toY(p.lat)}" r="5" fill="#ef4444" stroke="#fff" stroke-width="1"/>`
+            plumMarkers += `<circle cx="${toX(p.lng)}" cy="${toY(p.lat)}" r="6" fill="#ef4444" stroke="#fff" stroke-width="1.5"/>`
           }
         }
 
@@ -531,33 +630,49 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
         const lastTrip = trackData.trips[trackData.trips.length - 1]
         const endPt = lastTrip.points[lastTrip.points.length - 1]
 
+        const hasTiles = tileSvgImages.length > 0
+
         trackSvg = `
         <div class="track-map">
-          <svg viewBox="0 0 ${svgW} ${svgH}" xmlns="http://www.w3.org/2000/svg" style="width:100%;max-width:${svgW}px;height:auto;">
-            <rect width="100%" height="100%" fill="#f8fafc" rx="4"/>
-            <!-- Grid -->
-            <line x1="0" y1="${svgH / 2}" x2="${svgW}" y2="${svgH / 2}" stroke="#e2e8f0" stroke-width="0.5"/>
-            <line x1="${svgW / 2}" y1="0" x2="${svgW / 2}" y2="${svgH}" stroke="#e2e8f0" stroke-width="0.5"/>
-            <!-- Track path -->
-            <path d="${pathD}" fill="none" stroke="#3b82f6" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
-            <!-- Markers -->
-            ${parkingMarkers}
-            ${refuelMarkers}
-            ${plumMarkers}
-            <!-- Start marker -->
-            <circle cx="${toX(startPt.lng)}" cy="${toY(startPt.lat)}" r="7" fill="#22c55e" stroke="#fff" stroke-width="2"/>
-            <text x="${toX(startPt.lng)}" y="${toY(startPt.lat) - 12}" text-anchor="middle" font-size="10" fill="#166534" font-weight="bold">Старт</text>
-            <!-- End marker -->
-            <circle cx="${toX(endPt.lng)}" cy="${toY(endPt.lat)}" r="7" fill="#ef4444" stroke="#fff" stroke-width="2"/>
-            <text x="${toX(endPt.lng)}" y="${toY(endPt.lat) - 12}" text-anchor="middle" font-size="10" fill="#991b1b" font-weight="bold">Финиш</text>
+          <svg viewBox="0 0 ${svgW} ${svgH}" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" style="width:100%;max-width:${svgW}px;height:auto;">
+            <defs>
+              <clipPath id="mapClip"><rect x="0" y="0" width="${svgW}" height="${svgH}" rx="4"/></clipPath>
+            </defs>
+            <g clip-path="url(#mapClip)">
+              <!-- Background -->
+              <rect width="100%" height="100%" fill="${hasTiles ? '#e8e4d8' : '#f0f4f8'}" rx="4"/>
+              ${hasTiles ? `<!-- Map tiles -->
+              ${tileSvgImages}` : `<!-- Grid fallback (no tiles) -->
+              <line x1="0" y1="${svgH / 2}" x2="${svgW}" y2="${svgH / 2}" stroke="#e2e8f0" stroke-width="0.5"/>
+              <line x1="${svgW / 2}" y1="0" x2="${svgW / 2}" y2="${svgH}" stroke="#e2e8f0" stroke-width="0.5"/>`}
+              <!-- Track shadow for visibility -->
+              <path d="${mainTrackD}" fill="none" stroke="#fff" stroke-width="5" stroke-linecap="round" stroke-linejoin="round" opacity="0.7"/>
+              <!-- Track path -->
+              <path d="${mainTrackD}" fill="none" stroke="#2563eb" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+              <!-- Markers -->
+              ${parkingMarkers}
+              ${refuelMarkers}
+              ${plumMarkers}
+              <!-- Start marker -->
+              <circle cx="${toX(startPt.lng)}" cy="${toY(startPt.lat)}" r="9" fill="#22c55e" stroke="#fff" stroke-width="2.5"/>
+              <text x="${toX(startPt.lng)}" y="${toY(startPt.lat) - 14}" text-anchor="middle" font-size="11" fill="#166534" font-weight="bold" stroke="#fff" stroke-width="3" paint-order="stroke">Старт</text>
+              <!-- End marker -->
+              <circle cx="${toX(endPt.lng)}" cy="${toY(endPt.lat)}" r="9" fill="#ef4444" stroke="#fff" stroke-width="2.5"/>
+              <text x="${toX(endPt.lng)}" y="${toY(endPt.lat) - 14}" text-anchor="middle" font-size="11" fill="#991b1b" font-weight="bold" stroke="#fff" stroke-width="3" paint-order="stroke">Финиш</text>
+              <!-- Coordinate labels -->
+              <text x="4" y="${svgH - 4}" font-size="7" fill="#6b7280">${boundsMinLat.toFixed(4)}°ш, ${boundsMinLng.toFixed(4)}°д</text>
+              <text x="${svgW - 4}" y="10" font-size="7" fill="#6b7280" text-anchor="end">${boundsMaxLat.toFixed(4)}°ш, ${boundsMaxLng.toFixed(4)}°д</text>
+              ${hasTiles ? `<text x="${svgW - 4}" y="${svgH - 4}" font-size="6" fill="#9ca3af" text-anchor="end">© OpenStreetMap</text>` : ''}
+            </g>
           </svg>
           <div class="map-legend">
             <span class="legend-item"><span class="legend-dot" style="background:#22c55e"></span> Старт</span>
             <span class="legend-item"><span class="legend-dot" style="background:#ef4444"></span> Финиш</span>
-            <span class="legend-item"><span class="legend-dot" style="background:#3b82f6"></span> Трек</span>
+            <span class="legend-item"><span class="legend-dot" style="background:#2563eb"></span> Трек</span>
             <span class="legend-item"><span class="legend-dot" style="background:#f59e0b"></span> Стоянка</span>
             <span class="legend-item"><span class="legend-dot" style="background:#10b981"></span> Заправка</span>
             <span class="legend-item"><span class="legend-dot" style="background:#ef4444;border-radius:50%"></span> Слив</span>
+            <span class="legend-item" style="margin-left:auto;font-size:6.5pt;color:#9ca3af">z${zoom}</span>
           </div>
         </div>`
       }
@@ -620,7 +735,8 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
     tr.changed td:last-child { color: #d97706; font-weight: 600; }
 
     /* Track map */
-    .track-map { background: #fff; border: 1px solid #e2e8f0; border-radius: 6px; padding: 8px; page-break-inside: avoid; }
+    .track-map { background: #fff; border: 1px solid #d1d5db; border-radius: 6px; padding: 6px; page-break-inside: avoid; overflow: hidden; }
+    .track-map svg { display: block; }
     .map-legend { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 6px; font-size: 7.5pt; color: #6b7280; }
     .legend-item { display: flex; align-items: center; gap: 4px; }
     .legend-dot { width: 8px; height: 8px; border-radius: 2px; display: inline-block; }
