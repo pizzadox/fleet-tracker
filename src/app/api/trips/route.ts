@@ -19,6 +19,7 @@ export async function GET(request: NextRequest) {
         equipment: { select: { id: true, name: true, registrationNum: true, brand: true, model: true } },
         crew: { select: { id: true, name: true, members: { select: { fullName: true, role: true } } } },
         routePoints: { orderBy: { sortOrder: 'asc' } },
+        routeTemplate: { select: { id: true, name: true, points: { select: { id: true, name: true, address: true, latitude: true, longitude: true, sortOrder: true, distanceFromPrev: true, plannedArrival: true, plannedDeparture: true, notes: true }, orderBy: { sortOrder: 'asc' } } } },
       },
       orderBy: { startDate: 'desc' },
     })
@@ -39,6 +40,7 @@ export async function POST(request: NextRequest) {
       plannedEndDate, status, fuelStart, fuelEnd,
       mileageStart, mileageEnd, cost, revenue, notes,
       routePoints: inputRoutePoints,
+      routeTemplateId,
     } = body
 
     if (!equipmentId) return NextResponse.json({ error: 'Equipment ID is required' }, { status: 400 })
@@ -56,6 +58,7 @@ export async function POST(request: NextRequest) {
       data: {
         equipmentId,
         crewId: crewId || null,
+        routeTemplateId: routeTemplateId || null,
         route: route.trim(),
         startPoint: startPoint || null,
         endPoint: endPoint || null,
@@ -91,6 +94,7 @@ export async function POST(request: NextRequest) {
         equipment: { select: { id: true, name: true, registrationNum: true } },
         crew: { select: { id: true, name: true } },
         routePoints: { orderBy: { sortOrder: 'asc' } },
+        routeTemplate: { select: { id: true, name: true } },
       },
     })
 

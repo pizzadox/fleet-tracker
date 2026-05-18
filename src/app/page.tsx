@@ -212,6 +212,22 @@ interface RoutePoint {
   notes?: string | null; createdAt: string; updatedAt: string;
 }
 
+interface RouteTemplatePoint {
+  id: string; routeTemplateId: string; name: string; address?: string | null;
+  latitude?: number | null; longitude?: number | null; sortOrder: number;
+  plannedArrival?: string | null; plannedDeparture?: string | null;
+  distanceFromPrev?: number | null; notes?: string | null;
+  createdAt: string; updatedAt: string;
+}
+
+interface RouteTemplate {
+  id: string; name: string; description?: string | null;
+  startPoint?: string | null; endPoint?: string | null;
+  totalDistance?: number | null; estimatedDuration?: number | null;
+  notes?: string | null; createdAt: string; updatedAt: string;
+  points: RouteTemplatePoint[];
+}
+
 interface Trip {
   id: string; equipmentId: string; crewId?: string | null;
   route: string; startPoint?: string | null; endPoint?: string | null;
@@ -225,10 +241,12 @@ interface Trip {
   tripDuration?: number | null; engineHours?: number | null; avgFuelRate?: number | null;
   refuelVolume?: number | null; plumVolume?: number | null; idleTime?: number | null;
   parkingsDuration?: number | null; trackerSnapshot?: string | null; trackerSnapshotStart?: string | null;
+  routeTemplateId?: string | null;
   createdAt: string; updatedAt: string;
   equipment?: { id: string; name: string; registrationNum?: string | null; brand?: string | null; model?: string | null };
   crew?: { id: string; name: string; members?: { fullName: string; role: string }[] } | null;
   routePoints?: RoutePoint[];
+  routeTemplate?: { id: string; name: string; points: RouteTemplatePoint[] } | null;
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -518,6 +536,7 @@ export default function Home() {
   const [syncing, setSyncing] = useState(false)
   const [trips, setTrips] = useState<Trip[]>([])
   const [crews, setCrews] = useState<Crew[]>([])
+  const [routeTemplates, setRouteTemplates] = useState<RouteTemplate[]>([])
   const [employees, setEmployees] = useState<Employee[]>([])
   const [empSearch, setEmpSearch] = useState('')
   const [empPositionFilter, setEmpPositionFilter] = useState('all')
@@ -538,6 +557,8 @@ export default function Home() {
   const [crewFormOpen, setCrewFormOpen] = useState(false)
   const [crewFormEdit, setCrewFormEdit] = useState<Crew | null>(null)
   const [crewFormSaving, setCrewFormSaving] = useState(false)
+  const [routeTemplateFormOpen, setRouteTemplateFormOpen] = useState(false)
+  const [routeTemplateFormEdit, setRouteTemplateFormEdit] = useState<RouteTemplate | null>(null)
   const [notificationRules, setNotificationRules] = useState<Array<{
     id: string; equipmentId: string; conditionType: string; thresholdValue: number | null;
     isActive: boolean; lastTriggeredAt?: string | null; description?: string | null;
@@ -606,6 +627,13 @@ export default function Home() {
     } catch { toast.error('Ошибка загрузки экипажей') }
   }, [])
 
+  const fetchRouteTemplates = useCallback(async () => {
+    try {
+      const res = await fetch('/api/route-templates')
+      if (res.ok) { const data = await res.json(); setRouteTemplates(data) }
+    } catch {}
+  }, [])
+
   const fetchEmployees = useCallback(async () => {
     try {
       const res = await fetch('/api/employees')
@@ -617,9 +645,9 @@ export default function Home() {
 
   const fetchAll = useCallback(async () => {
     setLoading(true)
-    await Promise.all([fetchEquipment(), fetchCompanies(), fetchRepairs(), fetchTrips(), fetchCrews(), fetchEmployees()])
+    await Promise.all([fetchEquipment(), fetchCompanies(), fetchRepairs(), fetchTrips(), fetchCrews(), fetchRouteTemplates(), fetchEmployees()])
     setLoading(false)
-  }, [fetchEquipment, fetchCompanies, fetchRepairs, fetchTrips, fetchCrews, fetchEmployees])
+  }, [fetchEquipment, fetchCompanies, fetchRepairs, fetchTrips, fetchCrews, fetchRouteTemplates, fetchEmployees])
 
   useEffect(() => { fetchAll() }, [fetchAll])
 
@@ -833,6 +861,7 @@ export default function Home() {
       if (type === 'crew') apiUrl = `/api/crews/${id}`
       if (type === 'trip') apiUrl = `/api/trips/${id}`
       if (type === 'employee') apiUrl = `/api/employees/${id}`
+      if (type === 'routeTemplate') apiUrl = `/api/route-templates/${id}`
       const res = await fetch(apiUrl, { method: 'DELETE' })
       if (!res.ok) throw new Error()
       toast.success('Удалено успешно')
@@ -840,6 +869,7 @@ export default function Home() {
       if (type === 'repair') { setRepairDetailOpen(false); setSelectedRepair(null) }
       if (type === 'trip') { setTripDetailOpen(false); setSelectedTrip(null) }
       if (type === 'employee') { setEmpDetailOpen(false); setSelectedEmp(null) }
+      if (type === 'routeTemplate') fetchRouteTemplates()
       fetchAll()
     } catch { toast.error('Ошибка удаления') }
     setDeleteDialog({ open: false, type: 'equipment', id: '', name: '' })
@@ -1001,7 +1031,7 @@ export default function Home() {
             <RepairsTab repairs={repairs} equipment={equipment} onOpenDetail={openRepairDetail} onAdd={(eqId) => { setRepairFormEdit(null); setRepairFormEquipmentId(eqId || ''); setRepairFormOpen(true) }} onDelete={(r) => setDeleteDialog({ open: true, type: 'repair', id: r.id, name: r.description })} />
           </TabsContent>
           <TabsContent value="trips">
-            <TripsTab trips={trips} equipment={equipment} crews={crews} onOpenDetail={openTripDetail} onAdd={(eqId) => { setTripFormEdit(null); setTripFormEquipmentId(eqId || ''); setTripFormOpen(true) }} onDelete={(t) => setDeleteDialog({ open: true, type: 'trip', id: t.id, name: t.route })} onAddCrew={() => { setCrewFormEdit(null); setCrewFormOpen(true) }} onEditCrew={(c) => { setCrewFormEdit(c); setCrewFormOpen(true) }} onDeleteCrew={(c) => setDeleteDialog({ open: true, type: 'crew', id: c.id, name: c.name })} />
+            <TripsTab trips={trips} equipment={equipment} crews={crews} routeTemplates={routeTemplates} onOpenDetail={openTripDetail} onAdd={(eqId) => { setTripFormEdit(null); setTripFormEquipmentId(eqId || ''); setTripFormOpen(true) }} onDelete={(t) => setDeleteDialog({ open: true, type: 'trip', id: t.id, name: t.route })} onAddCrew={() => { setCrewFormEdit(null); setCrewFormOpen(true) }} onEditCrew={(c) => { setCrewFormEdit(c); setCrewFormOpen(true) }} onDeleteCrew={(c) => setDeleteDialog({ open: true, type: 'crew', id: c.id, name: c.name })} onAddRouteTemplate={() => { setRouteTemplateFormEdit(null); setRouteTemplateFormOpen(true) }} onEditRouteTemplate={(rt) => { setRouteTemplateFormEdit(rt); setRouteTemplateFormOpen(true) }} onDeleteRouteTemplate={(rt) => setDeleteDialog({ open: true, type: 'routeTemplate', id: rt.id, name: rt.name })} />
           </TabsContent>
           <TabsContent value="employees">
             <EmployeesTab employees={employees} crews={crews} empSearch={empSearch} setEmpSearch={setEmpSearch} empPositionFilter={empPositionFilter} setEmpPositionFilter={setEmpPositionFilter} empStatusFilter={empStatusFilter} setEmpStatusFilter={setEmpStatusFilter} onOpenDetail={openEmployeeDetail} onAdd={() => { setEmpFormEdit(null); setEmpFormOpen(true) }} onEdit={(emp) => { setEmpFormEdit(emp); setEmpFormOpen(true) }} onDelete={(emp) => setDeleteDialog({ open: true, type: 'employee', id: emp.id, name: emp.fullName })} />
@@ -1018,7 +1048,7 @@ export default function Home() {
         <div className="md:hidden">
           {mainTab === 'equipment' && <EquipmentTab equipment={equipment} companies={companies} eqSearch={eqSearch} setEqSearch={setEqSearch} eqStatusFilter={eqStatusFilter} setEqStatusFilter={setEqStatusFilter} eqTypeFilter={eqTypeFilter} setEqTypeFilter={setEqTypeFilter} onOpenDetail={openEquipmentDetail} onAdd={() => { setEqFormEdit(null); setEqFormStep(0); setEqFormOpen(true) }} onEdit={(eq) => { setEqFormEdit(eq); setEqFormStep(0); setEqFormOpen(true) }} onDelete={(eq) => setDeleteDialog({ open: true, type: 'equipment', id: eq.id, name: eq.name })} onGoToMap={(eq) => openEquipmentDetail(eq, 'glonass')} />}
           {mainTab === 'repairs' && <RepairsTab repairs={repairs} equipment={equipment} onOpenDetail={openRepairDetail} onAdd={(eqId) => { setRepairFormEdit(null); setRepairFormEquipmentId(eqId || ''); setRepairFormOpen(true) }} onDelete={(r) => setDeleteDialog({ open: true, type: 'repair', id: r.id, name: r.description })} />}
-          {mainTab === 'trips' && <TripsTab trips={trips} equipment={equipment} crews={crews} onOpenDetail={openTripDetail} onAdd={(eqId) => { setTripFormEdit(null); setTripFormEquipmentId(eqId || ''); setTripFormOpen(true) }} onDelete={(t) => setDeleteDialog({ open: true, type: 'trip', id: t.id, name: t.route })} onAddCrew={() => { setCrewFormEdit(null); setCrewFormOpen(true) }} onEditCrew={(c) => { setCrewFormEdit(c); setCrewFormOpen(true) }} onDeleteCrew={(c) => setDeleteDialog({ open: true, type: 'crew', id: c.id, name: c.name })} />}
+          {mainTab === 'trips' && <TripsTab trips={trips} equipment={equipment} crews={crews} routeTemplates={routeTemplates} onOpenDetail={openTripDetail} onAdd={(eqId) => { setTripFormEdit(null); setTripFormEquipmentId(eqId || ''); setTripFormOpen(true) }} onDelete={(t) => setDeleteDialog({ open: true, type: 'trip', id: t.id, name: t.route })} onAddCrew={() => { setCrewFormEdit(null); setCrewFormOpen(true) }} onEditCrew={(c) => { setCrewFormEdit(c); setCrewFormOpen(true) }} onDeleteCrew={(c) => setDeleteDialog({ open: true, type: 'crew', id: c.id, name: c.name })} onAddRouteTemplate={() => { setRouteTemplateFormEdit(null); setRouteTemplateFormOpen(true) }} onEditRouteTemplate={(rt) => { setRouteTemplateFormEdit(rt); setRouteTemplateFormOpen(true) }} onDeleteRouteTemplate={(rt) => setDeleteDialog({ open: true, type: 'routeTemplate', id: rt.id, name: rt.name })} />}
           {mainTab === 'employees' && <EmployeesTab employees={employees} crews={crews} empSearch={empSearch} setEmpSearch={setEmpSearch} empPositionFilter={empPositionFilter} setEmpPositionFilter={setEmpPositionFilter} empStatusFilter={empStatusFilter} setEmpStatusFilter={setEmpStatusFilter} onOpenDetail={openEmployeeDetail} onAdd={() => { setEmpFormEdit(null); setEmpFormOpen(true) }} onEdit={(emp) => { setEmpFormEdit(emp); setEmpFormOpen(true) }} onDelete={(emp) => setDeleteDialog({ open: true, type: 'employee', id: emp.id, name: emp.fullName })} />}
           {mainTab === 'companies' && <CompaniesTab companies={companies} onAdd={() => { setCompanyFormEdit(null); setCompanyFormOpen(true) }} onEdit={(c) => { setCompanyFormEdit(c); setCompanyFormOpen(true) }} onDelete={(c) => setDeleteDialog({ open: true, type: 'company', id: c.id, name: c.name })} />}
           {mainTab === 'map' && <MapTab equipment={equipment} onOpenDetail={openEquipmentDetailById} onSync={async () => { try { const res = await fetch('/api/glonass/sync', { method: 'POST' }); const data = await res.json(); if (data.synced !== undefined) toast.success(`Синхронизация: ${data.synced} из ${data.totalTrackers}`); else toast.error(data.error || 'Ошибка'); fetchEquipment() } catch { toast.error('Ошибка синхронизации') } }} />}
@@ -1055,8 +1085,9 @@ export default function Home() {
       <PhotoUploadDialog open={!!photoUploadEq} onOpenChange={(v) => { if (!v) setPhotoUploadEq(null) }} targetId={photoUploadEq || ''} targetType="equipment" onUploaded={() => { setPhotoUploadEq(null); if (selectedEq) fetchEquipmentDetail(selectedEq.id); fetchAll() }} />
       <RepairPhotoUploadDialog open={!!photoUploadRepair} onOpenChange={(v) => { if (!v) setPhotoUploadRepair(null) }} targetId={photoUploadRepair || ''} stages={selectedRepair?.stages || []} onUploaded={() => { setPhotoUploadRepair(null); if (selectedRepair) fetchRepairDetail(selectedRepair.id) }} />
       <TripDetailDialog open={tripDetailOpen} onOpenChange={setTripDetailOpen} trip={selectedTrip} loading={tripDetailLoading} crews={crews} onEdit={(t) => { setTripDetailOpen(false); setTripFormEdit(t); setTripFormEquipmentId(t.equipmentId); setTripFormOpen(true) }} onDelete={(t) => { setTripDetailOpen(false); setDeleteDialog({ open: true, type: 'trip', id: t.id, name: t.route }) }} onStart={async (t) => { try { const res = await fetch(`/api/trips/${t.id}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'start' }) }); if (!res.ok) { const errData = await res.json().catch(() => null); throw new Error(errData?.error || 'Ошибка') } toast.success('Рейс начат, данные трекера заполнены'); fetchTripDetail(t.id); fetchAll() } catch (e: any) { toast.error(e.message || 'Ошибка') } }} onComplete={async (t) => { try { const res = await fetch(`/api/trips/${t.id}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'complete' }) }); if (!res.ok) { const errData = await res.json().catch(() => null); throw new Error(errData?.error || 'Ошибка') } toast.success('Рейс завершён, данные трекера заполнены'); fetchTripDetail(t.id); fetchAll() } catch (e: any) { toast.error(e.message || 'Ошибка завершения рейса') } }} onRefresh={() => selectedTrip && fetchTripDetail(selectedTrip.id)} />
-      <TripFormDialog open={tripFormOpen} onOpenChange={setTripFormOpen} editData={tripFormEdit} equipmentId={tripFormEquipmentId} equipmentList={equipment} crews={crews} saving={tripFormSaving} setSaving={setTripFormSaving} onSaved={() => { setTripFormOpen(false); fetchAll() }} />
+      <TripFormDialog open={tripFormOpen} onOpenChange={setTripFormOpen} editData={tripFormEdit} equipmentId={tripFormEquipmentId} equipmentList={equipment} crews={crews} routeTemplates={routeTemplates} saving={tripFormSaving} setSaving={setTripFormSaving} onSaved={() => { setTripFormOpen(false); fetchAll() }} />
       <CrewFormDialog open={crewFormOpen} onOpenChange={setCrewFormOpen} editData={crewFormEdit} saving={crewFormSaving} setSaving={setCrewFormSaving} onSaved={() => { setCrewFormOpen(false); fetchAll() }} employees={employees} />
+      <RouteTemplateFormDialog open={routeTemplateFormOpen} setOpen={setRouteTemplateFormOpen} editData={routeTemplateFormEdit} onSaved={fetchRouteTemplates} />
       <EmployeeDetailSheet open={empDetailOpen} onOpenChange={setEmpDetailOpen} employee={selectedEmp} loading={empDetailLoading} crews={crews} onEdit={(emp) => { setEmpDetailOpen(false); setEmpFormEdit(emp); setEmpFormOpen(true) }} onDelete={(emp) => { setEmpDetailOpen(false); setDeleteDialog({ open: true, type: 'employee', id: emp.id, name: emp.fullName }) }} onRefresh={() => selectedEmp && fetchEmployeeDetail(selectedEmp.id)} />
       <EmployeeFormDialog open={empFormOpen} onOpenChange={setEmpFormOpen} editData={empFormEdit} crews={crews} equipment={equipment} saving={empFormSaving} setSaving={setEmpFormSaving} onSaved={() => { setEmpFormOpen(false); fetchAll() }} />
 
@@ -3812,17 +3843,19 @@ function RepairPhotoUploadDialog({ open, onOpenChange, targetId, stages, onUploa
 // TRIPS TAB
 // ═══════════════════════════════════════════════════════════════
 
-function TripsTab({ trips, equipment, crews, onOpenDetail, onAdd, onDelete, onAddCrew, onEditCrew, onDeleteCrew }: {
-  trips: Trip[]; equipment: Equipment[]; crews: Crew[];
+function TripsTab({ trips, equipment, crews, routeTemplates, onOpenDetail, onAdd, onDelete, onAddCrew, onEditCrew, onDeleteCrew, onAddRouteTemplate, onEditRouteTemplate, onDeleteRouteTemplate }: {
+  trips: Trip[]; equipment: Equipment[]; crews: Crew[]; routeTemplates: RouteTemplate[];
   onOpenDetail: (t: Trip) => void; onAdd: (eqId?: string) => void;
   onDelete: (t: Trip) => void;
   onAddCrew: () => void; onEditCrew: (c: Crew) => void; onDeleteCrew: (c: Crew) => void;
+  onAddRouteTemplate: () => void; onEditRouteTemplate: (rt: RouteTemplate) => void; onDeleteRouteTemplate: (rt: RouteTemplate) => void;
 }) {
   const [statusFilter, setStatusFilter] = useState('all')
   const [eqFilter, setEqFilter] = useState('all')
   const [search, setSearch] = useState('')
   const debouncedSearch = useDebounce(search, 300)
   const [showCrews, setShowCrews] = useState(false)
+  const [showRoutes, setShowRoutes] = useState(false)
 
   const filtered = useMemo(() => trips.filter(t => {
     if (statusFilter !== 'all' && t.status !== statusFilter) return false
@@ -3863,6 +3896,10 @@ function TripsTab({ trips, equipment, crews, onOpenDetail, onAdd, onDelete, onAd
           <Users className="size-3" />{showCrews ? 'Скрыть экипажи' : 'Показать экипажи'}
           {showCrews ? <ChevronUp className="size-3" /> : <ChevronDown className="size-3" />}
         </Button>
+        <Button variant="ghost" size="sm" className="h-7 text-[11px] gap-1" onClick={() => setShowRoutes(!showRoutes)}>
+          <Route className="size-3" />{showRoutes ? 'Скрыть маршруты' : 'Маршруты'}
+          {showRoutes ? <ChevronUp className="size-3" /> : <ChevronDown className="size-3" />}
+        </Button>
       </div>
 
       {/* Crews section (toggleable) */}
@@ -3902,6 +3939,63 @@ function TripsTab({ trips, equipment, crews, onOpenDetail, onAdd, onDelete, onAd
                     <div className="flex gap-1 pt-0.5">
                       <Button size="sm" variant="ghost" className="h-6 text-[10px] gap-0.5" onClick={() => onEditCrew(c)}><Edit className="size-3" />Изменить</Button>
                       <Button size="sm" variant="ghost" className="h-6 text-[10px] gap-0.5 text-destructive hover:text-destructive" onClick={() => onDeleteCrew(c)}><Trash2 className="size-3" />Удалить</Button>
+                    </div>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          )}
+          <Separator />
+        </div>
+      )}
+
+      {/* Route Templates section (toggleable) */}
+      {showRoutes && (
+        <div className="space-y-2">
+          <Separator />
+          <div className="flex items-center justify-between">
+            <h3 className="text-xs font-semibold flex items-center gap-1.5"><Route className="size-3.5" />Маршруты ({routeTemplates.length})</h3>
+            <Button size="sm" variant="outline" className="h-7 text-[11px] gap-1" onClick={onAddRouteTemplate}><Plus className="size-3" />Создать</Button>
+          </div>
+          {routeTemplates.length === 0 ? (
+            <p className="text-xs text-muted-foreground py-2">Маршруты не созданы</p>
+          ) : (
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+              {routeTemplates.map(rt => (
+                <Card key={rt.id}>
+                  <CardContent className="p-3 space-y-1.5">
+                    <div className="flex items-center gap-2">
+                      <div className="size-7 rounded-md bg-sky-100 dark:bg-sky-900/30 flex items-center justify-center shrink-0"><Route className="size-3.5 text-sky-600 dark:text-sky-400" /></div>
+                      <div className="min-w-0 flex-1">
+                        <p className="text-xs font-medium truncate">{rt.name}</p>
+                        <p className="text-[10px] text-muted-foreground">{rt.points?.length || 0} точек{rt.totalDistance ? ` • ${rt.totalDistance.toFixed(1)} км` : ''}</p>
+                      </div>
+                    </div>
+                    {(rt.startPoint || rt.endPoint) && (
+                      <div className="text-[10px] text-muted-foreground space-y-0.5 pl-2">
+                        {rt.startPoint && <div className="flex items-center gap-0.5"><MapPin className="size-2 text-emerald-500" />{rt.startPoint}</div>}
+                        {rt.endPoint && <div className="flex items-center gap-0.5"><MapPin className="size-2 text-red-500" />{rt.endPoint}</div>}
+                      </div>
+                    )}
+                    {rt.points && rt.points.length > 0 && (
+                      <div className="space-y-0 pl-2">
+                        {rt.points.slice(0, 4).map((p, i) => (
+                          <div key={p.id} className="flex items-center gap-1 text-[10px]">
+                            <span className={`inline-flex items-center justify-center size-3.5 rounded-full text-[8px] font-bold ${
+                              i === 0 ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-400' :
+                              i === rt.points.length - 1 ? 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-400' :
+                              'bg-primary/10 text-primary'
+                            }`}>{i + 1}</span>
+                            <span className="truncate">{p.name}</span>
+                            {p.distanceFromPrev != null && p.distanceFromPrev > 0 && <span className="text-sky-600 dark:text-sky-400 ml-auto">+{p.distanceFromPrev.toFixed(1)}км</span>}
+                          </div>
+                        ))}
+                        {rt.points.length > 4 && <div className="text-[9px] text-muted-foreground pl-4">...ещё {rt.points.length - 4} точек</div>}
+                      </div>
+                    )}
+                    <div className="flex gap-1 pt-0.5">
+                      <Button size="sm" variant="ghost" className="h-6 text-[10px] gap-0.5" onClick={() => onEditRouteTemplate(rt)}><Edit className="size-3" />Изменить</Button>
+                      <Button size="sm" variant="ghost" className="h-6 text-[10px] gap-0.5 text-destructive hover:text-destructive" onClick={() => onDeleteRouteTemplate(rt)}><Trash2 className="size-3" />Удалить</Button>
                     </div>
                   </CardContent>
                 </Card>
@@ -4411,6 +4505,9 @@ function TripDetailDialog({ open, onOpenChange, trip, loading, crews, onEdit, on
               )}
               <DetailSection title="Маршрут" icon={<Route className="size-3.5" />}>
                 <DetailRow label="Маршрут" value={t.route} />
+                {t.routeTemplate && (
+                  <DetailRow label="Шаблон маршрута" value={t.routeTemplate.name} />
+                )}
                 <DetailRow label="Пункт отправления" value={t.startPoint} />
                 <DetailRow label="Пункт назначения" value={t.endPoint} />
                 <DetailRow label="Расстояние" value={displayDist != null ? `${displayDist.toFixed(1)} км` : undefined} />
@@ -4494,6 +4591,19 @@ function TripDetailDialog({ open, onOpenChange, trip, loading, crews, onEdit, on
                       </div>
                     ))}
                   </div>
+                </div>
+              )}
+              {t.routePoints && t.routePoints.some(p => p.latitude && p.longitude) && (
+                <div className="mt-1">
+                  <Button variant="outline" size="sm" className="h-7 text-[10px] gap-1 w-full" onClick={() => {
+                    const pts = t.routePoints!.filter(p => p.latitude && p.longitude)
+                    if (pts.length >= 2) {
+                      const mapUrl = `https://www.openstreetmap.org/directions?route=${pts.map(p => `${p.latitude},${p.longitude}`).join(';')}`
+                      window.open(mapUrl, '_blank')
+                    }
+                  }}>
+                    <Map className="size-3" />Открыть маршрут на карте
+                  </Button>
                 </div>
               )}
               <DetailSection title="Груз" icon={<Package className="size-3.5" />}>
@@ -4911,7 +5021,7 @@ function TripDetailDialog({ open, onOpenChange, trip, loading, crews, onEdit, on
               {tripSaved ? 'Сохранено' : 'Сохранить'}
             </Button>
           )}
-          {tripSaved && (
+          {(t.status === 'in_progress' || t.status === 'completed') && (
             <Button variant="default" size="sm" className="h-8 gap-1 text-xs" onClick={() => window.open(`/api/trips/${t.id}/print`, '_blank')}>
               <Printer className="size-3.5" />Распечатать
             </Button>
@@ -4964,10 +5074,10 @@ function TripDetailDialog({ open, onOpenChange, trip, loading, crews, onEdit, on
 // TRIP FORM DIALOG
 // ═══════════════════════════════════════════════════════════════
 
-function TripFormDialog({ open, onOpenChange, editData, equipmentId, equipmentList, crews, saving, setSaving, onSaved }: {
+function TripFormDialog({ open, onOpenChange, editData, equipmentId, equipmentList, crews, routeTemplates, saving, setSaving, onSaved }: {
   open: boolean; onOpenChange: (v: boolean) => void;
   editData: Trip | null; equipmentId: string; equipmentList: Equipment[];
-  crews: Crew[]; saving: boolean; setSaving: (v: boolean) => void;
+  crews: Crew[]; routeTemplates: RouteTemplate[]; saving: boolean; setSaving: (v: boolean) => void;
   onSaved: () => void;
 }) {
   const [form, setForm] = useState<Record<string, string>>({})
@@ -4992,6 +5102,7 @@ function TripFormDialog({ open, onOpenChange, editData, equipmentId, equipmentLi
         fuelStart: editData.fuelStart?.toString() || '', fuelEnd: editData.fuelEnd?.toString() || '',
         mileageStart: editData.mileageStart?.toString() || '', mileageEnd: editData.mileageEnd?.toString() || '',
         cost: editData.cost?.toString() || '', revenue: editData.revenue?.toString() || '', notes: editData.notes || '',
+        routeTemplateId: editData.routeTemplateId || '',
       })
       setRoutePoints(
         (editData.routePoints || []).map(p => ({
@@ -5258,6 +5369,37 @@ function TripFormDialog({ open, onOpenChange, editData, equipmentId, equipmentLi
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div className="sm:col-span-2"><Label className="text-xs">Техника *</Label><Select value={f('equipmentId')} onValueChange={v => setF('equipmentId', v)} disabled={!!editData}><SelectTrigger className="h-9 text-sm"><SelectValue placeholder="Выберите технику" /></SelectTrigger><SelectContent>{equipmentList.map(e => <SelectItem key={e.id} value={e.id}>{e.name} {e.registrationNum ? `(${e.registrationNum})` : ''}</SelectItem>)}</SelectContent></Select></div>
             <div className="sm:col-span-2"><Label className="text-xs">Маршрут *</Label><Input value={f('route')} onChange={e => setF('route', e.target.value)} placeholder="Москва — Санкт-Петербург" autoFocus /></div>
+            {routeTemplates.length > 0 && (
+              <div className="sm:col-span-2">
+                <Label className="text-xs">Шаблон маршрута</Label>
+                <Select value={f('routeTemplateId') || 'none'} onValueChange={(val) => {
+                  const effectiveVal = val === 'none' ? '' : val
+                  setF('routeTemplateId', effectiveVal)
+                  if (effectiveVal) {
+                    const tmpl = routeTemplates.find(rt => rt.id === effectiveVal)
+                    if (tmpl) {
+                      if (tmpl.startPoint) setF('startPoint', tmpl.startPoint)
+                      if (tmpl.endPoint) setF('endPoint', tmpl.endPoint)
+                      if (tmpl.totalDistance) setF('distance', tmpl.totalDistance.toString())
+                      if (tmpl.points.length > 0) {
+                        setRoutePoints(tmpl.points.map(p => ({
+                          name: p.name, address: p.address || '', latitude: p.latitude?.toString() || '',
+                          longitude: p.longitude?.toString() || '', plannedArrival: p.plannedArrival || '',
+                          plannedDeparture: p.plannedDeparture || '', distanceFromPrev: p.distanceFromPrev?.toString() || '',
+                          notes: p.notes || '',
+                        })))
+                      }
+                    }
+                  }
+                }}>
+                  <SelectTrigger className="h-9 text-sm"><SelectValue placeholder="Выберите шаблон маршрута" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">Без шаблона</SelectItem>
+                    {routeTemplates.map(rt => <SelectItem key={rt.id} value={rt.id}>{rt.name} ({rt.points?.length || 0} точек)</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
             <div><Label className="text-xs">Пункт отправления</Label><div className="flex gap-1"><Input value={f('startPoint')} onChange={e => setF('startPoint', e.target.value)} className="flex-1" /><Button type="button" size="sm" variant="outline" className="shrink-0 h-9 px-2 gap-1" onClick={() => fetchSnapshot('start')} disabled={fetchingStart} title="Запросить из ГЛОНАСС на время начала">{fetchingStart ? <Loader2 className="size-3.5 animate-spin" /> : <Navigation className="size-3.5" />}ГЛОНАСС</Button></div></div>
             <div><Label className="text-xs">Пункт назначения</Label><div className="flex gap-1"><Input value={f('endPoint')} onChange={e => setF('endPoint', e.target.value)} className="flex-1" /><Button type="button" size="sm" variant="outline" className="shrink-0 h-9 px-2 gap-1" onClick={() => fetchSnapshot('end')} disabled={fetchingEnd} title="Запросить из ГЛОНАСС на время окончания">{fetchingEnd ? <Loader2 className="size-3.5 animate-spin" /> : <Navigation className="size-3.5" />}ГЛОНАСС</Button></div></div>
             <div><Label className="text-xs">Экипаж</Label><Select value={f('crewId') || '_none'} onValueChange={v => setF('crewId', v === '_none' ? '' : v)}><SelectTrigger className="h-9 text-sm"><SelectValue placeholder="Без экипажа" /></SelectTrigger><SelectContent><SelectItem value="_none">Без экипажа</SelectItem>{crews.map(c => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}</SelectContent></Select></div>
@@ -5522,6 +5664,278 @@ function CrewFormDialog({ open, onOpenChange, editData, saving, setSaving, onSav
         </div>
         <DialogFooter>
           <Button size="sm" onClick={handleSave} disabled={saving}>{saving ? <Loader2 className="size-3.5 animate-spin" /> : <CheckCircle2 className="size-3.5" />}{editData ? 'Сохранить' : 'Добавить'}</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+// ═══════════════════════════════════════════════════════════════
+// ROUTE TEMPLATE FORM DIALOG
+// ═══════════════════════════════════════════════════════════════
+
+function RouteTemplateFormDialog({ open, setOpen, editData, onSaved }: {
+  open: boolean; setOpen: (v: boolean) => void;
+  editData: RouteTemplate | null; onSaved: () => void;
+}) {
+  const [form, setForm] = useState<Record<string, string>>({})
+  const [points, setPoints] = useState<Array<{
+    id?: string; name: string; address: string; latitude: string; longitude: string;
+    plannedArrival: string; plannedDeparture: string; distanceFromPrev: string; notes: string;
+  }>>([])
+  const [saving, setSaving] = useState(false)
+  const [geocodingIdx, setGeocodingIdx] = useState<number | null>(null)
+  const [optimizing, setOptimizing] = useState(false)
+
+  useEffect(() => {
+    if (editData) {
+      setForm({
+        name: editData.name || '', description: editData.description || '',
+        startPoint: editData.startPoint || '', endPoint: editData.endPoint || '',
+        totalDistance: editData.totalDistance?.toString() || '',
+        estimatedDuration: editData.estimatedDuration?.toString() || '',
+        notes: editData.notes || '',
+      })
+      setPoints((editData.points || []).map(p => ({
+        id: p.id, name: p.name || '', address: p.address || '',
+        latitude: p.latitude?.toString() || '', longitude: p.longitude?.toString() || '',
+        plannedArrival: p.plannedArrival || '', plannedDeparture: p.plannedDeparture || '',
+        distanceFromPrev: p.distanceFromPrev?.toString() || '', notes: p.notes || '',
+      })))
+    } else {
+      setForm({ name: '' })
+      setPoints([])
+    }
+  }, [editData, open])
+
+  const f = (key: string) => form[key] || ''
+  const setF = (key: string, value: string) => setForm(prev => ({ ...prev, [key]: value }))
+
+  const haversineDistance = (lat1: number, lng1: number, lat2: number, lng2: number): number => {
+    const R = 6371
+    const dLat = (lat2 - lat1) * Math.PI / 180
+    const dLng = (lng2 - lng1) * Math.PI / 180
+    const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+      Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+      Math.sin(dLng / 2) * Math.sin(dLng / 2)
+    return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
+  }
+
+  const recalcDistances = (pts: typeof points) => {
+    return pts.map((p, i) => {
+      if (i === 0) return { ...p, distanceFromPrev: '' }
+      const prev = pts[i - 1]
+      const lat1 = parseFloat(prev.latitude), lng1 = parseFloat(prev.longitude)
+      const lat2 = parseFloat(p.latitude), lng2 = parseFloat(p.longitude)
+      if (isFinite(lat1) && isFinite(lng1) && isFinite(lat2) && isFinite(lng2)) {
+        return { ...p, distanceFromPrev: haversineDistance(lat1, lng1, lat2, lng2).toFixed(1) }
+      }
+      return p
+    })
+  }
+
+  const geocodeAddress = async (address: string): Promise<{ latitude: number; longitude: number; address: string } | null> => {
+    try {
+      const res = await fetch(`/api/glonass/geocode?address=${encodeURIComponent(address)}`)
+      if (!res.ok) return null
+      const data = await res.json()
+      if (data.latitude && data.longitude) return { latitude: data.latitude, longitude: data.longitude, address: data.address || address }
+    } catch {}
+    return null
+  }
+
+  const handleGeocodePoint = async (idx: number) => {
+    const p = points[idx]
+    if (!p.address.trim()) { toast.error('Введите адрес'); return }
+    setGeocodingIdx(idx)
+    try {
+      const result = await geocodeAddress(p.address)
+      if (result) {
+        const newPoints = [...points]
+        newPoints[idx] = { ...newPoints[idx], latitude: result.latitude.toString(), longitude: result.longitude.toString(), address: result.address }
+        setPoints(recalcDistances(newPoints))
+        toast.success(`Координаты: ${result.latitude.toFixed(4)}, ${result.longitude.toFixed(4)}`)
+      } else { toast.error('Не удалось определить координаты') }
+    } catch { toast.error('Ошибка геокодирования') }
+    setGeocodingIdx(null)
+  }
+
+  const handleAutoSort = async () => {
+    if (points.length < 2) { toast.info('Добавьте минимум 2 точки'); return }
+    setOptimizing(true)
+    try {
+      const geocoded = [...points]
+      for (let i = 0; i < geocoded.length; i++) {
+        if (!geocoded[i].latitude && !geocoded[i].longitude && geocoded[i].address.trim()) {
+          const result = await geocodeAddress(geocoded[i].address)
+          if (result) geocoded[i] = { ...geocoded[i], latitude: result.latitude.toString(), longitude: result.longitude.toString(), address: result.address }
+        }
+      }
+      const coords = geocoded.map(p => ({ lat: parseFloat(p.latitude), lng: parseFloat(p.longitude), hasCoords: !!(p.latitude && p.longitude) }))
+      const coordIndices: number[] = []
+      const coordList: { lat: number; lng: number }[] = []
+      for (let i = 0; i < geocoded.length; i++) {
+        if (coords[i].hasCoords) { coordIndices.push(i); coordList.push({ lat: coords[i].lat, lng: coords[i].lng }) }
+      }
+      const n = coordList.length
+      if (n < 2) { toast.error('Недостаточно точек с координатами'); setOptimizing(false); return }
+
+      const visited = new Set<number>()
+      const order: number[] = [0]
+      visited.add(0)
+      while (visited.size < n) {
+        const current = order[order.length - 1]
+        let nearest = -1, nearestDist = Infinity
+        for (let i = 0; i < n; i++) {
+          if (visited.has(i)) continue
+          const dist = haversineDistance(coordList[current].lat, coordList[current].lng, coordList[i].lat, coordList[i].lng)
+          if (dist < nearestDist) { nearestDist = dist; nearest = i }
+        }
+        if (nearest >= 0) { order.push(nearest); visited.add(nearest) }
+      }
+      const ordered = order.map(i => geocoded[coordIndices[i]])
+      const noCoords = geocoded.filter(p => !p.latitude && !p.longitude)
+      const result = recalcDistances([...ordered, ...noCoords])
+      setPoints(result)
+
+      if (result.length > 0) {
+        if (result[0].address) setF('startPoint', result[0].address)
+        if (result[result.length - 1].address) setF('endPoint', result[result.length - 1].address)
+      }
+      const totalDist = result.reduce((s, p) => s + (parseFloat(p.distanceFromPrev) || 0), 0)
+      if (totalDist > 0) setF('totalDistance', totalDist.toFixed(1))
+      toast.success(`Маршрут оптимизирован: ${totalDist.toFixed(1)} км`)
+    } catch { toast.error('Ошибка оптимизации') }
+    setOptimizing(false)
+  }
+
+  const addPoint = () => {
+    setPoints(prev => [...prev, { name: `Точка ${prev.length + 1}`, address: '', latitude: '', longitude: '', plannedArrival: '', plannedDeparture: '', distanceFromPrev: '', notes: '' }])
+  }
+  const removePoint = (idx: number) => {
+    setPoints(prev => recalcDistances(prev.filter((_, i) => i !== idx)))
+  }
+  const movePoint = (idx: number, dir: 'up' | 'down') => {
+    const newIdx = dir === 'up' ? idx - 1 : idx + 1
+    if (newIdx < 0 || newIdx >= points.length) return
+    const newPoints = [...points]
+    const temp = newPoints[idx]
+    newPoints[idx] = newPoints[newIdx]
+    newPoints[newIdx] = temp
+    setPoints(recalcDistances(newPoints))
+  }
+  const updatePoint = (idx: number, field: string, value: string) => {
+    setPoints(prev => {
+      const newPoints = prev.map((p, i) => i === idx ? { ...p, [field]: value } : p)
+      if (field === 'latitude' || field === 'longitude') return recalcDistances(newPoints)
+      return newPoints
+    })
+  }
+
+  const handleSave = async () => {
+    if (!f('name').trim()) { toast.error('Укажите название маршрута'); return }
+    setSaving(true)
+    try {
+      const url = editData ? `/api/route-templates/${editData.id}` : '/api/route-templates'
+      const method = editData ? 'PUT' : 'POST'
+      const payload = {
+        ...form,
+        points: points.map((p, i) => ({
+          id: p.id || undefined,
+          name: p.name || `Точка ${i + 1}`,
+          address: p.address || null,
+          latitude: p.latitude ? parseFloat(p.latitude) : null,
+          longitude: p.longitude ? parseFloat(p.longitude) : null,
+          sortOrder: i,
+          plannedArrival: p.plannedArrival || null,
+          plannedDeparture: p.plannedDeparture || null,
+          distanceFromPrev: p.distanceFromPrev ? parseFloat(p.distanceFromPrev) : null,
+          notes: p.notes || null,
+        })),
+      }
+      const res = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })
+      if (!res.ok) { const err = await res.json(); toast.error(err.error || 'Ошибка'); return }
+      toast.success(editData ? 'Маршрут обновлён' : 'Маршрут создан')
+      onSaved()
+      setOpen(false)
+    } catch { toast.error('Ошибка сохранения') }
+    setSaving(false)
+  }
+
+  const totalDist = points.reduce((s, p) => s + (parseFloat(p.distanceFromPrev) || 0), 0)
+
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2"><Route className="size-4" />{editData ? 'Редактировать маршрут' : 'Новый маршрут'}</DialogTitle>
+        </DialogHeader>
+        <div className="grid gap-3 py-2">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div className="sm:col-span-2"><Label className="text-xs">Название *</Label><Input value={f('name')} onChange={e => setF('name', e.target.value)} placeholder="Москва — Санкт-Петербург" autoFocus /></div>
+            <div className="sm:col-span-2"><Label className="text-xs">Описание</Label><Input value={f('description')} onChange={e => setF('description', e.target.value)} placeholder="Описание маршрута" /></div>
+            <div><Label className="text-xs">Пункт отправления</Label><Input value={f('startPoint')} onChange={e => setF('startPoint', e.target.value)} placeholder="Москва" /></div>
+            <div><Label className="text-xs">Пункт назначения</Label><Input value={f('endPoint')} onChange={e => setF('endPoint', e.target.value)} placeholder="Санкт-Петербург" /></div>
+            <div><Label className="text-xs">Общее расстояние (км)</Label><Input type="number" value={f('totalDistance')} onChange={e => setF('totalDistance', e.target.value)} placeholder="700" /></div>
+            <div><Label className="text-xs">Ориентир. время (мин)</Label><Input type="number" value={f('estimatedDuration')} onChange={e => setF('estimatedDuration', e.target.value)} placeholder="480" /></div>
+          </div>
+          {/* Route points */}
+          <div className="space-y-2">
+            <div className="flex items-center gap-2">
+              <Label className="text-xs font-semibold">Точки маршрута</Label>
+              {points.length > 0 && <Badge variant="secondary" className="text-[9px] h-4 px-1.5">{points.length}</Badge>}
+              {totalDist > 0 && <span className="text-[10px] text-sky-600 dark:text-sky-400 ml-auto font-medium">Итого: {totalDist.toFixed(1)} км</span>}
+            </div>
+            {points.length >= 2 && (
+              <Button type="button" size="sm" variant="outline" className="h-7 text-[10px] gap-1 w-full" onClick={handleAutoSort} disabled={optimizing}>
+                {optimizing ? <Loader2 className="size-3 animate-spin" /> : <Zap className="size-3" />}
+                {optimizing ? 'Оптимизация...' : 'Автооптимизация порядка'}
+              </Button>
+            )}
+            <Button type="button" size="sm" variant="outline" className="h-7 text-[10px] gap-1" onClick={addPoint}>
+              <Plus className="size-3" />Добавить точку
+            </Button>
+          </div>
+          {points.length > 0 && (
+            <div className="space-y-1.5">
+              {points.map((p, idx) => (
+                <div key={idx} className="rounded-lg border p-2 space-y-1.5">
+                  <div className="flex items-center gap-1.5">
+                    <span className={`inline-flex items-center justify-center size-5 rounded-full text-[9px] font-bold shrink-0 ${
+                      idx === 0 ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-400' :
+                      idx === points.length - 1 ? 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-400' :
+                      'bg-primary/10 text-primary'
+                    }`}>{idx + 1}</span>
+                    <Input value={p.name} onChange={e => updatePoint(idx, 'name', e.target.value)} placeholder="Название" className="h-7 text-xs flex-1" />
+                    <Button type="button" size="sm" variant="ghost" className="size-7 p-0 shrink-0" onClick={() => movePoint(idx, 'up')} disabled={idx === 0} title="Вверх"><ChevronUp className="size-3" /></Button>
+                    <Button type="button" size="sm" variant="ghost" className="size-7 p-0 shrink-0" onClick={() => movePoint(idx, 'down')} disabled={idx === points.length - 1} title="Вниз"><ChevronDown className="size-3" /></Button>
+                    <Button type="button" size="sm" variant="ghost" className="size-7 p-0 shrink-0 text-red-500 hover:text-red-700" onClick={() => removePoint(idx)} title="Удалить"><X className="size-3" /></Button>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <Input value={p.address} onChange={e => updatePoint(idx, 'address', e.target.value)} placeholder="Адрес" className="h-7 text-xs flex-1" />
+                    <Button type="button" size="sm" variant="ghost" className="size-7 p-0 shrink-0" onClick={() => handleGeocodePoint(idx)} disabled={geocodingIdx === idx} title="Геокодировать">
+                      {geocodingIdx === idx ? <Loader2 className="size-3 animate-spin" /> : <MapPin className="size-3" />}
+                    </Button>
+                  </div>
+                  <div className="grid grid-cols-2 gap-1.5">
+                    <Input value={p.latitude} onChange={e => updatePoint(idx, 'latitude', e.target.value)} placeholder="Широта" className="h-6 text-[10px]" />
+                    <Input value={p.longitude} onChange={e => updatePoint(idx, 'longitude', e.target.value)} placeholder="Долгота" className="h-6 text-[10px]" />
+                    <Input value={p.plannedArrival} onChange={e => updatePoint(idx, 'plannedArrival', e.target.value)} placeholder="Прибытие (HH:mm)" className="h-6 text-[10px]" />
+                    <Input value={p.plannedDeparture} onChange={e => updatePoint(idx, 'plannedDeparture', e.target.value)} placeholder="Отправление (HH:mm)" className="h-6 text-[10px]" />
+                  </div>
+                  {p.distanceFromPrev && (
+                    <div className="text-[10px] text-sky-600 dark:text-sky-400">+{parseFloat(p.distanceFromPrev).toFixed(1)} км от пред.</div>
+                  )}
+                  <Input value={p.notes} onChange={e => updatePoint(idx, 'notes', e.target.value)} placeholder="Заметки" className="h-6 text-[10px]" />
+                </div>
+              ))}
+            </div>
+          )}
+          <div><Label className="text-xs">Заметки</Label><Textarea value={f('notes')} onChange={e => setF('notes', e.target.value)} placeholder="Дополнительные заметки" className="text-xs" rows={2} /></div>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={() => setOpen(false)}>Отмена</Button>
+          <Button onClick={handleSave} disabled={saving}>{saving && <Loader2 className="size-3.5 animate-spin mr-1" />}{editData ? 'Сохранить' : 'Создать'}</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

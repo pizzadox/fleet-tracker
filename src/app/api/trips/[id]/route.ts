@@ -1258,6 +1258,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
         equipment: { select: { id: true, name: true, registrationNum: true, brand: true, model: true } },
         crew: { select: { id: true, name: true, members: { select: { fullName: true, role: true, phone: true } } } },
         routePoints: { orderBy: { sortOrder: 'asc' } },
+        routeTemplate: { select: { id: true, name: true, points: { select: { id: true, name: true, address: true, latitude: true, longitude: true, sortOrder: true, distanceFromPrev: true, plannedArrival: true, plannedDeparture: true, notes: true }, orderBy: { sortOrder: 'asc' } } } },
       },
     })
     if (!trip) return NextResponse.json({ error: 'Trip not found' }, { status: 404 })
@@ -1454,6 +1455,7 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
     const updateData: Record<string, unknown> = {
       equipmentId: body.equipmentId || undefined,
       crewId: body.crewId !== undefined ? (body.crewId || null) : undefined,
+      routeTemplateId: body.routeTemplateId !== undefined ? (body.routeTemplateId || null) : undefined,
       route: body.route?.trim() || undefined,
       startPoint: body.startPoint !== undefined ? (body.startPoint || null) : undefined,
       endPoint: body.endPoint !== undefined ? (body.endPoint || null) : undefined,
@@ -1552,6 +1554,7 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
         equipment: { select: { id: true, name: true, registrationNum: true } },
         crew: { select: { id: true, name: true } },
         routePoints: { orderBy: { sortOrder: 'asc' } },
+        routeTemplate: { select: { id: true, name: true } },
       },
     })
 

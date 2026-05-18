@@ -320,9 +320,11 @@ model Trip {
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
+  routeTemplateId String?   // Привязка к шаблону маршрута
   routePoints     RoutePoint[]
   equipment       Equipment @relation(fields: [equipmentId], references: [id], onDelete: Cascade)
   crew            Crew?     @relation(fields: [crewId], references: [id], onDelete: SetNull)
+  routeTemplate   RouteTemplate? @relation(fields: [routeTemplateId], references: [id], onDelete: SetNull)
 }
 
 model RoutePoint {
@@ -342,6 +344,40 @@ model RoutePoint {
   updatedAt       DateTime  @updatedAt
 
   trip            Trip      @relation(fields: [tripId], references: [id], onDelete: Cascade)
+}
+
+model RouteTemplate {
+  id                String    @id @default(cuid())
+  name              String    // Название маршрута
+  description       String?   // Описание
+  startPoint        String?   // Пункт отправления
+  endPoint          String?   // Пункт назначения
+  totalDistance      Float?    // Общее расстояние (км)
+  estimatedDuration Int?      // Ориентировочное время (минуты)
+  notes             String?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  points            RouteTemplatePoint[]
+  trips             Trip[]
+}
+
+model RouteTemplatePoint {
+  id               String    @id @default(cuid())
+  routeTemplateId  String
+  name             String    // Название/описание точки
+  address          String?   // Полный адрес
+  latitude         Float?    // Координаты
+  longitude        Float?    // Координаты
+  sortOrder        Int       @default(0) // Порядок в маршруте
+  plannedArrival   String?   // Планируемое время прибытия (HH:mm или относительное)
+  plannedDeparture String?   // Планируемое время отправления
+  distanceFromPrev Float?    // Расстояние от предыдущей точки (км)
+  notes            String?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  routeTemplate    RouteTemplate @relation(fields: [routeTemplateId], references: [id], onDelete: Cascade)
 }
 
 model AxentaSettings {

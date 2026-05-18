@@ -139,6 +139,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
           }
         },
         crew: { select: { id: true, name: true, members: { select: { fullName: true, role: true, phone: true } } } },
+        routeTemplate: { select: { id: true, name: true, points: { select: { name: true, address: true, latitude: true, longitude: true, sortOrder: true, distanceFromPrev: true, plannedArrival: true, plannedDeparture: true, notes: true }, orderBy: { sortOrder: 'asc' as const } } } },
       },
     })
     if (!trip) return new Response('Рейс не найден', { status: 404 })
@@ -147,6 +148,10 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
     const crew = trip.crew
     const status = TRIP_STATUS_MAP[trip.status] || trip.status
     const statusColor = TRIP_STATUS_COLORS[trip.status] || { bg: '#f1f5f9', text: '#475569' }
+    const isInProgress = trip.status === 'in_progress'
+
+    // For in-progress trips: unknown end-of-trip data should be marked explicitly
+    const unknownLabel = 'неизвестно'
 
     // Parse snapshots
     let startSnap: Record<string, any> | null = null
@@ -644,6 +649,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
     <div class="doc-meta" style="margin-top:4px">
       Дата формирования: ${fmtDate(new Date())}
     </div>
+    ${isInProgress ? '<div style="margin-top:6px;padding:6px 10px;background:#fef3c7;border:1px solid #fbbf24;border-radius:4px;font-size:8.5pt;color:#92400e;">Рейс находится в пути. Данные о завершении рейса (расстояние, топливо на финише, пробег и т.д.) будут доступны после окончания рейса. Неизвестные данные помечены как «неизвестно».</div>' : ''}
   </div>
 
   <!-- ═══ TRANSPORT INFO ═══ -->
@@ -667,10 +673,10 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
     <div class="section-title">Маршрут</div>
     <div class="grid2">
       <div class="field"><span class="label">Пункт отправления</span><span class="value">${trip.startPoint || startAddress || '—'}</span></div>
-      <div class="field"><span class="label">Пункт назначения</span><span class="value">${trip.endPoint || endAddress || '—'}</span></div>
+      <div class="field"><span class="label">Пункт назначения</span><span class="value">${trip.endPoint || endAddress || (isInProgress ? unknownLabel : '—')}</span></div>
       <div class="field"><span class="label">Груз</span><span class="value">${trip.cargo || '—'}</span></div>
       <div class="field"><span class="label">Вес груза</span><span class="value">${trip.cargoWeight != null ? trip.cargoWeight + ' т' : '—'}</span></div>
-      <div class="field"><span class="label">Расстояние</span><span class="value val-green">${displayDist != null ? fmtNum(displayDist, 1) + ' км' : '—'}</span></div>
+      <div class="field"><span class="label">Расстояние</span><span class="value val-green">${displayDist != null ? fmtNum(displayDist, 1) + ' км' : (isInProgress ? unknownLabel : '—')}</span></div>
     </div>
   </div>
 
@@ -679,11 +685,11 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
     <div class="section-title">Время</div>
     <div class="grid2">
       <div class="field"><span class="label">Начало рейса</span><span class="value">${fmtDate(trip.startDate)}</span></div>
-      <div class="field"><span class="label">Окончание рейса</span><span class="value">${fmtDate(trip.endDate)}</span></div>
+      <div class="field"><span class="label">Окончание рейса</span><span class="value">${fmtDate(trip.endDate) || (isInProgress ? unknownLabel : '—')}</span></div>
       <div class="field"><span class="label">Планируемое окончание</span><span class="value">${fmtDate(trip.plannedEndDate)}</span></div>
-      <div class="field"><span class="label">Длительность</span><span class="value">${fmtDur(trip.tripDuration)}</span></div>
-      <div class="field"><span class="label">Время стоянок</span><span class="value">${fmtDur(trip.parkingsDuration)}</span></div>
-      <div class="field"><span class="label">Моточасы</span><span class="value">${fmtDur(trip.engineHours)}</span></div>
+      <div class="field"><span class="label">Длительность</span><span class="value">${fmtDur(trip.tripDuration) || (isInProgress ? unknownLabel : '—')}</span></div>
+      <div class="field"><span class="label">Время стоянок</span><span class="value">${fmtDur(trip.parkingsDuration) || (isInProgress ? unknownLabel : '—')}</span></div>
+      <div class="field"><span class="label">Моточасы</span><span class="value">${fmtDur(trip.engineHours) || (isInProgress ? unknownLabel : '—')}</span></div>
     </div>
   </div>
 
@@ -699,13 +705,13 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
     <div class="section-title">Топливо и пробег</div>
     <div class="grid2">
       <div class="field"><span class="label">Топливо на старте</span><span class="value">${trip.fuelStart != null ? trip.fuelStart + ' л' : '—'}</span></div>
-      <div class="field"><span class="label">Топливо на финише</span><span class="value">${trip.fuelEnd != null ? trip.fuelEnd + ' л' : '—'}</span></div>
+      <div class="field"><span class="label">Топливо на финише</span><span class="value">${trip.fuelEnd != null ? trip.fuelEnd + ' л' : (isInProgress ? unknownLabel : '—')}</span></div>
       ${fuelDiff != null ? `<div class="field"><span class="label">Расход топлива</span><span class="value ${fuelDiff < 0 ? 'val-orange' : 'val-green'}">${fuelDiff.toFixed(1)} л</span></div>` : ''}
       ${trip.fuelConsumed != null ? `<div class="field"><span class="label">Расход (по трекеру)</span><span class="value val-orange">${trip.fuelConsumed.toFixed(1)} л</span></div>` : ''}
       ${trip.avgFuelRate != null ? `<div class="field"><span class="label">Средний расход</span><span class="value">${trip.avgFuelRate.toFixed(1)} л/100км</span></div>` : ''}
       <div class="field"><span class="label"></span><span class="value"></span></div>
       <div class="field"><span class="label">Пробег на старте</span><span class="value">${trip.mileageStart != null ? trip.mileageStart.toLocaleString('ru-RU') + ' км' : '—'}</span></div>
-      <div class="field"><span class="label">Пробег на финише</span><span class="value">${trip.mileageEnd != null ? trip.mileageEnd.toLocaleString('ru-RU') + ' км' : '—'}</span></div>
+      <div class="field"><span class="label">Пробег на финише</span><span class="value">${trip.mileageEnd != null ? trip.mileageEnd.toLocaleString('ru-RU') + ' км' : (isInProgress ? unknownLabel : '—')}</span></div>
       ${trip.refuelVolume != null && trip.refuelVolume > 0 ? `<div class="field"><span class="label">Заправки</span><span class="value val-green">+${trip.refuelVolume.toFixed(1)} л</span></div>` : ''}
       ${trip.plumVolume != null && trip.plumVolume > 0 ? `<div class="field"><span class="label">Сливы</span><span class="value val-red">-${trip.plumVolume.toFixed(1)} л</span></div>` : ''}
     </div>
