@@ -575,6 +575,7 @@ export default function Home() {
   const [tripDetailOpen, setTripDetailOpen] = useState(false)
   const [selectedTrip, setSelectedTrip] = useState<Trip | null>(null)
   const [tripDetailLoading, setTripDetailLoading] = useState(false)
+  const [tripDetailFocusTrack, setTripDetailFocusTrack] = useState(false)
   const [crewFormOpen, setCrewFormOpen] = useState(false)
   const [crewFormEdit, setCrewFormEdit] = useState<Crew | null>(null)
   const [crewFormSaving, setCrewFormSaving] = useState(false)
@@ -853,8 +854,9 @@ export default function Home() {
     setTripDetailLoading(false)
   }
 
-  const openTripDetail = (t: Trip) => {
+  const openTripDetail = (t: Trip, focusTrack?: boolean) => {
     setTripDetailOpen(true)
+    setTripDetailFocusTrack(!!focusTrack)
     fetchTripDetail(t.id)
   }
 
@@ -1133,7 +1135,7 @@ export default function Home() {
       <StageFormDialog open={stageFormOpen} onOpenChange={setStageFormOpen} repairId={stageFormRepairId} editData={stageFormEdit} saving={stageFormSaving} setSaving={setStageFormSaving} onSaved={() => { setStageFormOpen(false); if (selectedRepair) { fetchRepairDetail(selectedRepair.id); fetchRepairs(); if (selectedEq) fetchEquipmentDetail(selectedEq.id) } }} />
       <PhotoUploadDialog open={!!photoUploadEq} onOpenChange={(v) => { if (!v) setPhotoUploadEq(null) }} targetId={photoUploadEq || ''} targetType="equipment" onUploaded={() => { setPhotoUploadEq(null); if (selectedEq) fetchEquipmentDetail(selectedEq.id); fetchAll() }} />
       <RepairPhotoUploadDialog open={!!photoUploadRepair} onOpenChange={(v) => { if (!v) setPhotoUploadRepair(null) }} targetId={photoUploadRepair || ''} stages={selectedRepair?.stages || []} onUploaded={() => { setPhotoUploadRepair(null); if (selectedRepair) fetchRepairDetail(selectedRepair.id) }} />
-      <TripDetailDialog open={tripDetailOpen} onOpenChange={setTripDetailOpen} trip={selectedTrip} loading={tripDetailLoading} crews={crews} onEdit={(t) => { setTripDetailOpen(false); setTripFormEdit(t); setTripFormEquipmentId(t.equipmentId); setTripFormOpen(true) }} onDelete={(t) => { setTripDetailOpen(false); setDeleteDialog({ open: true, type: 'trip', id: t.id, name: t.route }) }} onStart={async (t) => { try { const res = await fetch(`/api/trips/${t.id}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'start' }) }); if (!res.ok) { const errData = await res.json().catch(() => null); throw new Error(errData?.error || 'Ошибка') } toast.success('Рейс начат, данные трекера заполнены'); fetchTripDetail(t.id); fetchAll() } catch (e: any) { toast.error(e.message || 'Ошибка') } }} onComplete={async (t) => { try { const res = await fetch(`/api/trips/${t.id}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'complete' }) }); if (!res.ok) { const errData = await res.json().catch(() => null); throw new Error(errData?.error || 'Ошибка') } toast.success('Рейс завершён, данные трекера заполнены'); fetchTripDetail(t.id); fetchAll() } catch (e: any) { toast.error(e.message || 'Ошибка завершения рейса') } }} onRefresh={() => selectedTrip && fetchTripDetail(selectedTrip.id)} />
+      <TripDetailDialog open={tripDetailOpen} onOpenChange={setTripDetailOpen} trip={selectedTrip} loading={tripDetailLoading} crews={crews} focusTrack={tripDetailFocusTrack} onEdit={(t) => { setTripDetailOpen(false); setTripFormEdit(t); setTripFormEquipmentId(t.equipmentId); setTripFormOpen(true) }} onDelete={(t) => { setTripDetailOpen(false); setDeleteDialog({ open: true, type: 'trip', id: t.id, name: t.route }) }} onStart={async (t) => { try { const res = await fetch(`/api/trips/${t.id}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'start' }) }); if (!res.ok) { const errData = await res.json().catch(() => null); throw new Error(errData?.error || 'Ошибка') } toast.success('Рейс начат, данные трекера заполнены'); fetchTripDetail(t.id); fetchAll() } catch (e: any) { toast.error(e.message || 'Ошибка') } }} onComplete={async (t) => { try { const res = await fetch(`/api/trips/${t.id}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'complete' }) }); if (!res.ok) { const errData = await res.json().catch(() => null); throw new Error(errData?.error || 'Ошибка') } toast.success('Рейс завершён, данные трекера заполнены'); fetchTripDetail(t.id); fetchAll() } catch (e: any) { toast.error(e.message || 'Ошибка завершения рейса') } }} onRefresh={() => selectedTrip && fetchTripDetail(selectedTrip.id)} />
       <TripFormDialog open={tripFormOpen} onOpenChange={setTripFormOpen} editData={tripFormEdit} equipmentId={tripFormEquipmentId} equipmentList={equipment} crews={crews} routeTemplates={routeTemplates} saving={tripFormSaving} setSaving={setTripFormSaving} onSaved={() => { setTripFormOpen(false); fetchAll() }} />
       <CrewFormDialog open={crewFormOpen} onOpenChange={setCrewFormOpen} editData={crewFormEdit} saving={crewFormSaving} setSaving={setCrewFormSaving} onSaved={() => { setCrewFormOpen(false); fetchAll() }} employees={employees} />
       <RouteTemplateFormDialog open={routeTemplateFormOpen} setOpen={setRouteTemplateFormOpen} editData={routeTemplateFormEdit} onSaved={fetchRouteTemplates} />
@@ -1816,7 +1818,7 @@ function EquipmentDetailSheet({ open, onOpenChange, equipment, loading, detailTa
   onEdit: (eq: Equipment) => void; onDelete: (eq: Equipment) => void;
   onAddRepair: (eqId: string) => void; onUploadPhoto: (eqId: string) => void;
   onRefresh: () => void; onOpenRepairDetail: (r: Repair) => void;
-  onAddTrip: (eqId: string) => void; onOpenTripDetail: (t: Trip) => void;
+  onAddTrip: (eqId: string) => void; onOpenTripDetail: (t: Trip, focusTrack?: boolean) => void;
   allEquipment: Equipment[]; onRefreshAll: () => void;
 }) {
   const contentRef = useRef<HTMLDivElement>(null)
@@ -3898,7 +3900,7 @@ function RepairPhotoUploadDialog({ open, onOpenChange, targetId, stages, onUploa
 
 function TripsTab({ trips, equipment, crews, routeTemplates, onOpenDetail, onAdd, onDelete, onAddCrew, onEditCrew, onDeleteCrew, onAddRouteTemplate, onEditRouteTemplate, onDeleteRouteTemplate }: {
   trips: Trip[]; equipment: Equipment[]; crews: Crew[]; routeTemplates: RouteTemplate[];
-  onOpenDetail: (t: Trip) => void; onAdd: (eqId?: string) => void;
+  onOpenDetail: (t: Trip, focusTrack?: boolean) => void; onAdd: (eqId?: string) => void;
   onDelete: (t: Trip) => void;
   onAddCrew: () => void; onEditCrew: (c: Crew) => void; onDeleteCrew: (c: Crew) => void;
   onAddRouteTemplate: () => void; onEditRouteTemplate: (rt: RouteTemplate) => void; onDeleteRouteTemplate: (rt: RouteTemplate) => void;
@@ -4177,7 +4179,7 @@ function TripsTab({ trips, equipment, crews, routeTemplates, onOpenDetail, onAdd
                       <div className="flex items-center gap-1">
                         <span className="cursor-pointer hover:text-primary hover:underline" onClick={(e) => { e.stopPropagation(); onOpenDetail(t) }}>{formatDateTime(t.startDate)}</span>
                         {t.startDate && t.equipmentId && (
-                          <Button size="sm" variant="ghost" className="size-5 p-0 shrink-0" onClick={(e) => { e.stopPropagation(); onOpenDetail(t) }} title="Показать трек">
+                          <Button size="sm" variant="ghost" className="size-5 p-0 shrink-0" onClick={(e) => { e.stopPropagation(); onOpenDetail(t, true) }} title="Показать трек">
                             <Map className="size-3 text-sky-500" />
                           </Button>
                         )}
@@ -4231,12 +4233,13 @@ function TripsTab({ trips, equipment, crews, routeTemplates, onOpenDetail, onAdd
 // TRIP DETAIL DIALOG
 // ═══════════════════════════════════════════════════════════════
 
-function TripDetailDialog({ open, onOpenChange, trip, loading, crews, onEdit, onDelete, onStart, onComplete, onRefresh }: {
+function TripDetailDialog({ open, onOpenChange, trip, loading, crews, onEdit, onDelete, onStart, onComplete, onRefresh, focusTrack }: {
   open: boolean; onOpenChange: (v: boolean) => void;
   trip: Trip | null; loading: boolean; crews: Crew[];
   onEdit: (t: Trip) => void; onDelete: (t: Trip) => void;
   onStart: (t: Trip) => void; onComplete: (t: Trip) => void;
   onRefresh: () => void;
+  focusTrack?: boolean;
 }) {
   const [trackData, setTrackData] = useState<Record<string, unknown> | null>(null)
   const [trackLoading, setTrackLoading] = useState(false)
@@ -4275,6 +4278,9 @@ function TripDetailDialog({ open, onOpenChange, trip, loading, crews, onEdit, on
     fuelConsumed: '', notes: '',
   })
 
+  // Ref for scrolling to track section
+  const trackSectionRef = useRef<HTMLDivElement>(null)
+
   // Reset all data when trip changes — must be before any early return (Rules of Hooks)
   useEffect(() => {
     setTrackData(null)
@@ -4289,6 +4295,22 @@ function TripDetailDialog({ open, onOpenChange, trip, loading, crews, onEdit, on
     setRouteMapTrackData(null)
     setSelectedTripIndex(null)
   }, [trip?.id])
+
+  // Auto-load track data when focusTrack is set and dialog opens with a trip
+  useEffect(() => {
+    if (open && focusTrack && trip?.id && trip.startDate) {
+      // Small delay to ensure dialog is rendered
+      const timer = setTimeout(() => {
+        reloadTrack()
+        reloadSensors()
+        // Scroll to track section after data loads
+        setTimeout(() => {
+          trackSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+        }, 800)
+      }, 200)
+      return () => clearTimeout(timer)
+    }
+  }, [open, focusTrack, trip?.id])
 
   // Filtered track data: when a specific trip segment is selected, show only that segment on the map
   const mapTrackData = useMemo(() => {
@@ -5091,6 +5113,7 @@ function TripDetailDialog({ open, onOpenChange, trip, loading, crews, onEdit, on
               </Collapsible>
 
               {/* ── ТРЕК НА КАРТЕ ── */}
+              <div ref={trackSectionRef} />
               {t.startDate && (
                 <div className="space-y-2">
                   <div className="flex items-center justify-between">

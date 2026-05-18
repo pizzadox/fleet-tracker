@@ -571,9 +571,22 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Путевой лист — ${trip.route}</title>
   <style>
-    @page { size: A4; margin: 12mm 15mm; }
+    @page { size: A4; margin: 15mm 18mm; }
     * { margin: 0; padding: 0; box-sizing: border-box; }
-    body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; font-size: 9.5pt; color: #1a1a1a; line-height: 1.45; }
+    body {
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      font-size: 9.5pt; color: #1a1a1a; line-height: 1.45;
+      background: #e5e7eb;
+      padding: 20px 0;
+    }
+    .page {
+      max-width: 210mm;
+      margin: 0 auto;
+      background: #fff;
+      padding: 15mm 18mm;
+      box-shadow: 0 2px 12px rgba(0,0,0,0.12);
+      min-height: 297mm;
+    }
 
     /* Header */
     .doc-header { border-bottom: 2.5px solid #1e40af; padding-bottom: 10px; margin-bottom: 14px; }
@@ -626,13 +639,15 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
 
     /* Print */
     @media print {
-      body { font-size: 9pt; }
+      body { background: #fff; padding: 0; font-size: 9pt; }
+      .page { max-width: none; padding: 0; box-shadow: none; margin: 0; min-height: auto; }
       .no-print { display: none; }
       .section { page-break-inside: avoid; }
     }
   </style>
 </head>
 <body>
+<div class="page">
 
   <!-- ═══ HEADER ═══ -->
   <div class="doc-header">
@@ -827,6 +842,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
   <div class="no-print" style="text-align:center;margin-top:16px;">
     <button onclick="window.print()" style="padding:8px 20px;font-size:10pt;cursor:pointer;background:#1e40af;color:white;border:none;border-radius:4px;">Печать</button>
   </div>
+</div>
 </body>
 </html>`
 
