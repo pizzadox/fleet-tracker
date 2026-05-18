@@ -4257,6 +4257,24 @@ function TripDetailDialog({ open, onOpenChange, trip, loading, crews, onEdit, on
   const [routeMapLoading, setRouteMapLoading] = useState(false)
   const [routeMapTrackData, setRouteMapTrackData] = useState<any>(null)
 
+  // ─── Complete trip dialog with refuel detection ─────────────
+  const [completeDialog, setCompleteDialog] = useState<{
+    open: boolean
+    loading: boolean
+    fuelEnd: string
+    mileageEnd: string
+    refuelVolume: string
+    refuelDetected: boolean
+    sensorRefuelVolume: number | null
+    fuelStart: number | null
+    fuelConsumed: string
+    notes: string
+  }>({
+    open: false, loading: false, fuelEnd: '', mileageEnd: '', refuelVolume: '',
+    refuelDetected: false, sensorRefuelVolume: null, fuelStart: null,
+    fuelConsumed: '', notes: '',
+  })
+
   // Reset all data when trip changes — must be before any early return (Rules of Hooks)
   useEffect(() => {
     setTrackData(null)
@@ -4288,6 +4306,99 @@ function TripDetailDialog({ open, onOpenChange, trip, loading, crews, onEdit, on
     }
     return trackData
   }, [trackData, selectedTripIndex])
+
+  // ─── Handle trip completion: fetch sensor data, detect refuels ──
+  const handleInitComplete = async () => {
+    if (!trip) return
+    setCompleteDialog(prev => ({ ...prev, open: true, loading: true }))
+
+    try {
+      // Get current tracker data from sensors API
+      const trackerRes = await fetch(`/api/trips/${trip.id}?action=sensors`)
+      const trackerData = trackerRes.ok ? await trackerRes.json() : null
+
+      // Get Axenta stats for the trip period (need tracker's axentaCloudId)
+      let axentaStats: Record<string, unknown> | null = null
+      try {
+        // Use the trip's own sensor-compare API to get refuel info
+        const compareRes = await fetch(`/api/trips/${trip.id}?action=sensor-compare`)
+        if (compareRes.ok) {
+          const compareJson = await compareRes.json()
+          // The sensor-compare response includes Axenta stats with refuelVolume
+          if (compareJson.tripStats) axentaStats = compareJson.tripStats
+        }
+      } catch { /* ignore */ }
+
+      // Current sensor values
+      const currentFuel = trackerData?.fuelLevel ?? (trackerData?.sensors as any[])?.find((s: any) => /топлив|бак|fuel/i.test(s.name || s.type))?.value
+      const currentMileage = trackerData?.mileage ?? (trackerData?.sensors as any[])?.find((s: any) => /пробег|odometer/i.test(s.name || s.type))?.value
+
+      // Detect refuels from Axenta stats
+      const sensorRefuelVolume = axentaStats?.refuelVolume != null ? Number(axentaStats.refuelVolume) : null
+      const refuelDetected = (sensorRefuelVolume != null && sensorRefuelVolume > 0) as boolean
+
+      // Calculate fuel consumed considering refuels
+      const fuelStart = trip.fuelStart ?? null
+      let calculatedConsumed: number | null = null
+      if (fuelStart != null && currentFuel != null) {
+        calculatedConsumed = Math.round((fuelStart - currentFuel + (sensorRefuelVolume || 0)) * 100) / 100
+        if (calculatedConsumed < 0) calculatedConsumed = 0
+      }
+
+      setCompleteDialog({
+        open: true,
+        loading: false,
+        fuelEnd: currentFuel != null ? String(Math.round(currentFuel * 10) / 10) : '',
+        mileageEnd: currentMileage != null ? String(Math.round(currentMileage)) : '',
+        refuelVolume: sensorRefuelVolume != null ? String(Math.round(sensorRefuelVolume * 10) / 10) : '',
+        refuelDetected,
+        sensorRefuelVolume,
+        fuelStart,
+        fuelConsumed: calculatedConsumed != null ? String(calculatedConsumed) : '',
+        notes: '',
+      })
+    } catch (err) {
+      console.error('[Complete] Init failed:', err)
+      // Still show dialog with empty fields
+      setCompleteDialog({
+        open: true, loading: false,
+        fuelEnd: '', mileageEnd: '', refuelVolume: '',
+        refuelDetected: false, sensorRefuelVolume: null,
+        fuelStart: trip.fuelStart ?? null, fuelConsumed: '', notes: '',
+      })
+    }
+  }
+
+  // Actually complete the trip with confirmed data
+  const handleConfirmComplete = async () => {
+    if (!trip) return
+    setCompleteDialog(prev => ({ ...prev, loading: true }))
+    try {
+      const payload: Record<string, unknown> = { action: 'complete' }
+      // Override sensor data with user-confirmed values
+      if (completeDialog.fuelEnd) payload.fuelEnd = parseFloat(completeDialog.fuelEnd)
+      if (completeDialog.mileageEnd) payload.mileageEnd = parseInt(completeDialog.mileageEnd)
+      if (completeDialog.refuelVolume) payload.refuelVolume = parseFloat(completeDialog.refuelVolume)
+      if (completeDialog.fuelConsumed) payload.fuelConsumed = parseFloat(completeDialog.fuelConsumed)
+      if (completeDialog.notes) payload.completeNotes = completeDialog.notes
+
+      const res = await fetch(`/api/trips/${trip.id}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      })
+      if (!res.ok) {
+        const errData = await res.json().catch(() => null)
+        throw new Error(errData?.error || 'Ошибка')
+      }
+      toast.success('Рейс завершён')
+      setCompleteDialog(prev => ({ ...prev, open: false }))
+      onRefresh()
+    } catch (e: any) {
+      toast.error(e.message || 'Ошибка завершения рейса')
+    }
+    setCompleteDialog(prev => ({ ...prev, loading: false }))
+  }
 
   // Auto-load track when dialog opens or trip changes (sensor comparison only on request)
   useEffect(() => {
@@ -4908,94 +5019,6 @@ function TripDetailDialog({ open, onOpenChange, trip, loading, crews, onEdit, on
 
                 {compareData && !compareLoading && (
                   <div className="space-y-3">
-                    {/* Main metrics comparison */}
-                    {Array.isArray(compareData.mainComparison) && (compareData.mainComparison as any[]).length > 0 && (() => {
-                      const main = (compareData.mainComparison as any[]).filter((m: any) => m.start != null || m.end != null)
-                      const changed = main.filter((m: any) => m.changed)
-                      return main.length > 0 ? (
-                        <div className="rounded-lg border p-2.5 space-y-2">
-                          <h5 className="text-[11px] font-semibold text-muted-foreground flex items-center gap-1">
-                            <Activity className="size-3" />Основные показатели
-                            {changed.length > 0 && (
-                              <span className="ml-auto font-normal text-amber-600 dark:text-amber-400">{changed.length} изм.</span>
-                            )}
-                          </h5>
-                          <div className="overflow-x-auto">
-                            <table className="w-full text-[10px]">
-                              <thead>
-                                <tr className="border-b text-muted-foreground">
-                                  <th className="text-left py-1 px-1.5 font-medium">Показатель</th>
-                                  <th className="text-right py-1 px-1.5 font-medium">Старт</th>
-                                  <th className="text-right py-1 px-1.5 font-medium">Финиш</th>
-                                  <th className="text-right py-1 px-1.5 font-medium">Разница</th>
-                                </tr>
-                              </thead>
-                              <tbody>
-                                {main.map((m: any, i: number) => (
-                                  <tr key={i} className={`border-b last:border-0 ${m.changed ? 'bg-amber-50/50 dark:bg-amber-900/10' : ''}`}>
-                                    <td className="py-1 px-1.5 text-muted-foreground">{m.label}</td>
-                                    <td className="py-1 px-1.5 text-right font-mono">
-                                      {m.start != null ? (typeof m.start === 'boolean' ? (m.start ? 'Вкл' : 'Выкл') : `${Number(m.start).toFixed(m.unit === 'км' ? 0 : m.unit === '°' ? 6 : 1)}${m.unit ? ' ' + m.unit : ''}`) : '—'}
-                                    </td>
-                                    <td className="py-1 px-1.5 text-right font-mono">
-                                      {m.end != null ? (typeof m.end === 'boolean' ? (m.end ? 'Вкл' : 'Выкл') : `${Number(m.end).toFixed(m.unit === 'км' ? 0 : m.unit === '°' ? 6 : 1)}${m.unit ? ' ' + m.unit : ''}`) : '—'}
-                                    </td>
-                                    <td className={`py-1 px-1.5 text-right font-mono font-semibold ${m.changed ? (m.diff != null && m.diff > 0 ? 'text-red-600 dark:text-red-400' : 'text-emerald-600 dark:text-emerald-400') : ''}`}>
-                                      {m.diff != null ? `${m.diff > 0 ? '+' : ''}${m.diff.toFixed(m.unit === 'км' ? 0 : m.unit === '°' ? 6 : 1)}${m.unit ? ' ' + m.unit : ''}` : (m.changed ? 'Да' : '—')}
-                                    </td>
-                                  </tr>
-                                ))}
-                              </tbody>
-                            </table>
-                          </div>
-                        </div>
-                      ) : null
-                    })()}
-
-                    {/* Detailed sensor comparison */}
-                    {Array.isArray(compareData.sensorComparison) && (compareData.sensorComparison as any[]).length > 0 && (() => {
-                      const sensors = (compareData.sensorComparison as any[]).filter((s: any) => s.start != null || s.end != null)
-                      const changed = sensors.filter((s: any) => s.changed)
-                      return sensors.length > 0 ? (
-                        <div className="rounded-lg border p-2.5 space-y-2">
-                          <h5 className="text-[11px] font-semibold text-muted-foreground flex items-center gap-1">
-                            <Cpu className="size-3" />Датчики ({sensors.length})
-                            {changed.length > 0 && (
-                              <span className="ml-auto font-normal text-amber-600 dark:text-amber-400">{changed.length} изм.</span>
-                            )}
-                          </h5>
-                          <div className="overflow-x-auto">
-                            <table className="w-full text-[10px]">
-                              <thead>
-                                <tr className="border-b text-muted-foreground">
-                                  <th className="text-left py-1 px-1.5 font-medium">Датчик</th>
-                                  <th className="text-right py-1 px-1.5 font-medium">Старт</th>
-                                  <th className="text-right py-1 px-1.5 font-medium">Финиш</th>
-                                  <th className="text-right py-1 px-1.5 font-medium">Разница</th>
-                                </tr>
-                              </thead>
-                              <tbody>
-                                {sensors.map((s: any, i: number) => (
-                                  <tr key={i} className={`border-b last:border-0 ${s.changed ? 'bg-amber-50/50 dark:bg-amber-900/10' : ''}`}>
-                                    <td className="py-1 px-1.5 text-muted-foreground">{s.name}</td>
-                                    <td className="py-1 px-1.5 text-right font-mono">
-                                      {s.start != null ? `${Number(s.start).toFixed(s.unit === 'л' || s.unit === 'L' || s.unit === 'km/h' ? 1 : 0)}${s.unit ? ' ' + s.unit : ''}` : '—'}
-                                    </td>
-                                    <td className="py-1 px-1.5 text-right font-mono">
-                                      {s.end != null ? `${Number(s.end).toFixed(s.unit === 'л' || s.unit === 'L' || s.unit === 'km/h' ? 1 : 0)}${s.unit ? ' ' + s.unit : ''}` : '—'}
-                                    </td>
-                                    <td className={`py-1 px-1.5 text-right font-mono font-semibold ${s.changed ? (s.diff != null && s.diff > 0 ? 'text-red-600 dark:text-red-400' : 'text-emerald-600 dark:text-emerald-400') : ''}`}>
-                                      {s.diff != null ? `${s.diff > 0 ? '+' : ''}${s.diff.toFixed(s.unit === 'л' || s.unit === 'L' || s.unit === 'km/h' ? 1 : 0)}${s.unit ? ' ' + s.unit : ''}` : '—'}
-                                    </td>
-                                  </tr>
-                                ))}
-                              </tbody>
-                            </table>
-                          </div>
-                        </div>
-                      ) : null
-                    })()}
-
                     {/* Trip stats from Axenta */}
                     {compareData.tripStats && (
                       <div className="rounded-lg border p-2.5 space-y-2">
@@ -5243,7 +5266,7 @@ function TripDetailDialog({ open, onOpenChange, trip, loading, crews, onEdit, on
             <Button variant="outline" size="sm" className="h-8 gap-1 text-xs" onClick={() => onStart(t)}><Navigation className="size-3.5" />Начать</Button>
           )}
           {t.status === 'in_progress' && (
-            <Button variant="outline" size="sm" className="h-8 gap-1 text-xs" onClick={() => onComplete(t)}><CheckCircle2 className="size-3.5" />Завершить</Button>
+            <Button variant="outline" size="sm" className="h-8 gap-1 text-xs" onClick={handleInitComplete}><CheckCircle2 className="size-3.5" />Завершить</Button>
           )}
           <Button variant="outline" size="sm" className="h-8 gap-1 text-xs" onClick={() => onEdit(t)}><Edit className="size-3.5" />Редактировать</Button>
           <Button variant="outline" size="sm" className="h-8 gap-1 text-xs" onClick={onRefresh}><Activity className="size-3.5" />Обновить</Button>
@@ -5298,6 +5321,218 @@ function TripDetailDialog({ open, onOpenChange, trip, loading, crews, onEdit, on
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* ─── Complete Trip Dialog with Refuel Detection ─── */}
+      <Dialog open={completeDialog.open} onOpenChange={(v) => !completeDialog.loading && setCompleteDialog(prev => ({ ...prev, open: v }))}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <CheckCircle2 className="size-4 text-emerald-500" />
+              Завершение рейса
+            </DialogTitle>
+            <DialogDescription>
+              Проверьте и подтвердите данные перед завершением рейса.
+              {completeDialog.refuelDetected && (
+                <span className="block mt-1 text-amber-600 dark:text-amber-400 font-medium">
+                  ⚠ Обнаружены заправки во время рейса!
+                </span>
+              )}
+            </DialogDescription>
+          </DialogHeader>
+
+          {completeDialog.loading ? (
+            <div className="flex items-center justify-center py-8">
+              <Loader2 className="size-5 animate-spin text-muted-foreground" />
+              <span className="ml-2 text-sm text-muted-foreground">Получение данных с датчиков...</span>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              {/* Fuel data section */}
+              <div className="space-y-2">
+                <h4 className="text-xs font-semibold text-muted-foreground flex items-center gap-1">
+                  <Fuel className="size-3" /> Топливо
+                </h4>
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <Label className="text-[10px] text-muted-foreground">Топливо начало (л)</Label>
+                    <Input
+                      value={completeDialog.fuelStart != null ? completeDialog.fuelStart : '—'}
+                      disabled
+                      className="h-8 text-xs bg-muted/50"
+                    />
+                  </div>
+                  <div>
+                    <Label className="text-[10px] text-muted-foreground">Топливо конец (л)</Label>
+                    <Input
+                      type="number"
+                      step="0.1"
+                      value={completeDialog.fuelEnd}
+                      onChange={e => {
+                        const val = e.target.value
+                        setCompleteDialog(prev => {
+                          const fuelEnd = parseFloat(val) || 0
+                          const refuel = parseFloat(prev.refuelVolume) || 0
+                          const fuelStart = prev.fuelStart
+                          let consumed = fuelStart != null ? Math.round((fuelStart - fuelEnd + refuel) * 100) / 100 : null
+                          if (consumed != null && consumed < 0) consumed = 0
+                          return { ...prev, fuelEnd: val, fuelConsumed: consumed != null ? String(consumed) : '' }
+                        })
+                      }}
+                      placeholder="Показание датчика"
+                      className="h-8 text-xs"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Refuel section - highlighted if detected */}
+              {completeDialog.refuelDetected ? (
+                <div className="rounded-lg border-2 border-amber-300 dark:border-amber-700 bg-amber-50/50 dark:bg-amber-900/20 p-3 space-y-2">
+                  <div className="flex items-center gap-2 text-xs font-semibold text-amber-700 dark:text-amber-400">
+                    <FuelIcon className="size-3.5" />
+                    Заправка обнаружена!
+                  </div>
+                  <p className="text-[10px] text-amber-600 dark:text-amber-500">
+                    По данным датчиков за время рейса была заправка. Подтвердите объём заправки или введите вручную.
+                  </p>
+                  <div>
+                    <Label className="text-[10px] text-amber-700 dark:text-amber-400">Объём заправки (л)</Label>
+                    <div className="flex items-center gap-2">
+                      <Input
+                        type="number"
+                        step="0.1"
+                        value={completeDialog.refuelVolume}
+                        onChange={e => {
+                          const val = e.target.value
+                          setCompleteDialog(prev => {
+                            const refuel = parseFloat(val) || 0
+                            const fuelStart = prev.fuelStart
+                            const fuelEnd = parseFloat(prev.fuelEnd) || 0
+                            let consumed = fuelStart != null ? Math.round((fuelStart - fuelEnd + refuel) * 100) / 100 : null
+                            if (consumed != null && consumed < 0) consumed = 0
+                            return { ...prev, refuelVolume: val, fuelConsumed: consumed != null ? String(consumed) : '' }
+                          })
+                        }}
+                        placeholder="0"
+                        className="h-8 text-xs"
+                      />
+                      {completeDialog.sensorRefuelVolume != null && (
+                        <span className="text-[10px] text-muted-foreground whitespace-nowrap">
+                          По датчикам: {completeDialog.sensorRefuelVolume.toFixed(1)} л
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  <Label className="text-[10px] text-muted-foreground flex items-center gap-1">
+                    <FuelIcon className="size-3" /> Была ли заправка во время рейса?
+                  </Label>
+                  <div className="flex gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className={`h-7 text-[10px] ${completeDialog.refuelVolume ? 'bg-amber-50 dark:bg-amber-900/30 border-amber-300 dark:border-amber-700' : ''}`}
+                      onClick={() => setCompleteDialog(prev => ({ ...prev, refuelVolume: prev.refuelVolume || '0' }))}
+                    >
+                      Да, была заправка
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className={`h-7 text-[10px] ${!completeDialog.refuelVolume && completeDialog.refuelVolume !== '' ? '' : 'bg-muted/50'}`}
+                      onClick={() => setCompleteDialog(prev => ({ ...prev, refuelVolume: '', fuelConsumed: prev.fuelStart != null && prev.fuelEnd ? String(Math.round((prev.fuelStart - (parseFloat(prev.fuelEnd) || 0)) * 100) / 100) : '' }))}
+                    >
+                      Нет заправок
+                    </Button>
+                  </div>
+                  {completeDialog.refuelVolume !== '' && (
+                    <div>
+                      <Label className="text-[10px] text-muted-foreground">Объём заправки (л)</Label>
+                      <Input
+                        type="number"
+                        step="0.1"
+                        value={completeDialog.refuelVolume}
+                        onChange={e => {
+                          const val = e.target.value
+                          setCompleteDialog(prev => {
+                            const refuel = parseFloat(val) || 0
+                            const fuelStart = prev.fuelStart
+                            const fuelEnd = parseFloat(prev.fuelEnd) || 0
+                            let consumed = fuelStart != null ? Math.round((fuelStart - fuelEnd + refuel) * 100) / 100 : null
+                            if (consumed != null && consumed < 0) consumed = 0
+                            return { ...prev, refuelVolume: val, fuelConsumed: consumed != null ? String(consumed) : '' }
+                          })
+                        }}
+                        placeholder="0"
+                        className="h-8 text-xs"
+                      />
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Calculated fuel consumption */}
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <Label className="text-[10px] text-muted-foreground">Расход топлива (л)</Label>
+                  <Input
+                    type="number"
+                    step="0.1"
+                    value={completeDialog.fuelConsumed}
+                    onChange={e => setCompleteDialog(prev => ({ ...prev, fuelConsumed: e.target.value }))}
+                    className="h-8 text-xs font-semibold"
+                    placeholder="Авто-расчёт"
+                  />
+                </div>
+                <div>
+                  <Label className="text-[10px] text-muted-foreground">Пробег конец (км)</Label>
+                  <Input
+                    type="number"
+                    value={completeDialog.mileageEnd}
+                    onChange={e => setCompleteDialog(prev => ({ ...prev, mileageEnd: e.target.value }))}
+                    className="h-8 text-xs"
+                    placeholder="Показание одометра"
+                  />
+                </div>
+              </div>
+
+              {/* Notes */}
+              <div>
+                <Label className="text-[10px] text-muted-foreground">Примечание к завершению</Label>
+                <Textarea
+                  value={completeDialog.notes}
+                  onChange={e => setCompleteDialog(prev => ({ ...prev, notes: e.target.value }))}
+                  placeholder="Комментарий о заправке, расходе и т.д."
+                  className="text-xs min-h-[60px]"
+                />
+              </div>
+            </div>
+          )}
+
+          <DialogFooter className="gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-8 text-xs"
+              onClick={() => setCompleteDialog(prev => ({ ...prev, open: false }))}
+              disabled={completeDialog.loading}
+            >
+              Отмена
+            </Button>
+            <Button
+              size="sm"
+              className="h-8 text-xs bg-emerald-600 text-white hover:bg-emerald-700 gap-1"
+              onClick={handleConfirmComplete}
+              disabled={completeDialog.loading}
+            >
+              {completeDialog.loading ? <Loader2 className="size-3.5 animate-spin" /> : <CheckCircle2 className="size-3.5" />}
+              Завершить рейс
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </Dialog>
   )
 }

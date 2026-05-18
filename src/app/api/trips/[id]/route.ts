@@ -1330,7 +1330,7 @@ async function handleStart(id: string) {
   return NextResponse.json(updatedTrip)
 }
 
-async function handleComplete(id: string) {
+async function handleComplete(id: string, body?: Record<string, unknown> | null) {
   const trip = await db.trip.findUnique({
     where: { id },
     include: {
@@ -1345,6 +1345,12 @@ async function handleComplete(id: string) {
   const now = new Date()
   const updateData: Record<string, unknown> = { status: 'completed', endDate: now }
 
+  // User-provided overrides from the complete dialog take priority
+  const userFuelEnd = body?.fuelEnd != null ? Number(body.fuelEnd) : null
+  const userMileageEnd = body?.mileageEnd != null ? Number(body.mileageEnd) : null
+  const userRefuelVolume = body?.refuelVolume != null ? Number(body.refuelVolume) : null
+  const userFuelConsumed = body?.fuelConsumed != null ? Number(body.fuelConsumed) : null
+
   // Try to get tracker data (any tracker, not just active)
   const tracker = await db.glonassTracker.findFirst({
     where: { equipmentId: trip.equipmentId },
@@ -1352,19 +1358,29 @@ async function handleComplete(id: string) {
   })
 
   if (tracker) {
-    if (tracker.lastFuelLevel != null && !trip.fuelEnd) updateData.fuelEnd = tracker.lastFuelLevel
-    if (tracker.lastMileage != null && !trip.mileageEnd) updateData.mileageEnd = Math.round(tracker.lastMileage)
+    // Use user override first, then tracker data
+    const effectiveFuelEnd = userFuelEnd ?? (tracker.lastFuelLevel != null && !trip.fuelEnd ? tracker.lastFuelLevel : null) ?? trip.fuelEnd ?? null
+    const effectiveMileageEnd = userMileageEnd ?? (tracker.lastMileage != null && !trip.mileageEnd ? Math.round(tracker.lastMileage) : null) ?? trip.mileageEnd ?? null
 
+    if (effectiveFuelEnd != null) updateData.fuelEnd = effectiveFuelEnd
+    if (effectiveMileageEnd != null) updateData.mileageEnd = effectiveMileageEnd
+
+    // Calculate fuel consumed: fuelStart - fuelEnd + refuelVolume
     const fuelStart = trip.fuelStart ?? null
-    const fuelEnd = (updateData.fuelEnd as number) ?? trip.fuelEnd ?? null
-    if (fuelStart != null && fuelEnd != null) {
-      updateData.fuelConsumed = Math.round((fuelStart - fuelEnd) * 100) / 100
-      if (updateData.fuelConsumed < 0) updateData.fuelConsumed = 0
+    if (userFuelConsumed != null) {
+      // User-confirmed value from dialog
+      updateData.fuelConsumed = userFuelConsumed
+    } else if (fuelStart != null && effectiveFuelEnd != null) {
+      const refuel = userRefuelVolume ?? 0
+      updateData.fuelConsumed = Math.round((fuelStart - effectiveFuelEnd + refuel) * 100) / 100
+      if ((updateData.fuelConsumed as number) < 0) updateData.fuelConsumed = 0
     }
 
+    // Save user-provided refuel volume
+    if (userRefuelVolume != null) updateData.refuelVolume = userRefuelVolume
+
     const mileageStart = trip.mileageStart ?? null
-    const mileageEnd = (updateData.mileageEnd as number) ?? trip.mileageEnd ?? null
-    if (mileageStart != null && mileageEnd != null && !trip.distance) updateData.distance = mileageEnd - mileageStart
+    if (mileageStart != null && effectiveMileageEnd != null && !trip.distance) updateData.distance = effectiveMileageEnd - mileageStart
 
     const startDate = new Date(trip.startDate)
     const durationSec = Math.round((now.getTime() - startDate.getTime()) / 1000)
@@ -1383,7 +1399,7 @@ async function handleComplete(id: string) {
     }
     updateData.trackerSnapshot = JSON.stringify(snapshot)
 
-    // Try to get stats from Axenta.cloud
+    // Try to get stats from Axenta.cloud (for additional metrics like maxSpeed, avgFuelRate, etc.)
     try {
       const settings = await db.axentaSettings.findFirst()
       if (settings?.isActive && settings.apiUrl && settings.apiKey) {
@@ -1399,12 +1415,15 @@ async function handleComplete(id: string) {
           })
           if (statsResponse.ok) {
             const stats = await statsResponse.json()
-            if (stats.mileage) updateData.distance = Number(stats.mileage)
+            // Only use Axenta stats for fields NOT already set by user or basic calculations
+            if (stats.mileage && !updateData.distance) updateData.distance = Number(stats.mileage)
             if (stats.avgSpeed) updateData.avgSpeed = Number(stats.avgSpeed)
             if (stats.maxSpeed) updateData.maxSpeed = Number(stats.maxSpeed)
-            if (stats.fuelConsumption) updateData.fuelConsumed = Number(stats.fuelConsumption)
+            // Use Axenta fuelConsumption only if user didn't provide fuelConsumed
+            if (stats.fuelConsumption && userFuelConsumed == null) updateData.fuelConsumed = Number(stats.fuelConsumption)
             if (stats.avgFuelConsumption) updateData.avgFuelRate = Number(stats.avgFuelConsumption)
-            if (stats.refuelVolume) updateData.refuelVolume = Number(stats.refuelVolume)
+            // Use Axenta refuelVolume only if user didn't provide it
+            if (stats.refuelVolume && userRefuelVolume == null) updateData.refuelVolume = Number(stats.refuelVolume)
             if (stats.plumVolume) updateData.plumVolume = Number(stats.plumVolume)
             if (stats.tripsDuration) updateData.tripDuration = Number(stats.tripsDuration)
             if (stats.parkingsDuration) updateData.parkingsDuration = Number(stats.parkingsDuration)
@@ -1416,6 +1435,20 @@ async function handleComplete(id: string) {
     } catch (statsError) {
       console.error('[Trip Complete] Stats fetch failed:', statsError)
     }
+  } else {
+    // No tracker — still apply user overrides if provided
+    if (userFuelEnd != null) updateData.fuelEnd = userFuelEnd
+    if (userMileageEnd != null) updateData.mileageEnd = userMileageEnd
+    if (userFuelConsumed != null) updateData.fuelConsumed = userFuelConsumed
+    if (userRefuelVolume != null) updateData.refuelVolume = userRefuelVolume
+
+    // Calculate distance from mileage if possible
+    const mileageStart = trip.mileageStart ?? null
+    if (mileageStart != null && userMileageEnd != null && !trip.distance) updateData.distance = userMileageEnd - mileageStart
+
+    const startDate = new Date(trip.startDate)
+    const durationSec = Math.round((now.getTime() - startDate.getTime()) / 1000)
+    updateData.tripDuration = durationSec
   }
 
   const updatedTrip = await db.trip.update({
@@ -1439,7 +1472,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     const { id } = await params
     const body = await request.json()
     if (body?.action === 'start') return await handleStart(id)
-    if (body?.action === 'complete') return await handleComplete(id)
+    if (body?.action === 'complete') return await handleComplete(id, body)
     return NextResponse.json({ error: 'Unknown action' }, { status: 400 })
   } catch (error) {
     console.error('[Trip POST] Error:', error)
