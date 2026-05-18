@@ -3,9 +3,7 @@
 import { useEffect, useRef, useCallback, useState } from 'react'
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
-import 'leaflet.markercluster'
-import 'leaflet.markercluster/dist/MarkerCluster.css'
-import 'leaflet.markercluster/dist/MarkerCluster.Default.css'
+// Marker clustering removed — it breaks popup behavior (popups close on update)
 
 // Fix default marker icons for webpack/next.js
 delete (L.Icon.Default.prototype as any)._getIconUrl
@@ -373,7 +371,7 @@ export default function TrackerMap({
   const mapInstanceRef = useRef<L.Map | null>(null)
   const legendRef = useRef<L.Control | null>(null)
   // Layer groups for efficient updates
-  const markersLayerRef = useRef<L.MarkerClusterGroup | null>(null)
+  const markersLayerRef = useRef<L.LayerGroup | null>(null)
   const tracksLayerRef = useRef<L.LayerGroup | null>(null)
   // Track marker objects by tracker ID for incremental updates
   const markerByIdRef = useRef<Map<string, L.Marker>>(new Map())
@@ -399,24 +397,8 @@ export default function TrackerMap({
       maxZoom: 19,
     }).addTo(map)
 
-    // Create marker cluster group for markers (clusters when zoomed out)
-    markersLayerRef.current = L.markerClusterGroup({
-      maxClusterRadius: 50,
-      spiderfyOnMaxZoom: true,
-      showCoverageOnHover: false,
-      iconCreateFunction: (cluster) => {
-        const count = cluster.getChildCount()
-        let size = 'small'
-        let dim = 40
-        if (count > 100) { size = 'large'; dim = 56 }
-        else if (count > 10) { size = 'medium'; dim = 48 }
-        return L.divIcon({
-          html: `<div><span>${count}</span></div>`,
-          className: `marker-cluster marker-cluster-${size}`,
-          iconSize: L.point(dim, dim),
-        })
-      },
-    }).addTo(map)
+    // Regular layer group for markers (clustering breaks popup persistence)
+    markersLayerRef.current = L.layerGroup().addTo(map)
     tracksLayerRef.current = L.layerGroup().addTo(map)
 
     mapInstanceRef.current = map
@@ -457,8 +439,8 @@ export default function TrackerMap({
     const markersLayer = markersLayerRef.current
     if (!map || !markersLayer) return
 
-    // Create a new marker and add to layer group (supports both LayerGroup and MarkerClusterGroup)
-    const createMarker = (tracker: TrackerInfo, layer: L.LayerGroup | L.MarkerClusterGroup): L.Marker | null => {
+    // Create a new marker and add to layer group
+    const createMarker = (tracker: TrackerInfo, layer: L.LayerGroup): L.Marker | null => {
       if (tracker.lastLatitude == null || tracker.lastLongitude == null) return null
       try {
         const marker = L.marker([tracker.lastLatitude, tracker.lastLongitude], {
@@ -508,12 +490,15 @@ export default function TrackerMap({
       const existing = existingMarkers.get(tracker.id)
 
       if (existing) {
-        // Update existing marker: move position, update icon & popup
+        // Skip update if this marker's popup is currently open (prevents popup from closing)
+        const isPopupOpen = existing.isPopupOpen()
         try {
           existing.setLatLng([tracker.lastLatitude, tracker.lastLongitude])
-          existing.setIcon(buildVehicleIcon(tracker))
-          existing.setPopupContent(buildVehiclePopup(tracker))
-          existing.setTooltipContent(buildVehicleTooltip(tracker))
+          if (!isPopupOpen) {
+            existing.setIcon(buildVehicleIcon(tracker))
+            existing.setPopupContent(buildVehiclePopup(tracker))
+            existing.setTooltipContent(buildVehicleTooltip(tracker))
+          }
         } catch {
           // If update fails, recreate
           markersLayer.removeLayer(existing)
