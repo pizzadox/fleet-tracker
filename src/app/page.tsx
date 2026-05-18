@@ -5866,76 +5866,93 @@ function RouteTemplateFormDialog({ open, setOpen, editData, onSaved }: {
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+      <DialogContent className="sm:max-w-2xl">
         <DialogHeader>
-          <DialogTitle className="flex items-center gap-2"><Route className="size-4" />{editData ? 'Редактировать маршрут' : 'Новый маршрут'}</DialogTitle>
+          <DialogTitle className="flex items-center gap-2">{editData ? <Edit className="size-4" /> : <Route className="size-4" />}{editData ? 'Редактирование маршрута' : 'Новый маршрут'}</DialogTitle>
+          <DialogDescription>{editData ? 'Измените параметры маршрута и точки' : 'Создайте шаблон маршрута с точками назначения'}</DialogDescription>
         </DialogHeader>
-        <div className="grid gap-3 py-2">
+        <div className="space-y-3 px-4 sm:px-5 overflow-y-auto flex-1 min-h-0 max-h-[70vh]">
+          {/* Basic fields */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <div className="sm:col-span-2"><Label className="text-xs">Название *</Label><Input value={f('name')} onChange={e => setF('name', e.target.value)} placeholder="Москва — Санкт-Петербург" autoFocus /></div>
-            <div className="sm:col-span-2"><Label className="text-xs">Описание</Label><Input value={f('description')} onChange={e => setF('description', e.target.value)} placeholder="Описание маршрута" /></div>
+            <div className="sm:col-span-2"><Label className="text-xs">Название маршрута *</Label><Input value={f('name')} onChange={e => setF('name', e.target.value)} placeholder="Москва — Санкт-Петербург" autoFocus /></div>
             <div><Label className="text-xs">Пункт отправления</Label><Input value={f('startPoint')} onChange={e => setF('startPoint', e.target.value)} placeholder="Москва" /></div>
             <div><Label className="text-xs">Пункт назначения</Label><Input value={f('endPoint')} onChange={e => setF('endPoint', e.target.value)} placeholder="Санкт-Петербург" /></div>
             <div><Label className="text-xs">Общее расстояние (км)</Label><Input type="number" value={f('totalDistance')} onChange={e => setF('totalDistance', e.target.value)} placeholder="700" /></div>
             <div><Label className="text-xs">Ориентир. время (мин)</Label><Input type="number" value={f('estimatedDuration')} onChange={e => setF('estimatedDuration', e.target.value)} placeholder="480" /></div>
           </div>
-          {/* Route points */}
-          <div className="space-y-2">
-            <div className="flex items-center gap-2">
-              <Label className="text-xs font-semibold">Точки маршрута</Label>
-              {points.length > 0 && <Badge variant="secondary" className="text-[9px] h-4 px-1.5">{points.length}</Badge>}
-              {totalDist > 0 && <span className="text-[10px] text-sky-600 dark:text-sky-400 ml-auto font-medium">Итого: {totalDist.toFixed(1)} км</span>}
-            </div>
-            {points.length >= 2 && (
-              <Button type="button" size="sm" variant="outline" className="h-7 text-[10px] gap-1 w-full" onClick={handleAutoSort} disabled={optimizing}>
-                {optimizing ? <Loader2 className="size-3 animate-spin" /> : <Zap className="size-3" />}
-                {optimizing ? 'Оптимизация...' : 'Автооптимизация порядка'}
-              </Button>
-            )}
+          <Separator />
+          {/* Route points header */}
+          <div className="flex items-center gap-2">
+            <Label className="text-xs font-semibold flex items-center gap-1.5"><MapPinned className="size-3.5" />Точки маршрута</Label>
+            {points.length > 0 && <Badge variant="secondary" className="text-[9px] h-4 px-1.5">{points.length}</Badge>}
+            {totalDist > 0 && <span className="text-[10px] text-sky-600 dark:text-sky-400 ml-auto font-medium">Итого: {totalDist.toFixed(1)} км</span>}
+          </div>
+          <div className="flex flex-wrap gap-1.5">
             <Button type="button" size="sm" variant="outline" className="h-7 text-[10px] gap-1" onClick={addPoint}>
               <Plus className="size-3" />Добавить точку
             </Button>
+            {points.length >= 2 && (
+              <Button type="button" size="sm" variant="outline" className="h-7 text-[10px] gap-1" onClick={handleAutoSort} disabled={optimizing}>
+                {optimizing ? <Loader2 className="size-3 animate-spin" /> : <Zap className="size-3" />}
+                {optimizing ? 'Оптимизация...' : 'Автооптимизация'}
+              </Button>
+            )}
           </div>
+          {/* Route points list */}
           {points.length > 0 && (
-            <div className="space-y-1.5">
+            <div className="space-y-2">
               {points.map((p, idx) => (
-                <div key={idx} className="rounded-lg border p-2 space-y-1.5">
+                <div key={idx} className="rounded-lg border p-2.5 space-y-2 bg-card">
+                  {/* Row 1: number + name + move/delete */}
                   <div className="flex items-center gap-1.5">
-                    <span className={`inline-flex items-center justify-center size-5 rounded-full text-[9px] font-bold shrink-0 ${
+                    <span className={`inline-flex items-center justify-center size-6 rounded-full text-[10px] font-bold shrink-0 ${
                       idx === 0 ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-400' :
                       idx === points.length - 1 ? 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-400' :
                       'bg-primary/10 text-primary'
                     }`}>{idx + 1}</span>
-                    <Input value={p.name} onChange={e => updatePoint(idx, 'name', e.target.value)} placeholder="Название" className="h-7 text-xs flex-1" />
-                    <Button type="button" size="sm" variant="ghost" className="size-7 p-0 shrink-0" onClick={() => movePoint(idx, 'up')} disabled={idx === 0} title="Вверх"><ChevronUp className="size-3" /></Button>
-                    <Button type="button" size="sm" variant="ghost" className="size-7 p-0 shrink-0" onClick={() => movePoint(idx, 'down')} disabled={idx === points.length - 1} title="Вниз"><ChevronDown className="size-3" /></Button>
-                    <Button type="button" size="sm" variant="ghost" className="size-7 p-0 shrink-0 text-red-500 hover:text-red-700" onClick={() => removePoint(idx)} title="Удалить"><X className="size-3" /></Button>
+                    <Input value={p.name} onChange={e => updatePoint(idx, 'name', e.target.value)} placeholder="Название точки" className="h-8 text-xs flex-1" />
+                    <Button type="button" size="sm" variant="ghost" className="size-7 p-0 shrink-0" onClick={() => movePoint(idx, 'up')} disabled={idx === 0} title="Вверх"><ChevronUp className="size-3.5" /></Button>
+                    <Button type="button" size="sm" variant="ghost" className="size-7 p-0 shrink-0" onClick={() => movePoint(idx, 'down')} disabled={idx === points.length - 1} title="Вниз"><ChevronDown className="size-3.5" /></Button>
+                    <Button type="button" size="sm" variant="ghost" className="size-7 p-0 shrink-0 text-red-500 hover:text-red-700" onClick={() => removePoint(idx)} title="Удалить"><X className="size-3.5" /></Button>
                   </div>
+                  {/* Row 2: address + geocode */}
                   <div className="flex items-center gap-1.5">
-                    <Input value={p.address} onChange={e => updatePoint(idx, 'address', e.target.value)} placeholder="Адрес" className="h-7 text-xs flex-1" />
-                    <Button type="button" size="sm" variant="ghost" className="size-7 p-0 shrink-0" onClick={() => handleGeocodePoint(idx)} disabled={geocodingIdx === idx} title="Геокодировать">
-                      {geocodingIdx === idx ? <Loader2 className="size-3 animate-spin" /> : <MapPin className="size-3" />}
+                    <MapPin className="size-3.5 text-muted-foreground shrink-0" />
+                    <Input value={p.address} onChange={e => updatePoint(idx, 'address', e.target.value)} placeholder="Адрес (для геокодирования)" className="h-8 text-xs flex-1" />
+                    <Button type="button" size="sm" variant="outline" className="h-7 px-2 text-[10px] gap-1 shrink-0" onClick={() => handleGeocodePoint(idx)} disabled={geocodingIdx === idx}>
+                      {geocodingIdx === idx ? <Loader2 className="size-3 animate-spin" /> : <Navigation className="size-3" />}
+                      Найти
                     </Button>
                   </div>
-                  <div className="grid grid-cols-2 gap-1.5">
-                    <Input value={p.latitude} onChange={e => updatePoint(idx, 'latitude', e.target.value)} placeholder="Широта" className="h-6 text-[10px]" />
-                    <Input value={p.longitude} onChange={e => updatePoint(idx, 'longitude', e.target.value)} placeholder="Долгота" className="h-6 text-[10px]" />
-                    <Input value={p.plannedArrival} onChange={e => updatePoint(idx, 'plannedArrival', e.target.value)} placeholder="Прибытие (HH:mm)" className="h-6 text-[10px]" />
-                    <Input value={p.plannedDeparture} onChange={e => updatePoint(idx, 'plannedDeparture', e.target.value)} placeholder="Отправление (HH:mm)" className="h-6 text-[10px]" />
+                  {/* Row 3: coordinates + times (4 cols) */}
+                  <div className="grid grid-cols-4 gap-1.5">
+                    <div><Label className="text-[10px] text-muted-foreground">Широта</Label><Input value={p.latitude} onChange={e => updatePoint(idx, 'latitude', e.target.value)} placeholder="55.75" className="h-7 text-[10px]" /></div>
+                    <div><Label className="text-[10px] text-muted-foreground">Долгота</Label><Input value={p.longitude} onChange={e => updatePoint(idx, 'longitude', e.target.value)} placeholder="37.62" className="h-7 text-[10px]" /></div>
+                    <div><Label className="text-[10px] text-muted-foreground">Прибытие</Label><Input value={p.plannedArrival} onChange={e => updatePoint(idx, 'plannedArrival', e.target.value)} placeholder="08:00" className="h-7 text-[10px]" /></div>
+                    <div><Label className="text-[10px] text-muted-foreground">Отправл.</Label><Input value={p.plannedDeparture} onChange={e => updatePoint(idx, 'plannedDeparture', e.target.value)} placeholder="09:00" className="h-7 text-[10px]" /></div>
                   </div>
-                  {p.distanceFromPrev && (
-                    <div className="text-[10px] text-sky-600 dark:text-sky-400">+{parseFloat(p.distanceFromPrev).toFixed(1)} км от пред.</div>
-                  )}
-                  <Input value={p.notes} onChange={e => updatePoint(idx, 'notes', e.target.value)} placeholder="Заметки" className="h-6 text-[10px]" />
+                  {/* Distance + notes row */}
+                  <div className="flex items-center gap-2">
+                    {p.distanceFromPrev && (
+                      <span className="inline-flex items-center gap-0.5 text-[10px] text-sky-600 dark:text-sky-400 bg-sky-50 dark:bg-sky-950/30 px-1.5 py-0.5 rounded shrink-0">
+                        <Navigation className="size-2.5" />+{parseFloat(p.distanceFromPrev).toFixed(1)} км
+                      </span>
+                    )}
+                    <Input value={p.notes} onChange={e => updatePoint(idx, 'notes', e.target.value)} placeholder="Заметки к точке" className="h-7 text-[10px] flex-1" />
+                  </div>
                 </div>
               ))}
             </div>
           )}
-          <div><Label className="text-xs">Заметки</Label><Textarea value={f('notes')} onChange={e => setF('notes', e.target.value)} placeholder="Дополнительные заметки" className="text-xs" rows={2} /></div>
+          <Separator />
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div className="sm:col-span-2"><Label className="text-xs">Описание</Label><Input value={f('description')} onChange={e => setF('description', e.target.value)} placeholder="Описание маршрута" /></div>
+            <div className="sm:col-span-2"><Label className="text-xs">Заметки</Label><Textarea value={f('notes')} onChange={e => setF('notes', e.target.value)} placeholder="Дополнительные заметки к маршруту" rows={2} /></div>
+          </div>
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={() => setOpen(false)}>Отмена</Button>
-          <Button onClick={handleSave} disabled={saving}>{saving && <Loader2 className="size-3.5 animate-spin mr-1" />}{editData ? 'Сохранить' : 'Создать'}</Button>
+          <Button onClick={handleSave} disabled={saving}>{saving && <Loader2 className="size-3.5 animate-spin mr-1" />}{editData ? 'Сохранить' : 'Создать маршрут'}</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
