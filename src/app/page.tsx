@@ -494,6 +494,7 @@ export default function Home() {
   const [companies, setCompanies] = useState<Company[]>([])
   const [repairs, setRepairs] = useState<Repair[]>([])
   const [loading, setLoading] = useState(true)
+  const [loadingProgress, setLoadingProgress] = useState(0)
 
   // Equipment filters with debounce
   const [eqSearch, setEqSearch] = useState('')
@@ -645,7 +646,16 @@ export default function Home() {
 
   const fetchAll = useCallback(async () => {
     setLoading(true)
-    await Promise.all([fetchEquipment(), fetchCompanies(), fetchRepairs(), fetchTrips(), fetchCrews(), fetchRouteTemplates(), fetchEmployees()])
+    setLoadingProgress(0)
+    const fetchers = [fetchEquipment, fetchCompanies, fetchRepairs, fetchTrips, fetchCrews, fetchRouteTemplates, fetchEmployees]
+    const total = fetchers.length
+    let completed = 0
+    const updateProgress = () => {
+      completed++
+      setLoadingProgress(Math.round((completed / total) * 100))
+    }
+    await Promise.all(fetchers.map(fn => fn().finally(updateProgress)))
+    setLoadingProgress(100)
     setLoading(false)
   }, [fetchEquipment, fetchCompanies, fetchRepairs, fetchTrips, fetchCrews, fetchRouteTemplates, fetchEmployees])
 
@@ -884,7 +894,7 @@ export default function Home() {
       <div className="min-h-screen flex flex-col bg-background">
         <header className="border-b bg-card/80 backdrop-blur-sm sticky top-0 z-30">
           <div className="max-w-7xl mx-auto px-3 sm:px-6 h-11 flex items-center gap-2">
-            <div className="size-7 rounded-lg bg-primary text-primary-foreground flex items-center justify-center shrink-0"><Truck className="size-3.5" /></div>
+            <div className="size-7 rounded-lg bg-primary text-primary-foreground flex items-center justify-center shrink-0 animate-pulse"><Truck className="size-3.5" /></div>
             <h1 className="text-sm font-bold shrink-0 hidden sm:block">Учёт техники</h1>
             <div className="hidden md:flex items-center gap-1 ml-1">
               {[0,1,2,3,4,5,6,7].map(i => <div key={i} className="h-5 w-14 rounded-md bg-muted animate-pulse" />)}
@@ -892,6 +902,25 @@ export default function Home() {
           </div>
         </header>
         <main className="flex-1 max-w-7xl mx-auto w-full px-3 sm:px-6 py-4">
+          {/* Loading progress */}
+          <div className="flex flex-col items-center justify-center py-16 gap-4">
+            <div className="relative size-20">
+              <svg className="size-20 -rotate-90" viewBox="0 0 80 80">
+                <circle cx="40" cy="40" r="34" fill="none" stroke="currentColor" strokeWidth="6" className="text-muted/30" />
+                <circle cx="40" cy="40" r="34" fill="none" stroke="currentColor" strokeWidth="6" strokeLinecap="round"
+                  strokeDasharray={`${2 * Math.PI * 34}`}
+                  strokeDashoffset={`${2 * Math.PI * 34 * (1 - loadingProgress / 100)}`}
+                  className="text-primary transition-all duration-500 ease-out" />
+              </svg>
+              <div className="absolute inset-0 flex items-center justify-center">
+                <span className="text-lg font-bold text-primary">{loadingProgress}%</span>
+              </div>
+            </div>
+            <div className="text-center space-y-1">
+              <p className="text-sm font-medium">Загрузка данных...</p>
+              <p className="text-xs text-muted-foreground">Подождите, пока приложение загрузится</p>
+            </div>
+          </div>
           {/* Skeleton tabs */}
           <div className="hidden md:flex items-center gap-2 mb-4">
             {[0,1,2,3,4,5].map(i => <div key={i} className="h-9 w-24 rounded-md bg-muted animate-pulse" />)}
@@ -1025,7 +1054,7 @@ export default function Home() {
             <TabsTrigger value="map" className="gap-1.5"><Map className="size-4" />Карта</TabsTrigger>
           </TabsList>
           <TabsContent value="equipment">
-            <EquipmentTab equipment={equipment} companies={companies} eqSearch={eqSearch} setEqSearch={setEqSearch} eqStatusFilter={eqStatusFilter} setEqStatusFilter={setEqStatusFilter} eqTypeFilter={eqTypeFilter} setEqTypeFilter={setEqTypeFilter} onOpenDetail={openEquipmentDetail} onAdd={() => { setEqFormEdit(null); setEqFormStep(0); setEqFormOpen(true) }} onEdit={(eq) => { setEqFormEdit(eq); setEqFormStep(0); setEqFormOpen(true) }} onDelete={(eq) => setDeleteDialog({ open: true, type: 'equipment', id: eq.id, name: eq.name })} onGoToMap={(eq) => openEquipmentDetail(eq, 'glonass')} />
+            <EquipmentTab equipment={equipment} companies={companies} eqSearch={eqSearch} setEqSearch={setEqSearch} eqStatusFilter={eqStatusFilter} setEqStatusFilter={setEqStatusFilter} eqTypeFilter={eqTypeFilter} setEqTypeFilter={setEqTypeFilter} onOpenDetail={openEquipmentDetail} onAdd={() => { setEqFormEdit(null); setEqFormStep(0); setEqFormOpen(true) }} onEdit={(eq) => { setEqFormEdit(eq); setEqFormStep(0); setEqFormOpen(true) }} onDelete={(eq) => setDeleteDialog({ open: true, type: 'equipment', id: eq.id, name: eq.name })} onGoToMap={(eq) => openEquipmentDetail(eq, 'glonass')} onCreateTrip={(eq) => { setTripFormEdit(null); setTripFormEquipmentId(eq.id); setTripFormOpen(true) }} />
           </TabsContent>
           <TabsContent value="repairs">
             <RepairsTab repairs={repairs} equipment={equipment} onOpenDetail={openRepairDetail} onAdd={(eqId) => { setRepairFormEdit(null); setRepairFormEquipmentId(eqId || ''); setRepairFormOpen(true) }} onDelete={(r) => setDeleteDialog({ open: true, type: 'repair', id: r.id, name: r.description })} />
@@ -1046,7 +1075,7 @@ export default function Home() {
 
         {/* Mobile: show active tab content directly */}
         <div className="md:hidden">
-          {mainTab === 'equipment' && <EquipmentTab equipment={equipment} companies={companies} eqSearch={eqSearch} setEqSearch={setEqSearch} eqStatusFilter={eqStatusFilter} setEqStatusFilter={setEqStatusFilter} eqTypeFilter={eqTypeFilter} setEqTypeFilter={setEqTypeFilter} onOpenDetail={openEquipmentDetail} onAdd={() => { setEqFormEdit(null); setEqFormStep(0); setEqFormOpen(true) }} onEdit={(eq) => { setEqFormEdit(eq); setEqFormStep(0); setEqFormOpen(true) }} onDelete={(eq) => setDeleteDialog({ open: true, type: 'equipment', id: eq.id, name: eq.name })} onGoToMap={(eq) => openEquipmentDetail(eq, 'glonass')} />}
+          {mainTab === 'equipment' && <EquipmentTab equipment={equipment} companies={companies} eqSearch={eqSearch} setEqSearch={setEqSearch} eqStatusFilter={eqStatusFilter} setEqStatusFilter={setEqStatusFilter} eqTypeFilter={eqTypeFilter} setEqTypeFilter={setEqTypeFilter} onOpenDetail={openEquipmentDetail} onAdd={() => { setEqFormEdit(null); setEqFormStep(0); setEqFormOpen(true) }} onEdit={(eq) => { setEqFormEdit(eq); setEqFormStep(0); setEqFormOpen(true) }} onDelete={(eq) => setDeleteDialog({ open: true, type: 'equipment', id: eq.id, name: eq.name })} onGoToMap={(eq) => openEquipmentDetail(eq, 'glonass')} onCreateTrip={(eq) => { setTripFormEdit(null); setTripFormEquipmentId(eq.id); setTripFormOpen(true) }} />}
           {mainTab === 'repairs' && <RepairsTab repairs={repairs} equipment={equipment} onOpenDetail={openRepairDetail} onAdd={(eqId) => { setRepairFormEdit(null); setRepairFormEquipmentId(eqId || ''); setRepairFormOpen(true) }} onDelete={(r) => setDeleteDialog({ open: true, type: 'repair', id: r.id, name: r.description })} />}
           {mainTab === 'trips' && <TripsTab trips={trips} equipment={equipment} crews={crews} routeTemplates={routeTemplates} onOpenDetail={openTripDetail} onAdd={(eqId) => { setTripFormEdit(null); setTripFormEquipmentId(eqId || ''); setTripFormOpen(true) }} onDelete={(t) => setDeleteDialog({ open: true, type: 'trip', id: t.id, name: t.route })} onAddCrew={() => { setCrewFormEdit(null); setCrewFormOpen(true) }} onEditCrew={(c) => { setCrewFormEdit(c); setCrewFormOpen(true) }} onDeleteCrew={(c) => setDeleteDialog({ open: true, type: 'crew', id: c.id, name: c.name })} onAddRouteTemplate={() => { setRouteTemplateFormEdit(null); setRouteTemplateFormOpen(true) }} onEditRouteTemplate={(rt) => { setRouteTemplateFormEdit(rt); setRouteTemplateFormOpen(true) }} onDeleteRouteTemplate={(rt) => setDeleteDialog({ open: true, type: 'routeTemplate', id: rt.id, name: rt.name })} />}
           {mainTab === 'employees' && <EmployeesTab employees={employees} crews={crews} empSearch={empSearch} setEmpSearch={setEmpSearch} empPositionFilter={empPositionFilter} setEmpPositionFilter={setEmpPositionFilter} empStatusFilter={empStatusFilter} setEmpStatusFilter={setEmpStatusFilter} onOpenDetail={openEmployeeDetail} onAdd={() => { setEmpFormEdit(null); setEmpFormOpen(true) }} onEdit={(emp) => { setEmpFormEdit(emp); setEmpFormOpen(true) }} onDelete={(emp) => setDeleteDialog({ open: true, type: 'employee', id: emp.id, name: emp.fullName })} />}
@@ -1253,7 +1282,7 @@ function StatCard({ icon, label, value, color }: { icon: React.ReactNode; label:
 // EQUIPMENT TAB
 // ═══════════════════════════════════════════════════════════════
 
-function EquipmentTab({ equipment, companies, eqSearch, setEqSearch, eqStatusFilter, setEqStatusFilter, eqTypeFilter, setEqTypeFilter, onOpenDetail, onAdd, onEdit, onDelete, onGoToMap }: {
+function EquipmentTab({ equipment, companies, eqSearch, setEqSearch, eqStatusFilter, setEqStatusFilter, eqTypeFilter, setEqTypeFilter, onOpenDetail, onAdd, onEdit, onDelete, onGoToMap, onCreateTrip }: {
   equipment: Equipment[]; companies: Company[];
   eqSearch: string; setEqSearch: (v: string) => void;
   eqStatusFilter: string; setEqStatusFilter: (v: string) => void;
@@ -1261,6 +1290,7 @@ function EquipmentTab({ equipment, companies, eqSearch, setEqSearch, eqStatusFil
   onOpenDetail: (eq: Equipment) => void;
   onAdd: () => void; onEdit: (eq: Equipment) => void; onDelete: (eq: Equipment) => void;
   onGoToMap: (eq: Equipment) => void;
+  onCreateTrip: (eq: Equipment) => void;
 }) {
   const [copiedId, setCopiedId] = useState<string | null>(null)
   const containerRef = useRef<HTMLDivElement>(null)
@@ -1669,6 +1699,9 @@ function EquipmentTab({ equipment, companies, eqSearch, setEqSearch, eqStatusFil
                         </Button>
                         <Button size="sm" variant="ghost" className="size-7 p-0" onClick={() => onGoToMap(eq)} title="Карта">
                           <MapPin className="size-3.5" />
+                        </Button>
+                        <Button size="sm" variant="ghost" className="size-7 p-0" onClick={() => onCreateTrip(eq)} title="Создать рейс">
+                          <Route className="size-3.5" />
                         </Button>
                         <Button size="sm" variant="ghost" className="size-7 p-0" onClick={() => onEdit(eq)} title="Редактировать">
                           <Edit className="size-3.5" />
@@ -3856,6 +3889,35 @@ function TripsTab({ trips, equipment, crews, routeTemplates, onOpenDetail, onAdd
   const debouncedSearch = useDebounce(search, 300)
   const [showCrews, setShowCrews] = useState(false)
   const [showRoutes, setShowRoutes] = useState(false)
+  const [routeMapTemplate, setRouteMapTemplate] = useState<RouteTemplate | null>(null)
+  const [routeMapData, setRouteMapData] = useState<any>(null)
+  const [routeMapLoading, setRouteMapLoading] = useState(false)
+
+  const showRouteOnMap = async (rt: RouteTemplate) => {
+    if (routeMapTemplate?.id === rt.id) { setRouteMapTemplate(null); setRouteMapData(null); return }
+    const pts = (rt.points || []).filter(p => p.latitude && p.longitude)
+    if (pts.length < 2) { toast.error('Недостаточно точек с координатами'); return }
+    setRouteMapTemplate(rt)
+    setRouteMapLoading(true)
+    try {
+      const coords = pts.map(p => `${p.longitude},${p.latitude}`).join(';')
+      const osrmUrl = `https://router.project-osrm.org/route/v1/driving/${coords}?overview=full&geometries=geojson`
+      const res = await fetch(osrmUrl)
+      const data = await res.json()
+      if (data.routes && data.routes.length > 0) {
+        const route = data.routes[0]
+        const routeCoords = route.geometry.coordinates.map((c: number[]) => ({ lat: c[1], lng: c[0] }))
+        setRouteMapData({ trips: [{ distance: route.distance / 1000, startDate: new Date().toISOString(), endDate: new Date().toISOString(), points: routeCoords.map((c: any, i: number) => ({ ...c, speed: 60, time: new Date(Date.now() + i * 60000).toISOString() })) }], parkings: [], stops: [] })
+      } else {
+        const routeCoords = pts.map(p => ({ lat: p.latitude!, lng: p.longitude! }))
+        setRouteMapData({ trips: [{ distance: 0, startDate: new Date().toISOString(), endDate: new Date().toISOString(), points: routeCoords.map((c: any, i: number) => ({ ...c, speed: 60, time: new Date(Date.now() + i * 60000).toISOString() })) }], parkings: [], stops: [] })
+      }
+    } catch {
+      const routeCoords = pts.map(p => ({ lat: p.latitude!, lng: p.longitude! }))
+      setRouteMapData({ trips: [{ distance: 0, startDate: new Date().toISOString(), endDate: new Date().toISOString(), points: routeCoords.map((c: any, i: number) => ({ ...c, speed: 60, time: new Date(Date.now() + i * 60000).toISOString() })) }], parkings: [], stops: [] })
+    }
+    setRouteMapLoading(false)
+  }
 
   const filtered = useMemo(() => trips.filter(t => {
     if (statusFilter !== 'all' && t.status !== statusFilter) return false
@@ -4001,12 +4063,39 @@ function TripsTab({ trips, equipment, crews, routeTemplates, onOpenDetail, onAdd
                       </div>
                     )}
                     <div className="flex gap-1 pt-0.5">
+                      {rt.points && rt.points.some(p => p.latitude && p.longitude) && (
+                        <Button size="sm" variant="ghost" className="h-6 text-[10px] gap-0.5" onClick={() => showRouteOnMap(rt)}>
+                          <Map className="size-3" />{routeMapTemplate?.id === rt.id ? 'Скрыть' : 'Карта'}
+                        </Button>
+                      )}
                       <Button size="sm" variant="ghost" className="h-6 text-[10px] gap-0.5" onClick={() => onEditRouteTemplate(rt)}><Edit className="size-3" />Изменить</Button>
                       <Button size="sm" variant="ghost" className="h-6 text-[10px] gap-0.5 text-destructive hover:text-destructive" onClick={() => onDeleteRouteTemplate(rt)}><Trash2 className="size-3" />Удалить</Button>
                     </div>
                   </CardContent>
                 </Card>
               ))}
+            </div>
+          )}
+          {/* Inline route map */}
+          {routeMapTemplate && (
+            <div className="space-y-2">
+              <div className="flex items-center gap-2">
+                <Map className="size-3.5 text-sky-500" />
+                <span className="text-xs font-medium">Маршрут: {routeMapTemplate.name}</span>
+                <Button size="sm" variant="ghost" className="h-6 text-[10px] ml-auto" onClick={() => { setRouteMapTemplate(null); setRouteMapData(null) }}>
+                  <X className="size-3" />Закрыть
+                </Button>
+              </div>
+              <div className="h-72 rounded-lg overflow-hidden border">
+                {routeMapLoading ? (
+                  <div className="h-full flex items-center justify-center bg-muted/30">
+                    <Loader2 className="size-5 animate-spin text-muted-foreground" />
+                    <span className="ml-2 text-xs text-muted-foreground">Расчёт маршрута...</span>
+                  </div>
+                ) : routeMapData ? (
+                  <TrackerMap trackers={[]} trackData={routeMapData} />
+                ) : null}
+              </div>
             </div>
           )}
           <Separator />
@@ -4064,7 +4153,14 @@ function TripsTab({ trips, equipment, crews, routeTemplates, onOpenDetail, onAdd
                     </td>
                     <td className="py-1.5 px-2">{statusBadge(t.status, TRIP_STATUS_MAP)}</td>
                     <td className="py-1.5 px-2 hidden md:table-cell">
-                      <div>{formatDateTime(t.startDate)}</div>
+                      <div className="flex items-center gap-1">
+                        <span className="cursor-pointer hover:text-primary hover:underline" onClick={(e) => { e.stopPropagation(); onOpenDetail(t) }}>{formatDateTime(t.startDate)}</span>
+                        {t.startDate && t.equipmentId && (
+                          <Button size="sm" variant="ghost" className="size-5 p-0 shrink-0" onClick={(e) => { e.stopPropagation(); onOpenDetail(t) }} title="Показать трек">
+                            <Map className="size-3 text-sky-500" />
+                          </Button>
+                        )}
+                      </div>
                       {t.tripDuration != null && <div className="text-[9px] text-muted-foreground"><Timer className="inline size-2 mr-0.5" />{formatDurationShort(t.tripDuration)}</div>}
                     </td>
                     <td className="py-1.5 px-2 hidden md:table-cell">
@@ -4135,6 +4231,9 @@ function TripDetailDialog({ open, onOpenChange, trip, loading, crews, onEdit, on
   }>({ open: false, diffs: [], onReplace: () => {} })
   const [tripSaved, setTripSaved] = useState(false)
   const [savingTrip, setSavingTrip] = useState(false)
+  const [showRouteMap, setShowRouteMap] = useState(false)
+  const [routeMapLoading, setRouteMapLoading] = useState(false)
+  const [routeMapTrackData, setRouteMapTrackData] = useState<any>(null)
 
   // Reset all data when trip changes — must be before any early return (Rules of Hooks)
   useEffect(() => {
@@ -4146,6 +4245,8 @@ function TripDetailDialog({ open, onOpenChange, trip, loading, crews, onEdit, on
     setCompareError(null)
     setApplySuccess(null)
     setTripSaved(false)
+    setShowRouteMap(false)
+    setRouteMapTrackData(null)
   }, [trip?.id])
 
   // Auto-load track when dialog opens or trip changes (sensor comparison only on request)
@@ -4601,16 +4702,77 @@ function TripDetailDialog({ open, onOpenChange, trip, loading, crews, onEdit, on
                 </div>
               )}
               {t.routePoints && t.routePoints.some(p => p.latitude && p.longitude) && (
-                <div className="mt-1">
-                  <Button variant="outline" size="sm" className="h-7 text-[10px] gap-1 w-full" onClick={() => {
+                <div className="mt-1 space-y-2">
+                  <Button variant="outline" size="sm" className="h-7 text-[10px] gap-1 w-full" onClick={async () => {
+                    if (showRouteMap) { setShowRouteMap(false); return }
                     const pts = t.routePoints!.filter(p => p.latitude && p.longitude)
-                    if (pts.length >= 2) {
-                      const mapUrl = `https://www.openstreetmap.org/directions?route=${pts.map(p => `${p.latitude},${p.longitude}`).join(';')}`
-                      window.open(mapUrl, '_blank')
+                    if (pts.length < 2) return
+                    setShowRouteMap(true)
+                    setRouteMapLoading(true)
+                    try {
+                      // Build OSRM route URL
+                      const coords = pts.map(p => `${p.longitude},${p.latitude}`).join(';')
+                      const osrmUrl = `https://router.project-osrm.org/route/v1/driving/${coords}?overview=full&geometries=geojson`
+                      const res = await fetch(osrmUrl)
+                      const data = await res.json()
+                      if (data.routes && data.routes.length > 0) {
+                        const route = data.routes[0]
+                        const routeCoords = route.geometry.coordinates.map((c: number[]) => ({ lat: c[1], lng: c[0] }))
+                        // Build TrackData format for TrackerMap
+                        const fakeTrip = {
+                          distance: route.distance / 1000,
+                          startDate: t.startDate || new Date().toISOString(),
+                          endDate: t.endDate || new Date().toISOString(),
+                          points: routeCoords.map((c: any, i: number) => ({
+                            ...c,
+                            speed: 60,
+                            time: new Date(Date.now() + i * 60000).toISOString()
+                          }))
+                        }
+                        setRouteMapTrackData({ trips: [fakeTrip], parkings: [], stops: [] })
+                      } else {
+                        // Fallback: just draw straight lines between points
+                        const routeCoords = pts.map(p => ({ lat: p.latitude!, lng: p.longitude! }))
+                        const fakeTrip = {
+                          distance: 0,
+                          startDate: t.startDate || new Date().toISOString(),
+                          endDate: t.endDate || new Date().toISOString(),
+                          points: routeCoords.map((c: any, i: number) => ({
+                            ...c, speed: 60, time: new Date(Date.now() + i * 60000).toISOString()
+                          }))
+                        }
+                        setRouteMapTrackData({ trips: [fakeTrip], parkings: [], stops: [] })
+                      }
+                    } catch {
+                      // Fallback: straight lines
+                      const pts2 = t.routePoints!.filter(p => p.latitude && p.longitude)
+                      const routeCoords = pts2.map(p => ({ lat: p.latitude!, lng: p.longitude! }))
+                      const fakeTrip = {
+                        distance: 0,
+                        startDate: t.startDate || new Date().toISOString(),
+                        endDate: t.endDate || new Date().toISOString(),
+                        points: routeCoords.map((c: any, i: number) => ({
+                          ...c, speed: 60, time: new Date(Date.now() + i * 60000).toISOString()
+                        }))
+                      }
+                      setRouteMapTrackData({ trips: [fakeTrip], parkings: [], stops: [] })
                     }
+                    setRouteMapLoading(false)
                   }}>
-                    <Map className="size-3" />Открыть маршрут на карте
+                    <Map className="size-3" />{showRouteMap ? 'Скрыть карту маршрута' : 'Показать маршрут на карте'}
                   </Button>
+                  {showRouteMap && (
+                    <div className="rounded-lg overflow-hidden border">
+                      {routeMapLoading ? (
+                        <div className="h-64 flex items-center justify-center bg-muted/30">
+                          <Loader2 className="size-5 animate-spin text-muted-foreground" />
+                          <span className="ml-2 text-xs text-muted-foreground">Расчёт маршрута...</span>
+                        </div>
+                      ) : routeMapTrackData ? (
+                        <TrackerMap trackers={[]} trackData={routeMapTrackData} />
+                      ) : null}
+                    </div>
+                  )}
                 </div>
               )}
               <DetailSection title="Груз" icon={<Package className="size-3.5" />}>
