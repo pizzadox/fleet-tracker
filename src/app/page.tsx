@@ -4950,124 +4950,145 @@ function TripDetailDialog({ open, onOpenChange, trip, loading, crews, onEdit, on
                 )}
               </DetailSection>
 
-              {/* ── ТОПЛИВО И ПРОБЕГ ── */}
-              <DetailSection title="Топливо и пробег" icon={<Fuel className="size-3.5" />}>
-                <DetailRow label="Топливо на старте (л)" value={t.fuelStart?.toString()} />
-                <DetailRow label="Топливо на финише (л)" value={t.fuelEnd?.toString()} />
-                <DetailRow label="Пробег на старте (км)" value={t.mileageStart?.toLocaleString('ru-RU')} />
-                <DetailRow label="Пробег на финише (км)" value={t.mileageEnd?.toLocaleString('ru-RU')} />
-                {(t.mileageStart != null && t.mileageEnd != null) && (
-                  <DetailRow label="Пройдено (км)" value={
-                    <span className="font-semibold text-emerald-600 dark:text-emerald-400">{(t.mileageEnd! - t.mileageStart!).toLocaleString('ru-RU')} км</span> as any
-                  } />
-                )}
-              </DetailSection>
-
-              {/* ── АНАЛИТИКА ТРЕКЕРА ── */}
-              {(t.avgSpeed != null || t.maxSpeed != null || t.engineHours != null || t.idleTime != null || t.fuelConsumed != null || t.distance != null || t.tripDuration != null || t.parkingsDuration != null) && (
-                <DetailSection title="Статистика рейса" icon={<Gauge className="size-3.5" />}>
-                  {t.distance != null && <DetailRow label="Расстояние" value={<span className="font-semibold text-emerald-600 dark:text-emerald-400">{t.distance.toFixed(1)} км</span> as any} />}
-                  {t.tripDuration != null && <DetailRow label="Время в пути" value={fmtDur(t.tripDuration)} />}
-                  {t.parkingsDuration != null && <DetailRow label="Время стоянок" value={fmtDur(t.parkingsDuration)} />}
-                  {t.avgSpeed != null && <DetailRow label="Средняя скорость" value={`${t.avgSpeed} км/ч`} />}
-                  {t.maxSpeed != null && <DetailRow label="Макс. скорость" value={`${t.maxSpeed} км/ч`} />}
-                  {t.engineHours != null && <DetailRow label="Моточасы" value={fmtDur(t.engineHours)} />}
-                  {t.idleTime != null && <DetailRow label="Холостой ход" value={fmtDur(t.idleTime)} />}
-                  {t.fuelConsumed != null && <DetailRow label="Расход топлива" value={<span className="font-semibold text-amber-600 dark:text-amber-400">{t.fuelConsumed} л</span> as any} />}
-                  {t.avgFuelRate != null && <DetailRow label="Средний расход" value={`${t.avgFuelRate} л/100км`} />}
-                  {t.refuelVolume != null && t.refuelVolume > 0 && <DetailRow label="Заправки" value={`${t.refuelVolume} л`} />}
-                  {t.plumVolume != null && t.plumVolume > 0 && <DetailRow label="Сливы" value={<span className="font-semibold text-red-600 dark:text-red-400">{t.plumVolume} л</span> as any} />}
-                </DetailSection>
-              )}
-
-              {/* ── СРАВНЕНИЕ ДАТЧИКОВ СТАРТ/ФИНИШ ── */}
-              {/* Cost analysis section */}
-              {(t.cost != null || t.revenue != null) && (
-                <DetailSection title="Финансы" icon={<DollarSign className="size-3.5" />}>
-                  {t.cost != null && <DetailRow label="Расходы" value={<span className="text-red-600 dark:text-red-400">{formatPrice(t.cost)}</span> as any} />}
-                  {t.revenue != null && <DetailRow label="Доходы" value={<span className="text-emerald-600 dark:text-emerald-400">{formatPrice(t.revenue)}</span> as any} />}
-                  {t.cost != null && t.revenue != null && <DetailRow label="Прибыль" value={<span className={`font-bold ${t.revenue - t.cost >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400'}`}>{formatPrice(t.revenue - t.cost)}</span> as any} />}
-                  {t.fuelConsumed != null && t.distance != null && t.distance > 0 && t.cost != null && <DetailRow label="Стоимость за км" value={`${(t.cost / t.distance).toFixed(2)} ₽/км`} />}
-                </DetailSection>
-              )}
-              <div className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <h4 className="text-xs font-semibold flex items-center gap-1.5"><CircuitBoard className="size-3.5" />Показания датчиков (старт / финиш)</h4>
-                  <Button variant="ghost" size="sm" className="h-7 text-[10px] gap-1" onClick={reloadSensors} disabled={compareLoading}>
-                    <RefreshCw className={`size-3 ${compareLoading ? 'animate-spin' : ''}`} />
-                  </Button>
-                </div>
-
-                {compareLoading && (
-                  <div className="flex items-center justify-center h-16 bg-muted/30 rounded-lg">
-                    <Loader2 className="size-4 animate-spin text-muted-foreground" />
-                    <span className="ml-2 text-xs text-muted-foreground">Загрузка данных датчиков...</span>
+              {/* ── СТАТИСТИКА ЗА ПЕРИОД РЕЙСА (always visible) ── */}
+              {compareData?.tripStats ? (
+                <div className="rounded-lg border p-2.5 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <h5 className="text-[11px] font-semibold text-muted-foreground flex items-center gap-1">
+                      <BarChart3 className="size-3" />Статистика за период рейса
+                    </h5>
+                    <Button variant="ghost" size="sm" className="h-7 text-[10px] gap-1" onClick={reloadSensors} disabled={compareLoading}>
+                      <RefreshCw className={`size-3 ${compareLoading ? 'animate-spin' : ''}`} />
+                    </Button>
                   </div>
-                )}
-
-                {compareError && (
-                  <div className="flex items-center gap-2 p-2 bg-yellow-50 dark:bg-yellow-900/20 rounded-lg text-xs text-yellow-600 dark:text-yellow-400">
-                    <AlertTriangle className="size-3.5 shrink-0" />{compareError}
-                  </div>
-                )}
-
-                {applySuccess && (
-                  <div className="flex items-center gap-2 p-2 bg-emerald-50 dark:bg-emerald-900/20 rounded-lg text-xs text-emerald-600 dark:text-emerald-400">
-                    <CheckCircle2 className="size-3.5 shrink-0" />{applySuccess}
-                  </div>
-                )}
-
-                {compareData && !compareLoading && (
-                  <div className="space-y-3">
-                    {/* Trip stats from Axenta */}
-                    {compareData.tripStats && (
-                      <div className="rounded-lg border p-2.5 space-y-2">
-                        <h5 className="text-[11px] font-semibold text-muted-foreground flex items-center gap-1">
-                          <BarChart3 className="size-3" />Статистика за период рейса
-                        </h5>
-                        <div className="grid grid-cols-2 gap-1.5">
-                          {(() => {
-                            const st = compareData.tripStats as Record<string, unknown>
-                            const items: { label: string; value: string | null }[] = [
-                              { label: 'Пробег', value: st.mileage != null ? `${Number(st.mileage).toFixed(1)} км` : null },
-                              { label: 'Ср. скорость', value: st.avgSpeed != null ? `${Number(st.avgSpeed).toFixed(1)} км/ч` : null },
-                              { label: 'Макс. скорость', value: st.maxSpeed != null ? `${Number(st.maxSpeed).toFixed(0)} км/ч` : null },
-                              { label: 'Расход топлива', value: st.fuelConsumption != null ? `${Number(st.fuelConsumption).toFixed(1)} л` : null },
-                              { label: 'Ср. расход', value: st.avgFuelConsumption != null ? `${Number(st.avgFuelConsumption).toFixed(1)} л/100км` : null },
-                              { label: 'Заправки', value: st.refuelVolume != null ? `${Number(st.refuelVolume).toFixed(1)} л` : null },
-                              { label: 'Сливы', value: st.plumVolume != null ? `${Number(st.plumVolume).toFixed(1)} л` : null },
-                              { label: 'Длительность поездок', value: st.tripsDuration != null ? fmtDur(Number(st.tripsDuration)) : null },
-                              { label: 'Время стоянок', value: st.parkingsDuration != null ? fmtDur(Number(st.parkingsDuration)) : null },
-                              { label: 'Моточасы', value: st.engineHours != null ? `${Number(st.engineHours).toFixed(1)}` : null },
-                              { label: 'Холостой ход', value: st.idleTime != null ? fmtDur(Number(st.idleTime)) : null },
-                            ]
-                            return items.filter(it => it.value != null).map((it, i) => (
-                              <div key={i} className="flex items-center gap-1.5 text-[10px] py-0.5 px-1.5 rounded bg-muted/50">
-                                <span className="text-muted-foreground">{it.label}</span>
-                                <span className="font-medium ml-auto">{it.value}</span>
-                              </div>
-                            ))
-                          })()}
+                  <div className="grid grid-cols-2 gap-1.5">
+                    {(() => {
+                      const st = compareData.tripStats as Record<string, unknown>
+                      const items: { label: string; value: string | null }[] = [
+                        { label: 'Пробег', value: st.mileage != null ? `${Number(st.mileage).toFixed(1)} км` : null },
+                        { label: 'Ср. скорость', value: st.avgSpeed != null ? `${Number(st.avgSpeed).toFixed(1)} км/ч` : null },
+                        { label: 'Макс. скорость', value: st.maxSpeed != null ? `${Number(st.maxSpeed).toFixed(0)} км/ч` : null },
+                        { label: 'Расход топлива', value: st.fuelConsumption != null ? `${Number(st.fuelConsumption).toFixed(1)} л` : null },
+                        { label: 'Ср. расход', value: st.avgFuelConsumption != null ? `${Number(st.avgFuelConsumption).toFixed(1)} л/100км` : null },
+                        { label: 'Заправки', value: st.refuelVolume != null ? `${Number(st.refuelVolume).toFixed(1)} л` : null },
+                        { label: 'Сливы', value: st.plumVolume != null ? `${Number(st.plumVolume).toFixed(1)} л` : null },
+                        { label: 'Длительность поездок', value: st.tripsDuration != null ? fmtDur(Number(st.tripsDuration)) : null },
+                        { label: 'Время стоянок', value: st.parkingsDuration != null ? fmtDur(Number(st.parkingsDuration)) : null },
+                        { label: 'Моточасы', value: st.engineHours != null ? `${Number(st.engineHours).toFixed(1)}` : null },
+                        { label: 'Холостой ход', value: st.idleTime != null ? fmtDur(Number(st.idleTime)) : null },
+                      ]
+                      return items.filter(it => it.value != null).map((it, i) => (
+                        <div key={i} className="flex items-center gap-1.5 text-[10px] py-0.5 px-1.5 rounded bg-muted/50">
+                          <span className="text-muted-foreground">{it.label}</span>
+                          <span className="font-medium ml-auto">{it.value}</span>
                         </div>
-                      </div>
+                      ))
+                    })()}
+                  </div>
+                </div>
+              ) : (
+                <div className="flex items-center justify-center py-3 bg-muted/30 rounded-lg">
+                  {compareLoading ? (
+                    <>
+                      <Loader2 className="size-4 animate-spin text-muted-foreground" />
+                      <span className="ml-2 text-xs text-muted-foreground">Загрузка статистики...</span>
+                    </>
+                  ) : (
+                    <Button variant="outline" size="sm" className="h-7 text-[10px] gap-1" onClick={reloadSensors} disabled={compareLoading}>
+                      <BarChart3 className="size-3" />Загрузить статистику за период
+                    </Button>
+                  )}
+                </div>
+              )}
+
+              {/* ── ПОДРОБНЫЕ ПОКАЗАНИЯ (collapsible) ── */}
+              <Collapsible>
+                <CollapsibleTrigger className="flex items-center gap-1.5 w-full text-xs font-semibold hover:text-foreground transition-colors py-1.5 px-2 rounded hover:bg-muted/50">
+                  <CircuitBoard className="size-3.5 text-muted-foreground" />
+                  <span>Подробные показания</span>
+                  <ChevronRight className="size-3 text-muted-foreground transition-transform [[data-state=open]>&]:rotate-90" />
+                </CollapsibleTrigger>
+                <CollapsibleContent>
+                  <div className="space-y-2 mt-2">
+                    {/* ── ТОПЛИВО И ПРОБЕГ ── */}
+                    <DetailSection title="Топливо и пробег" icon={<Fuel className="size-3.5" />}>
+                      <DetailRow label="Топливо на старте (л)" value={t.fuelStart?.toString()} />
+                      <DetailRow label="Топливо на финише (л)" value={t.fuelEnd?.toString()} />
+                      <DetailRow label="Пробег на старте (км)" value={t.mileageStart?.toLocaleString('ru-RU')} />
+                      <DetailRow label="Пробег на финише (км)" value={t.mileageEnd?.toLocaleString('ru-RU')} />
+                      {(t.mileageStart != null && t.mileageEnd != null) && (
+                        <DetailRow label="Пройдено (км)" value={
+                          <span className="font-semibold text-emerald-600 dark:text-emerald-400">{(t.mileageEnd! - t.mileageStart!).toLocaleString('ru-RU')} км</span> as any
+                        } />
+                      )}
+                    </DetailSection>
+
+                    {/* ── АНАЛИТИКА ТРЕКЕРА ── */}
+                    {(t.avgSpeed != null || t.maxSpeed != null || t.engineHours != null || t.idleTime != null || t.fuelConsumed != null || t.distance != null || t.tripDuration != null || t.parkingsDuration != null) && (
+                      <DetailSection title="Статистика рейса" icon={<Gauge className="size-3.5" />}>
+                        {t.distance != null && <DetailRow label="Расстояние" value={<span className="font-semibold text-emerald-600 dark:text-emerald-400">{t.distance.toFixed(1)} км</span> as any} />}
+                        {t.tripDuration != null && <DetailRow label="Время в пути" value={fmtDur(t.tripDuration)} />}
+                        {t.parkingsDuration != null && <DetailRow label="Время стоянок" value={fmtDur(t.parkingsDuration)} />}
+                        {t.avgSpeed != null && <DetailRow label="Средняя скорость" value={`${t.avgSpeed} км/ч`} />}
+                        {t.maxSpeed != null && <DetailRow label="Макс. скорость" value={`${t.maxSpeed} км/ч`} />}
+                        {t.engineHours != null && <DetailRow label="Моточасы" value={fmtDur(t.engineHours)} />}
+                        {t.idleTime != null && <DetailRow label="Холостой ход" value={fmtDur(t.idleTime)} />}
+                        {t.fuelConsumed != null && <DetailRow label="Расход топлива" value={<span className="font-semibold text-amber-600 dark:text-amber-400">{t.fuelConsumed} л</span> as any} />}
+                        {t.avgFuelRate != null && <DetailRow label="Средний расход" value={`${t.avgFuelRate} л/100км`} />}
+                        {t.refuelVolume != null && t.refuelVolume > 0 && <DetailRow label="Заправки" value={`${t.refuelVolume} л`} />}
+                        {t.plumVolume != null && t.plumVolume > 0 && <DetailRow label="Сливы" value={<span className="font-semibold text-red-600 dark:text-red-400">{t.plumVolume} л</span> as any} />}
+                      </DetailSection>
                     )}
 
-                    {/* Apply buttons */}
-                    <div className="flex flex-wrap gap-1.5">
-                      {(t.status === 'planned' || t.status === 'in_progress') && compareData?.startSnapshot && (
-                        <Button variant="outline" size="sm" className="h-7 text-[10px] gap-1" onClick={applyStartValues}>
-                          <ArrowDownToLine className="size-3" />Заполнить начало
-                        </Button>
+                    {/* ── ФИНАНСЫ ── */}
+                    {(t.cost != null || t.revenue != null) && (
+                      <DetailSection title="Финансы" icon={<DollarSign className="size-3.5" />}>
+                        {t.cost != null && <DetailRow label="Расходы" value={<span className="text-red-600 dark:text-red-400">{formatPrice(t.cost)}</span> as any} />}
+                        {t.revenue != null && <DetailRow label="Доходы" value={<span className="text-emerald-600 dark:text-emerald-400">{formatPrice(t.revenue)}</span> as any} />}
+                        {t.cost != null && t.revenue != null && <DetailRow label="Прибыль" value={<span className={`font-bold ${t.revenue - t.cost >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400'}`}>{formatPrice(t.revenue - t.cost)}</span> as any} />}
+                        {t.fuelConsumed != null && t.distance != null && t.distance > 0 && t.cost != null && <DetailRow label="Стоимость за км" value={`${(t.cost / t.distance).toFixed(2)} ₽/км`} />}
+                      </DetailSection>
+                    )}
+
+                    {/* ── СРАВНЕНИЕ ДАТЧИКОВ СТАРТ/ФИНИШ ── */}
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between">
+                        <h4 className="text-xs font-semibold flex items-center gap-1.5"><CircuitBoard className="size-3.5" />Датчики (старт / финиш)</h4>
+                      </div>
+
+                      {compareError && (
+                        <div className="flex items-center gap-2 p-2 bg-yellow-50 dark:bg-yellow-900/20 rounded-lg text-xs text-yellow-600 dark:text-yellow-400">
+                          <AlertTriangle className="size-3.5 shrink-0" />{compareError}
+                        </div>
                       )}
-                      {(t.status === 'in_progress' || t.status === 'completed') && compareData?.endSnapshot && (
-                        <Button variant="outline" size="sm" className="h-7 text-[10px] gap-1" onClick={applyEndValues}>
-                          <ArrowUpFromLine className="size-3" />Заполнить финиш
-                        </Button>
+
+                      {applySuccess && (
+                        <div className="flex items-center gap-2 p-2 bg-emerald-50 dark:bg-emerald-900/20 rounded-lg text-xs text-emerald-600 dark:text-emerald-400">
+                          <CheckCircle2 className="size-3.5 shrink-0" />{applySuccess}
+                        </div>
+                      )}
+
+                      {compareData && !compareLoading && (
+                        <div className="space-y-2">
+                          {/* Apply buttons */}
+                          <div className="flex flex-wrap gap-1.5">
+                            {(t.status === 'planned' || t.status === 'in_progress') && compareData?.startSnapshot && (
+                              <Button variant="outline" size="sm" className="h-7 text-[10px] gap-1" onClick={applyStartValues}>
+                                <ArrowDownToLine className="size-3" />Заполнить начало
+                              </Button>
+                            )}
+                            {(t.status === 'in_progress' || t.status === 'completed') && compareData?.endSnapshot && (
+                              <Button variant="outline" size="sm" className="h-7 text-[10px] gap-1" onClick={applyEndValues}>
+                                <ArrowUpFromLine className="size-3" />Заполнить финиш
+                              </Button>
+                            )}
+                          </div>
+                        </div>
                       )}
                     </div>
                   </div>
-                )}
-              </div>
+                </CollapsibleContent>
+              </Collapsible>
 
               {/* ── ТРЕК НА КАРТЕ ── */}
               {t.startDate && (
@@ -5253,10 +5274,6 @@ function TripDetailDialog({ open, onOpenChange, trip, loading, crews, onEdit, on
                 </div>
               )}
 
-              <DetailSection title="Финансы" icon={<DollarSign className="size-3.5" />}>
-                <DetailRow label="Стоимость" value={formatPrice(t.cost)} />
-                <DetailRow label="Доход" value={formatPrice(t.revenue)} />
-              </DetailSection>
               {t.notes && <DetailSection title="Заметки" icon={<ClipboardList className="size-3.5" />}><p className="text-xs whitespace-pre-wrap">{t.notes}</p></DetailSection>}
             </div>
           )}
