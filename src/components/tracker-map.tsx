@@ -383,6 +383,16 @@ export default function TrackerMap({
   const hasFitBoundsRef = useRef(false)
   // Last track data signature to avoid re-rendering tracks unnecessarily
   const lastTrackSignatureRef = useRef<string>('')
+  // ─── Popup preservation refs ────────────────────────────────────
+  // Track which marker has an open popup (by tracker ID)
+  const openPopupIdRef = useRef<string | null>(null)
+  // Flag: marker updates were skipped because a popup was open
+  const pendingUpdateRef = useRef(false)
+  // Always-current reference to updateMarkers (so popupclose handler can call it)
+  const updateMarkersFnRef = useRef<() => void>(() => {})
+  // Keep a ref to latest trackers so deferred updateMarkers uses fresh data
+  const trackersRef = useRef(trackers)
+  trackersRef.current = trackers
 
   // ─── Initialize map once ──────────────────────────────────────
   useEffect(() => {
@@ -405,6 +415,9 @@ export default function TrackerMap({
       spiderfyOnMaxZoom: true,
       showCoverageOnHover: false,
       zoomToBoundsOnClick: true,
+      // Keep markers in the DOM even when off-screen → prevents cluster
+      // recalculation from closing an open popup during pan/zoom
+      removeOutsideVisibleBounds: false,
       iconCreateFunction: (cluster) => {
         const count = cluster.getChildCount()
         let size = 'small'
@@ -458,6 +471,19 @@ export default function TrackerMap({
     const markersLayer = markersLayerRef.current
     if (!map || !markersLayer) return
 
+    // ─── POPUP PRESERVATION ────────────────────────────────────
+    // If ANY popup is currently open, skip ALL marker updates.
+    // MarkerClusterGroup recalculates clusters on every marker change,
+    // which closes open popups.  The only safe way to keep popups
+    // alive is to not touch the cluster group at all while a popup
+    // is shown.  We remember that we skipped so we can retry later.
+    if (openPopupIdRef.current !== null) {
+      pendingUpdateRef.current = true
+      return
+    }
+
+    const currentTrackers = trackersRef.current
+
     // Create a new marker and add to cluster group
     const createMarker = (tracker: TrackerInfo, layer: L.MarkerClusterGroup): L.Marker | null => {
       if (tracker.lastLatitude == null || tracker.lastLongitude == null) return null
@@ -467,6 +493,23 @@ export default function TrackerMap({
         })
           .bindPopup(buildVehiclePopup(tracker), { className: 'tracker-popup', maxWidth: 340 })
           .bindTooltip(buildVehicleTooltip(tracker), { direction: 'top', offset: [0, -24], className: 'tracker-tooltip' })
+
+        // ── Track popup open/close for preservation ─────────
+        marker.on('popupopen', () => {
+          openPopupIdRef.current = tracker.id
+        })
+        marker.on('popupclose', () => {
+          // Only clear if this is still the active popup
+          if (openPopupIdRef.current === tracker.id) {
+            openPopupIdRef.current = null
+          }
+          // If updates were skipped while the popup was open, apply them now
+          if (pendingUpdateRef.current) {
+            pendingUpdateRef.current = false
+            // Small delay so Leaflet finishes its internal cleanup first
+            setTimeout(() => updateMarkersFnRef.current(), 150)
+          }
+        })
 
         // Handle equipment click via popup link instead of marker click
         if (onEquipmentClick && tracker.equipmentId) {
@@ -492,7 +535,7 @@ export default function TrackerMap({
     }
 
     const existingMarkers = markerByIdRef.current
-    const newTrackerIds = new Set(trackers.map(t => t.id))
+    const newTrackerIds = new Set(currentTrackers.map(t => t.id))
 
     // Remove markers for trackers that no longer exist
     for (const [id, marker] of existingMarkers) {
@@ -503,15 +546,12 @@ export default function TrackerMap({
     }
 
     // Update or create markers
-    for (const tracker of trackers) {
+    for (const tracker of currentTrackers) {
       if (tracker.lastLatitude == null || tracker.lastLongitude == null) continue
 
       const existing = existingMarkers.get(tracker.id)
 
       if (existing) {
-        // Skip ALL updates if this marker's popup is currently open
-        // This prevents MarkerClusterGroup from re-clustering and closing the popup
-        if (existing.isPopupOpen()) continue
         try {
           existing.setLatLng([tracker.lastLatitude, tracker.lastLongitude])
           existing.setIcon(buildVehicleIcon(tracker))
@@ -542,12 +582,15 @@ export default function TrackerMap({
         } catch { /* skip if bounds invalid */ }
       }
     }
-  }, [trackers, onEquipmentClick])
+  }, [onEquipmentClick])
+
+  // Keep fn ref in sync so the popupclose handler always calls the latest version
+  updateMarkersFnRef.current = updateMarkers
 
   // ─── Update markers effect ────────────────────────────────────
   useEffect(() => {
     updateMarkers()
-  }, [updateMarkers])
+  }, [trackers, updateMarkers])
 
   // ─── Focus on a specific point (parking, stop, etc.) ────────
   useEffect(() => {
