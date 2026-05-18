@@ -4215,6 +4215,11 @@ function TripsTab({ trips, equipment, crews, routeTemplates, onOpenDetail, onAdd
                     </td>
                     <td className="py-1.5 px-2 text-right" onClick={e => e.stopPropagation()}>
                       <div className="flex items-center justify-end gap-0.5">
+                        {t.startDate && t.equipmentId && (
+                          <Button size="sm" variant="ghost" className="size-6 p-0 text-sky-500 hover:text-sky-600" onClick={() => onOpenDetail(t, true)} title="Показать трек на карте">
+                            <MapPinned className="size-3" />
+                          </Button>
+                        )}
                         <Button size="sm" variant="ghost" className="size-6 p-0 text-destructive hover:text-destructive" onClick={() => onDelete(t)}><Trash2 className="size-3" /></Button>
                       </div>
                     </td>
@@ -4259,6 +4264,7 @@ function TripDetailDialog({ open, onOpenChange, trip, loading, crews, onEdit, on
   const [selectedTripIndex, setSelectedTripIndex] = useState<number | null>(null)
   const [routeMapLoading, setRouteMapLoading] = useState(false)
   const [routeMapTrackData, setRouteMapTrackData] = useState<any>(null)
+  const [focusedPoint, setFocusedPoint] = useState<{ lat: number; lng: number; type: 'parking' | 'stop' | 'refuel' | 'plum'; label?: string } | null>(null)
 
   // ─── Complete trip dialog with refuel detection ─────────────
   const [completeDialog, setCompleteDialog] = useState<{
@@ -4294,6 +4300,7 @@ function TripDetailDialog({ open, onOpenChange, trip, loading, crews, onEdit, on
     setShowRouteMap(false)
     setRouteMapTrackData(null)
     setSelectedTripIndex(null)
+    setFocusedPoint(null)
   }, [trip?.id])
 
   // Auto-load track data when focusTrack is set and dialog opens with a trip
@@ -4753,11 +4760,13 @@ function TripDetailDialog({ open, onOpenChange, trip, loading, crews, onEdit, on
           ) : (
             <div className="space-y-4 py-2">
               {/* Trip summary dashboard */}
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                {t.distance != null && <Card className="border-0 shadow-none bg-sky-50 dark:bg-sky-950/20 py-2"><CardContent className="p-2 text-center"><Navigation className="size-4 text-sky-500 mx-auto mb-0.5" /><p className="text-xs font-bold text-sky-700 dark:text-sky-400">{t.distance.toFixed(1)} км</p><p className="text-[9px] text-muted-foreground">Расстояние</p></CardContent></Card>}
-                {t.fuelConsumed != null && <Card className="border-0 shadow-none bg-amber-50 dark:bg-amber-950/20 py-2"><CardContent className="p-2 text-center"><Fuel className="size-4 text-amber-500 mx-auto mb-0.5" /><p className="text-xs font-bold text-amber-700 dark:text-amber-400">{t.fuelConsumed} л</p><p className="text-[9px] text-muted-foreground">Расход</p></CardContent></Card>}
-                {t.avgSpeed != null && <Card className="border-0 shadow-none bg-emerald-50 dark:bg-emerald-950/20 py-2"><CardContent className="p-2 text-center"><Gauge className="size-4 text-emerald-500 mx-auto mb-0.5" /><p className="text-xs font-bold text-emerald-700 dark:text-emerald-400">{t.avgSpeed} км/ч</p><p className="text-[9px] text-muted-foreground">Ср. скорость</p></CardContent></Card>}
-                {t.tripDuration != null && <Card className="border-0 shadow-none bg-violet-50 dark:bg-violet-950/20 py-2"><CardContent className="p-2 text-center"><Timer className="size-4 text-violet-500 mx-auto mb-0.5" /><p className="text-xs font-bold text-violet-700 dark:text-violet-400">{fmtDur(t.tripDuration)}</p><p className="text-[9px] text-muted-foreground">Время в пути</p></CardContent></Card>}
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                {t.tripDuration != null && <Card className="border-0 shadow-none bg-violet-50 dark:bg-violet-950/20 py-2"><CardContent className="p-2 text-center"><Timer className="size-4 text-violet-500 mx-auto mb-0.5" /><p className="text-xs font-bold text-violet-700 dark:text-violet-400">{fmtDur(t.tripDuration)}</p><p className="text-[9px] text-muted-foreground">Длительность поездок</p></CardContent></Card>}
+                {t.fuelConsumed != null && <Card className="border-0 shadow-none bg-amber-50 dark:bg-amber-950/20 py-2"><CardContent className="p-2 text-center"><Fuel className="size-4 text-amber-500 mx-auto mb-0.5" /><p className="text-xs font-bold text-amber-700 dark:text-amber-400">{t.fuelConsumed} л</p><p className="text-[9px] text-muted-foreground">Расход топлива</p></CardContent></Card>}
+                {t.avgFuelRate != null && <Card className="border-0 shadow-none bg-orange-50 dark:bg-orange-950/20 py-2"><CardContent className="p-2 text-center"><Droplets className="size-4 text-orange-500 mx-auto mb-0.5" /><p className="text-xs font-bold text-orange-700 dark:text-orange-400">{t.avgFuelRate} л/100км</p><p className="text-[9px] text-muted-foreground">Ср. расход</p></CardContent></Card>}
+                {t.refuelVolume != null && t.refuelVolume > 0 && <Card className="border-0 shadow-none bg-emerald-50 dark:bg-emerald-950/20 py-2"><CardContent className="p-2 text-center"><ArrowUpFromLine className="size-4 text-emerald-500 mx-auto mb-0.5" /><p className="text-xs font-bold text-emerald-700 dark:text-emerald-400">+{t.refuelVolume} л</p><p className="text-[9px] text-muted-foreground">Заправки</p></CardContent></Card>}
+                {t.engineHours != null && <Card className="border-0 shadow-none bg-sky-50 dark:bg-sky-950/20 py-2"><CardContent className="p-2 text-center"><Cog className="size-4 text-sky-500 mx-auto mb-0.5" /><p className="text-xs font-bold text-sky-700 dark:text-sky-400">{fmtDur(t.engineHours)}</p><p className="text-[9px] text-muted-foreground">Моточасы</p></CardContent></Card>}
+                {t.parkingsDuration != null && <Card className="border-0 shadow-none bg-rose-50 dark:bg-rose-950/20 py-2"><CardContent className="p-2 text-center"><Armchair className="size-4 text-rose-500 mx-auto mb-0.5" /><p className="text-xs font-bold text-rose-700 dark:text-rose-400">{fmtDur(t.parkingsDuration)}</p><p className="text-[9px] text-muted-foreground">Время стоянок</p></CardContent></Card>}
               </div>
               {/* Speed profile bar */}
               {t.avgSpeed != null && t.maxSpeed != null && (
@@ -5164,7 +5173,7 @@ function TripDetailDialog({ open, onOpenChange, trip, loading, crews, onEdit, on
                   {trackData && !trackLoading && (
                     <>
                       <div className="h-64 rounded-lg overflow-hidden border">
-                        <TrackerMap trackers={[]} trackData={mapTrackData as any} />
+                        <TrackerMap trackers={[]} trackData={mapTrackData as any} focusPoint={focusedPoint} />
                       </div>
                       {/* Track summary badges */}
                       <div className="flex flex-wrap items-center gap-2 text-[10px]">
@@ -5218,12 +5227,13 @@ function TripDetailDialog({ open, onOpenChange, trip, loading, crews, onEdit, on
                           <CollapsibleContent>
                             <div className="space-y-1 mt-1">
                               {(trackData as any).parkings.map((p: any, i: number) => (
-                                <div key={i} className="flex items-center gap-2 text-[10px] rounded px-2 py-1.5 bg-amber-50/50 dark:bg-amber-900/10">
+                                <div key={i} className={`flex items-center gap-2 text-[10px] rounded px-2 py-1.5 cursor-pointer transition-colors ${focusedPoint?.type === 'parking' && focusedPoint?.lat === p.lat && focusedPoint?.lng === p.lng ? 'bg-blue-100 dark:bg-blue-900/30 ring-1 ring-blue-400' : 'bg-amber-50/50 dark:bg-amber-900/10 hover:bg-amber-100/60 dark:hover:bg-amber-900/20'}`} onClick={() => { if (p.lat != null && p.lng != null) setFocusedPoint(focusedPoint?.type === 'parking' && focusedPoint?.lat === p.lat && focusedPoint?.lng === p.lng ? null : { lat: p.lat, lng: p.lng, type: 'parking', label: `Стоянка ${formatTime(p.startDate)}` }) }}>
                                   <span>🅿️</span>
                                   <span>{formatTime(p.startDate)}</span>
                                   <span className="text-muted-foreground">→</span>
                                   <span>{formatTime(p.endDate)}</span>
                                   <span className="text-muted-foreground ml-auto">{p.duration ? `${Math.floor(p.duration / 60)} мин` : '—'}</span>
+                                  {p.lat != null && p.lng != null && <MapPin className="size-3 text-blue-400 shrink-0" />}
                                 </div>
                               ))}
                             </div>
@@ -5240,12 +5250,13 @@ function TripDetailDialog({ open, onOpenChange, trip, loading, crews, onEdit, on
                           <CollapsibleContent>
                             <div className="space-y-1 mt-1">
                               {(trackData as any).stops.map((s: any, i: number) => (
-                                <div key={i} className="flex items-center gap-2 text-[10px] rounded px-2 py-1.5 bg-orange-50/50 dark:bg-orange-900/10">
+                                <div key={i} className={`flex items-center gap-2 text-[10px] rounded px-2 py-1.5 cursor-pointer transition-colors ${focusedPoint?.type === 'stop' && focusedPoint?.lat === s.lat && focusedPoint?.lng === s.lng ? 'bg-blue-100 dark:bg-blue-900/30 ring-1 ring-blue-400' : 'bg-orange-50/50 dark:bg-orange-900/10 hover:bg-orange-100/60 dark:hover:bg-orange-900/20'}`} onClick={() => { if (s.lat != null && s.lng != null) setFocusedPoint(focusedPoint?.type === 'stop' && focusedPoint?.lat === s.lat && focusedPoint?.lng === s.lng ? null : { lat: s.lat, lng: s.lng, type: 'stop', label: `Остановка ${formatTime(s.startDate)}` }) }}>
                                   <span>⏸</span>
                                   <span>{formatTime(s.startDate)}</span>
                                   <span className="text-muted-foreground">→</span>
                                   <span>{formatTime(s.endDate)}</span>
                                   <span className="text-muted-foreground ml-auto">{s.duration ? `${Math.floor(s.duration / 60)} мин` : '—'}</span>
+                                  {s.lat != null && s.lng != null && <MapPin className="size-3 text-orange-400 shrink-0" />}
                                 </div>
                               ))}
                             </div>

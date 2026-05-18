@@ -94,10 +94,18 @@ interface TrackData {
   plums?: Array<Record<string, unknown>>
 }
 
+interface FocusPoint {
+  lat: number
+  lng: number
+  type: 'parking' | 'stop' | 'refuel' | 'plum'
+  label?: string
+}
+
 interface TrackerMapProps {
   trackers: TrackerInfo[]
   trackPoints?: Array<{ lat: number; lng: number }>
   trackData?: TrackData | null
+  focusPoint?: FocusPoint | null
   onMarkerClick?: (trackerId: string) => void
   onEquipmentClick?: (equipmentId: string) => void
   refreshInterval?: RefreshInterval  // selected refresh interval in seconds
@@ -351,6 +359,7 @@ export default function TrackerMap({
   trackers,
   trackPoints,
   trackData,
+  focusPoint,
   onMarkerClick,
   onEquipmentClick,
   refreshInterval = 60,
@@ -519,6 +528,15 @@ export default function TrackerMap({
   useEffect(() => {
     updateMarkers()
   }, [updateMarkers])
+
+  // ─── Focus on a specific point (parking, stop, etc.) ────────
+  useEffect(() => {
+    const map = mapInstanceRef.current
+    if (!map || !focusPoint) return
+    try {
+      map.flyTo([focusPoint.lat, focusPoint.lng], 16, { duration: 0.8 })
+    } catch { /* skip */ }
+  }, [focusPoint])
 
   // ─── Update tracks — only when trackData actually changes ─────
   useEffect(() => {

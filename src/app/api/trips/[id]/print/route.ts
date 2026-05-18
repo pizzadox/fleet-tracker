@@ -571,7 +571,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Путевой лист — ${trip.route}</title>
   <style>
-    @page { size: A4; margin: 15mm 18mm; }
+    @page { size: A4; margin: 20mm 18mm 20mm 18mm; }
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body {
       font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
@@ -580,10 +580,10 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
       padding: 20px 0;
     }
     .page {
-      max-width: 210mm;
+      width: 210mm;
       margin: 0 auto;
       background: #fff;
-      padding: 15mm 18mm;
+      padding: 20mm 18mm;
       box-shadow: 0 2px 12px rgba(0,0,0,0.12);
       min-height: 297mm;
     }
@@ -639,10 +639,16 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
 
     /* Print */
     @media print {
-      body { background: #fff; padding: 0; font-size: 9pt; }
-      .page { max-width: none; padding: 0; box-shadow: none; margin: 0; min-height: auto; }
+      @page { size: A4; margin: 20mm 18mm 20mm 18mm; }
+      body { background: #fff; padding: 0; font-size: 9pt; width: 100%; }
+      .page { width: 100%; max-width: none; padding: 0; box-shadow: none; margin: 0; min-height: auto; }
       .no-print { display: none; }
       .section { page-break-inside: avoid; }
+      table { page-break-inside: auto; }
+      tr { page-break-inside: avoid; page-break-after: auto; }
+      thead { display: table-header-group; }
+      tfoot { display: table-footer-group; }
+      .track-map { page-break-inside: avoid; }
     }
   </style>
 </head>
