@@ -405,10 +405,20 @@ function toLocalDatetime(d: Date | string): string {
 }
 
 // Convert datetime-local string (from <input>) to ISO string with correct timezone offset
-// e.g. "2026-05-18T14:14" → "2026-05-18T14:14:00+03:00" (preserves local time meaning)
+// e.g. "2026-05-18T14:14" (local time in Moscow UTC+3) → "2026-05-18T11:14:00.000Z" (UTC)
+// IMPORTANT: We use the Date(year, month, day, hour, minute) constructor which ALWAYS
+// interprets arguments as local time, avoiding the inconsistent behavior of new Date(string)
+// which may interpret "2026-05-18T14:14" as UTC in some environments.
 function localDatetimeToISO(dtLocal: string | null | undefined): string | null {
   if (!dtLocal) return null
-  // Create a Date from the datetime-local string (browser treats it as local time)
+  // Try manual parsing first for reliability
+  const match = dtLocal.match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})/)
+  if (match) {
+    const [, year, month, day, hour, minute] = match.map(Number)
+    const d = new Date(year, month - 1, day, hour, minute, 0, 0)
+    if (!isNaN(d.getTime())) return d.toISOString()
+  }
+  // Fallback: try standard Date parsing
   const d = new Date(dtLocal)
   if (isNaN(d.getTime())) return null
   return d.toISOString()
@@ -3911,8 +3921,8 @@ function TripsTab({ trips, equipment, crews, routeTemplates, onOpenDetail, onAdd
     setRouteMapLoading(true)
     try {
       const coords = pts.map(p => `${p.longitude},${p.latitude}`).join(';')
-      const osrmUrl = `https://router.project-osrm.org/route/v1/driving/${coords}?overview=full&geometries=geojson`
-      const res = await fetch(osrmUrl)
+      // Use backend proxy to avoid CORS issues
+      const res = await fetch(`/api/osrm-route?coords=${encodeURIComponent(coords)}`)
       const data = await res.json()
       if (data.routes && data.routes.length > 0) {
         const route = data.routes[0]
@@ -3922,7 +3932,8 @@ function TripsTab({ trips, equipment, crews, routeTemplates, onOpenDetail, onAdd
         const routeCoords = pts.map(p => ({ lat: p.latitude!, lng: p.longitude! }))
         setRouteMapData({ trips: [{ distance: 0, startDate: new Date().toISOString(), endDate: new Date().toISOString(), points: routeCoords.map((c: any, i: number) => ({ ...c, speed: 60, time: new Date(Date.now() + i * 60000).toISOString() })) }], parkings: [], stops: [] })
       }
-    } catch {
+    } catch (err) {
+      console.error('[Route Map] OSRM fetch failed:', err)
       const routeCoords = pts.map(p => ({ lat: p.latitude!, lng: p.longitude! }))
       setRouteMapData({ trips: [{ distance: 0, startDate: new Date().toISOString(), endDate: new Date().toISOString(), points: routeCoords.map((c: any, i: number) => ({ ...c, speed: 60, time: new Date(Date.now() + i * 60000).toISOString() })) }], parkings: [], stops: [] })
     }
@@ -4242,6 +4253,7 @@ function TripDetailDialog({ open, onOpenChange, trip, loading, crews, onEdit, on
   const [tripSaved, setTripSaved] = useState(false)
   const [savingTrip, setSavingTrip] = useState(false)
   const [showRouteMap, setShowRouteMap] = useState(false)
+  const [selectedTripIndex, setSelectedTripIndex] = useState<number | null>(null)
   const [routeMapLoading, setRouteMapLoading] = useState(false)
   const [routeMapTrackData, setRouteMapTrackData] = useState<any>(null)
 
@@ -4257,7 +4269,25 @@ function TripDetailDialog({ open, onOpenChange, trip, loading, crews, onEdit, on
     setTripSaved(false)
     setShowRouteMap(false)
     setRouteMapTrackData(null)
+    setSelectedTripIndex(null)
   }, [trip?.id])
+
+  // Filtered track data: when a specific trip segment is selected, show only that segment on the map
+  const mapTrackData = useMemo(() => {
+    if (!trackData) return null
+    const trips = (trackData as any).trips
+    if (selectedTripIndex != null && trips && trips[selectedTripIndex]) {
+      return {
+        track: (trackData as any).track,
+        trips: [trips[selectedTripIndex]],
+        parkings: [],
+        stops: [],
+        refuels: [],
+        plums: [],
+      }
+    }
+    return trackData
+  }, [trackData, selectedTripIndex])
 
   // Auto-load track when dialog opens or trip changes (sensor comparison only on request)
   useEffect(() => {
@@ -4720,15 +4750,15 @@ function TripDetailDialog({ open, onOpenChange, trip, loading, crews, onEdit, on
                 return allPoints.length >= 2 ? (
                 <div className="mt-1 space-y-2">
                   <Button variant="outline" size="sm" className="h-7 text-[10px] gap-1 w-full" onClick={async () => {
-                    if (showRouteMap) { setShowRouteMap(false); return }
+                    if (showRouteMap) { setShowRouteMap(false); setRouteMapTrackData(null); return }
                     const pts = allPoints
                     if (pts.length < 2) return
                     setShowRouteMap(true)
                     setRouteMapLoading(true)
                     try {
                       const coords = pts.map(p => `${p.longitude},${p.latitude}`).join(';')
-                      const osrmUrl = `https://router.project-osrm.org/route/v1/driving/${coords}?overview=full&geometries=geojson`
-                      const res = await fetch(osrmUrl)
+                      // Use backend proxy to avoid CORS issues
+                      const res = await fetch(`/api/osrm-route?coords=${encodeURIComponent(coords)}`)
                       const data = await res.json()
                       if (data.routes && data.routes.length > 0) {
                         const route = data.routes[0]
@@ -4750,7 +4780,8 @@ function TripDetailDialog({ open, onOpenChange, trip, loading, crews, onEdit, on
                         }
                         setRouteMapTrackData({ trips: [fakeTrip], parkings: [], stops: [] })
                       }
-                    } catch {
+                    } catch (err) {
+                      console.error('[Route Map] OSRM fetch failed:', err)
                       const routeCoords = pts.map(p => ({ lat: p.latitude!, lng: p.longitude! }))
                       const fakeTrip = {
                         distance: 0, startDate: t.startDate || new Date().toISOString(), endDate: t.endDate || new Date().toISOString(),
@@ -5066,7 +5097,7 @@ function TripDetailDialog({ open, onOpenChange, trip, loading, crews, onEdit, on
                   {trackData && !trackLoading && (
                     <>
                       <div className="h-64 rounded-lg overflow-hidden border">
-                        <TrackerMap trackers={[]} trackData={trackData as any} />
+                        <TrackerMap trackers={[]} trackData={mapTrackData as any} />
                       </div>
                       {/* Track summary badges */}
                       <div className="flex flex-wrap items-center gap-2 text-[10px]">
@@ -5079,28 +5110,36 @@ function TripDetailDialog({ open, onOpenChange, trip, loading, crews, onEdit, on
                           📏 {((trackData as any).trips?.reduce((s: number, trip: any) => s + (Number(trip.distance) || 0), 0) ?? 0).toFixed(1)} км
                         </span>
                       </div>
-                      {/* Collapsible trip segments */}
+                      {/* Speed legend */}
+                      <div className="flex flex-wrap items-center gap-2 text-[9px]">
+                        <span className="text-muted-foreground font-medium">Скорость:</span>
+                        <span className="flex items-center gap-1"><span className="w-3 h-1 rounded" style={{background:'#9ca3af'}} />0</span>
+                        <span className="flex items-center gap-1"><span className="w-3 h-1 rounded" style={{background:'#22c55e'}} />≤20</span>
+                        <span className="flex items-center gap-1"><span className="w-3 h-1 rounded" style={{background:'#84cc16'}} />≤40</span>
+                        <span className="flex items-center gap-1"><span className="w-3 h-1 rounded" style={{background:'#eab308'}} />≤60</span>
+                        <span className="flex items-center gap-1"><span className="w-3 h-1 rounded" style={{background:'#f97316'}} />≤80</span>
+                        <span className="flex items-center gap-1"><span className="w-3 h-1 rounded" style={{background:'#ef4444'}} />&gt;80</span>
+                        <span className="text-muted-foreground">км/ч</span>
+                      </div>
+                      {/* Clickable trip segments — same style as MapTab */}
                       {(trackData as any).trips && (trackData as any).trips.length > 0 && (
-                        <Collapsible>
-                          <CollapsibleTrigger className="flex items-center gap-1.5 w-full text-[10px] font-medium text-muted-foreground hover:text-foreground transition-colors py-1 px-2 rounded hover:bg-muted/50">
-                            <ChevronRight className="size-3 transition-transform [[data-state=open]>&]:rotate-90" />
+                        <div className="space-y-1">
+                          <div className="flex items-center gap-1.5 text-[10px] font-medium text-muted-foreground">
+                            <ChevronRight className="size-3" />
                             Сегменты поездок ({(trackData as any).trips.length})
-                          </CollapsibleTrigger>
-                          <CollapsibleContent>
-                            <div className="space-y-1 mt-1">
-                              {(trackData as any).trips.map((trip: any, i: number) => (
-                                <div key={i} className="flex items-center gap-2 text-[10px] rounded px-2 py-1.5 bg-muted/50">
-                                  <span className="font-semibold text-emerald-600">🟢</span>
-                                  <span>{formatTime(trip.startDate)}</span>
-                                  <span className="text-muted-foreground">→</span>
-                                  <span className="font-semibold text-red-500">🔴</span>
-                                  <span>{formatTime(trip.endDate)}</span>
-                                  <span className="text-muted-foreground ml-auto">{trip.distance != null ? trip.distance.toFixed(1) : '—'} км • {trip.points?.length || 0} т.</span>
-                                </div>
-                              ))}
+                          </div>
+                          {(trackData as any).trips.map((trip: any, i: number) => (
+                            <div key={i} className={`flex items-center gap-2 text-[10px] rounded px-2 py-1.5 cursor-pointer transition-colors ${selectedTripIndex === i ? 'bg-primary/15 ring-1 ring-primary/40' : 'bg-muted/50 hover:bg-muted'}`} onClick={() => setSelectedTripIndex(selectedTripIndex === i ? null : i)}>
+                              <span className="font-semibold text-emerald-600">🟢 A</span>
+                              <span>{formatTime(trip.startDate)}</span>
+                              <span className="text-muted-foreground">→</span>
+                              <span className="font-semibold text-red-500">🔴 B</span>
+                              <span>{formatTime(trip.endDate)}</span>
+                              <span className="text-muted-foreground ml-auto">{trip.distance != null ? trip.distance.toFixed(1) : '—'} км • {trip.points?.length || 0} т.</span>
+                              {selectedTripIndex === i && <X className="size-3 text-muted-foreground shrink-0" />}
                             </div>
-                          </CollapsibleContent>
-                        </Collapsible>
+                          ))}
+                        </div>
                       )}
                       {/* Collapsible parkings */}
                       {(trackData as any).parkings && (trackData as any).parkings.length > 0 && (
@@ -5118,6 +5157,28 @@ function TripDetailDialog({ open, onOpenChange, trip, loading, crews, onEdit, on
                                   <span className="text-muted-foreground">→</span>
                                   <span>{formatTime(p.endDate)}</span>
                                   <span className="text-muted-foreground ml-auto">{p.duration ? `${Math.floor(p.duration / 60)} мин` : '—'}</span>
+                                </div>
+                              ))}
+                            </div>
+                          </CollapsibleContent>
+                        </Collapsible>
+                      )}
+                      {/* Collapsible stops */}
+                      {(trackData as any).stops && (trackData as any).stops.length > 0 && (
+                        <Collapsible>
+                          <CollapsibleTrigger className="flex items-center gap-1.5 w-full text-[10px] font-medium text-muted-foreground hover:text-foreground transition-colors py-1 px-2 rounded hover:bg-muted/50">
+                            <ChevronRight className="size-3 transition-transform [[data-state=open]>&]:rotate-90" />
+                            Остановки ({(trackData as any).stops.length})
+                          </CollapsibleTrigger>
+                          <CollapsibleContent>
+                            <div className="space-y-1 mt-1">
+                              {(trackData as any).stops.map((s: any, i: number) => (
+                                <div key={i} className="flex items-center gap-2 text-[10px] rounded px-2 py-1.5 bg-orange-50/50 dark:bg-orange-900/10">
+                                  <span>⏸</span>
+                                  <span>{formatTime(s.startDate)}</span>
+                                  <span className="text-muted-foreground">→</span>
+                                  <span>{formatTime(s.endDate)}</span>
+                                  <span className="text-muted-foreground ml-auto">{s.duration ? `${Math.floor(s.duration / 60)} мин` : '—'}</span>
                                 </div>
                               ))}
                             </div>
