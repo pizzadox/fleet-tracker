@@ -404,6 +404,16 @@ function toLocalDatetime(d: Date | string): string {
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`
 }
 
+// Convert datetime-local string (from <input>) to ISO string with correct timezone offset
+// e.g. "2026-05-18T14:14" → "2026-05-18T14:14:00+03:00" (preserves local time meaning)
+function localDatetimeToISO(dtLocal: string | null | undefined): string | null {
+  if (!dtLocal) return null
+  // Create a Date from the datetime-local string (browser treats it as local time)
+  const d = new Date(dtLocal)
+  if (isNaN(d.getTime())) return null
+  return d.toISOString()
+}
+
 // Convert Date to local date string for <input type="date">
 function toLocalDate(d: Date | string): string {
   const date = new Date(d)
@@ -4701,16 +4711,21 @@ function TripDetailDialog({ open, onOpenChange, trip, loading, crews, onEdit, on
                   </div>
                 </div>
               )}
-              {t.routePoints && t.routePoints.some(p => p.latitude && p.longitude) && (
+              {(() => {
+                // Collect all points with coordinates from routePoints or routeTemplate
+                const allPoints = [
+                  ...(t.routePoints || []).filter(p => p.latitude && p.longitude),
+                  ...(!t.routePoints?.length && t.routeTemplate?.points ? t.routeTemplate.points.filter(p => p.latitude && p.longitude) : [])
+                ]
+                return allPoints.length >= 2 ? (
                 <div className="mt-1 space-y-2">
                   <Button variant="outline" size="sm" className="h-7 text-[10px] gap-1 w-full" onClick={async () => {
                     if (showRouteMap) { setShowRouteMap(false); return }
-                    const pts = t.routePoints!.filter(p => p.latitude && p.longitude)
+                    const pts = allPoints
                     if (pts.length < 2) return
                     setShowRouteMap(true)
                     setRouteMapLoading(true)
                     try {
-                      // Build OSRM route URL
                       const coords = pts.map(p => `${p.longitude},${p.latitude}`).join(';')
                       const osrmUrl = `https://router.project-osrm.org/route/v1/driving/${coords}?overview=full&geometries=geojson`
                       const res = await fetch(osrmUrl)
@@ -4718,23 +4733,8 @@ function TripDetailDialog({ open, onOpenChange, trip, loading, crews, onEdit, on
                       if (data.routes && data.routes.length > 0) {
                         const route = data.routes[0]
                         const routeCoords = route.geometry.coordinates.map((c: number[]) => ({ lat: c[1], lng: c[0] }))
-                        // Build TrackData format for TrackerMap
                         const fakeTrip = {
                           distance: route.distance / 1000,
-                          startDate: t.startDate || new Date().toISOString(),
-                          endDate: t.endDate || new Date().toISOString(),
-                          points: routeCoords.map((c: any, i: number) => ({
-                            ...c,
-                            speed: 60,
-                            time: new Date(Date.now() + i * 60000).toISOString()
-                          }))
-                        }
-                        setRouteMapTrackData({ trips: [fakeTrip], parkings: [], stops: [] })
-                      } else {
-                        // Fallback: just draw straight lines between points
-                        const routeCoords = pts.map(p => ({ lat: p.latitude!, lng: p.longitude! }))
-                        const fakeTrip = {
-                          distance: 0,
                           startDate: t.startDate || new Date().toISOString(),
                           endDate: t.endDate || new Date().toISOString(),
                           points: routeCoords.map((c: any, i: number) => ({
@@ -4742,18 +4742,19 @@ function TripDetailDialog({ open, onOpenChange, trip, loading, crews, onEdit, on
                           }))
                         }
                         setRouteMapTrackData({ trips: [fakeTrip], parkings: [], stops: [] })
+                      } else {
+                        const routeCoords = pts.map(p => ({ lat: p.latitude!, lng: p.longitude! }))
+                        const fakeTrip = {
+                          distance: 0, startDate: t.startDate || new Date().toISOString(), endDate: t.endDate || new Date().toISOString(),
+                          points: routeCoords.map((c: any, i: number) => ({ ...c, speed: 60, time: new Date(Date.now() + i * 60000).toISOString() }))
+                        }
+                        setRouteMapTrackData({ trips: [fakeTrip], parkings: [], stops: [] })
                       }
                     } catch {
-                      // Fallback: straight lines
-                      const pts2 = t.routePoints!.filter(p => p.latitude && p.longitude)
-                      const routeCoords = pts2.map(p => ({ lat: p.latitude!, lng: p.longitude! }))
+                      const routeCoords = pts.map(p => ({ lat: p.latitude!, lng: p.longitude! }))
                       const fakeTrip = {
-                        distance: 0,
-                        startDate: t.startDate || new Date().toISOString(),
-                        endDate: t.endDate || new Date().toISOString(),
-                        points: routeCoords.map((c: any, i: number) => ({
-                          ...c, speed: 60, time: new Date(Date.now() + i * 60000).toISOString()
-                        }))
+                        distance: 0, startDate: t.startDate || new Date().toISOString(), endDate: t.endDate || new Date().toISOString(),
+                        points: routeCoords.map((c: any, i: number) => ({ ...c, speed: 60, time: new Date(Date.now() + i * 60000).toISOString() }))
                       }
                       setRouteMapTrackData({ trips: [fakeTrip], parkings: [], stops: [] })
                     }
@@ -4762,9 +4763,9 @@ function TripDetailDialog({ open, onOpenChange, trip, loading, crews, onEdit, on
                     <Map className="size-3" />{showRouteMap ? 'Скрыть карту маршрута' : 'Показать маршрут на карте'}
                   </Button>
                   {showRouteMap && (
-                    <div className="rounded-lg overflow-hidden border">
+                    <div className="h-64 rounded-lg overflow-hidden border">
                       {routeMapLoading ? (
-                        <div className="h-64 flex items-center justify-center bg-muted/30">
+                        <div className="h-full flex items-center justify-center bg-muted/30">
                           <Loader2 className="size-5 animate-spin text-muted-foreground" />
                           <span className="ml-2 text-xs text-muted-foreground">Расчёт маршрута...</span>
                         </div>
@@ -4774,7 +4775,8 @@ function TripDetailDialog({ open, onOpenChange, trip, loading, crews, onEdit, on
                     </div>
                   )}
                 </div>
-              )}
+                ) : null
+              })()}
               <DetailSection title="Груз" icon={<Package className="size-3.5" />}>
                 <DetailRow label="Груз" value={t.cargo} />
                 <DetailRow label="Вес (т)" value={t.cargoWeight?.toString()} />
@@ -5504,6 +5506,10 @@ function TripFormDialog({ open, onOpenChange, editData, equipmentId, equipmentLi
       const method = editData ? 'PUT' : 'POST'
       const payload = {
         ...form,
+        // Convert datetime-local strings to ISO (preserves local time via browser's Date)
+        startDate: localDatetimeToISO(f('startDate')),
+        endDate: localDatetimeToISO(f('endDate')),
+        plannedEndDate: localDatetimeToISO(f('plannedEndDate')),
         routePoints: routePoints.map((p, i) => ({
           id: p.id || undefined,
           name: p.name || `Точка ${i + 1}`,
@@ -5511,8 +5517,8 @@ function TripFormDialog({ open, onOpenChange, editData, equipmentId, equipmentLi
           latitude: p.latitude ? parseFloat(p.latitude) : null,
           longitude: p.longitude ? parseFloat(p.longitude) : null,
           sortOrder: i,
-          plannedArrival: p.plannedArrival || null,
-          plannedDeparture: p.plannedDeparture || null,
+          plannedArrival: localDatetimeToISO(p.plannedArrival),
+          plannedDeparture: localDatetimeToISO(p.plannedDeparture),
           distanceFromPrev: p.distanceFromPrev ? parseFloat(p.distanceFromPrev) : null,
           notes: p.notes || null,
         })),
