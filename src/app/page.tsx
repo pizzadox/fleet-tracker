@@ -3987,10 +3987,17 @@ function TripsTab({ trips, equipment, crews, routeTemplates, onOpenDetail, onAdd
                               'bg-primary/10 text-primary'
                             }`}>{i + 1}</span>
                             <span className="truncate">{p.name}</span>
-                            {p.distanceFromPrev != null && p.distanceFromPrev > 0 && <span className="text-sky-600 dark:text-sky-400 ml-auto">+{p.distanceFromPrev.toFixed(1)}км</span>}
+                            {p.plannedArrival && <span className="text-muted-foreground text-[9px] ml-auto shrink-0">{p.plannedArrival}</span>}
+                            {p.distanceFromPrev != null && p.distanceFromPrev > 0 && <span className="text-sky-600 dark:text-sky-400 shrink-0">+{p.distanceFromPrev.toFixed(1)}км</span>}
                           </div>
                         ))}
                         {rt.points.length > 4 && <div className="text-[9px] text-muted-foreground pl-4">...ещё {rt.points.length - 4} точек</div>}
+                      </div>
+                    )}
+                    {rt.estimatedDuration && (
+                      <div className="flex items-center gap-1 text-[10px] text-muted-foreground pl-2">
+                        <Clock className="size-2.5" />
+                        {rt.estimatedDuration >= 60 ? `${Math.floor(rt.estimatedDuration / 60)} ч ${rt.estimatedDuration % 60 > 0 ? (rt.estimatedDuration % 60) + ' мин' : ''}` : `${rt.estimatedDuration} мин`}
                       </div>
                     )}
                     <div className="flex gap-1 pt-0.5">
@@ -5382,10 +5389,23 @@ function TripFormDialog({ open, onOpenChange, editData, equipmentId, equipmentLi
                       if (tmpl.endPoint) setF('endPoint', tmpl.endPoint)
                       if (tmpl.totalDistance) setF('distance', tmpl.totalDistance.toString())
                       if (tmpl.points.length > 0) {
+                        // Convert HH:mm template times to datetime-local format using trip start date
+                        const tripStart = f('startDate') || toLocalDatetime(new Date())
+                        const tripDate = tripStart.split('T')[0] // "YYYY-MM-DD"
+                        const toDatetime = (time: string | null | undefined) => {
+                          if (!time) return ''
+                          // If already in datetime-local format, return as-is
+                          if (time.includes('T')) return time
+                          // If HH:mm format, combine with trip date
+                          if (/^\d{2}:\d{2}$/.test(time)) return `${tripDate}T${time}`
+                          return time
+                        }
                         setRoutePoints(tmpl.points.map(p => ({
                           name: p.name, address: p.address || '', latitude: p.latitude?.toString() || '',
-                          longitude: p.longitude?.toString() || '', plannedArrival: p.plannedArrival || '',
-                          plannedDeparture: p.plannedDeparture || '', distanceFromPrev: p.distanceFromPrev?.toString() || '',
+                          longitude: p.longitude?.toString() || '',
+                          plannedArrival: toDatetime(p.plannedArrival),
+                          plannedDeparture: toDatetime(p.plannedDeparture),
+                          distanceFromPrev: p.distanceFromPrev?.toString() || '',
                           notes: p.notes || '',
                         })))
                       }
@@ -5734,6 +5754,45 @@ function RouteTemplateFormDialog({ open, setOpen, editData, onSaved }: {
     })
   }
 
+  const recalcTimes = (pts: typeof points, avgSpeedKmh = 60, stopMin = 15) => {
+    let currentMinutes: number | null = null
+    return pts.map((p, i) => {
+      // Use first point's existing arrival time as start, or default 08:00
+      if (i === 0) {
+        const startTime = p.plannedArrival || '08:00'
+        const [h, m] = startTime.split(':').map(Number)
+        if (isFinite(h) && isFinite(m)) currentMinutes = h * 60 + m
+        else currentMinutes = 8 * 60
+        const depMin = currentMinutes + (p.plannedDeparture ? 0 : stopMin)
+        const depTime = p.plannedDeparture || `${String(Math.floor(depMin / 60) % 24).padStart(2, '0')}:${String(depMin % 60).padStart(2, '0')}`
+        if (!p.plannedDeparture) currentMinutes = depMin
+        else {
+          const [dh, dm] = p.plannedDeparture.split(':').map(Number)
+          if (isFinite(dh) && isFinite(dm)) currentMinutes = dh * 60 + dm
+        }
+        return { ...p, plannedArrival: p.plannedArrival || startTime, plannedDeparture: depTime }
+      }
+      if (currentMinutes === null) return p
+      const dist = parseFloat(p.distanceFromPrev) || 0
+      const travelMin = Math.round((dist / avgSpeedKmh) * 60)
+      currentMinutes += travelMin
+      const arrTime = p.plannedArrival || `${String(Math.floor(currentMinutes / 60) % 24).padStart(2, '0')}:${String(currentMinutes % 60).padStart(2, '0')}`
+      const depMin = currentMinutes + (p.plannedDeparture ? 0 : stopMin)
+      const depTime = p.plannedDeparture || `${String(Math.floor(depMin / 60) % 24).padStart(2, '0')}:${String(depMin % 60).padStart(2, '0')}`
+      if (!p.plannedArrival) currentMinutes = currentMinutes
+      else {
+        const [ah, am] = p.plannedArrival.split(':').map(Number)
+        if (isFinite(ah) && isFinite(am)) currentMinutes = ah * 60 + am
+      }
+      if (!p.plannedDeparture) currentMinutes = depMin
+      else {
+        const [dh, dm] = p.plannedDeparture.split(':').map(Number)
+        if (isFinite(dh) && isFinite(dm)) currentMinutes = dh * 60 + dm
+      }
+      return { ...p, plannedArrival: arrTime, plannedDeparture: depTime }
+    })
+  }
+
   const geocodeAddress = async (address: string): Promise<{ latitude: number; longitude: number; address: string } | null> => {
     try {
       const res = await fetch(`/api/glonass/geocode?address=${encodeURIComponent(address)}`)
@@ -5753,7 +5812,7 @@ function RouteTemplateFormDialog({ open, setOpen, editData, onSaved }: {
       if (result) {
         const newPoints = [...points]
         newPoints[idx] = { ...newPoints[idx], latitude: result.latitude.toString(), longitude: result.longitude.toString(), address: result.address }
-        setPoints(recalcDistances(newPoints))
+        setPoints(recalcTimes(recalcDistances(newPoints)))
         toast.success(`Координаты: ${result.latitude.toFixed(4)}, ${result.longitude.toFixed(4)}`)
       } else { toast.error('Не удалось определить координаты') }
     } catch { toast.error('Ошибка геокодирования') }
@@ -5796,7 +5855,6 @@ function RouteTemplateFormDialog({ open, setOpen, editData, onSaved }: {
       const ordered = order.map(i => geocoded[coordIndices[i]])
       const noCoords = geocoded.filter(p => !p.latitude && !p.longitude)
       const result = recalcDistances([...ordered, ...noCoords])
-      setPoints(result)
 
       if (result.length > 0) {
         if (result[0].address) setF('startPoint', result[0].address)
@@ -5804,7 +5862,16 @@ function RouteTemplateFormDialog({ open, setOpen, editData, onSaved }: {
       }
       const totalDist = result.reduce((s, p) => s + (parseFloat(p.distanceFromPrev) || 0), 0)
       if (totalDist > 0) setF('totalDistance', totalDist.toFixed(1))
-      toast.success(`Маршрут оптимизирован: ${totalDist.toFixed(1)} км`)
+      // Auto-calculate estimated duration (avg speed 60 km/h)
+      const avgSpeedKmh = 60
+      const estMin = Math.round((totalDist / avgSpeedKmh) * 60)
+      if (estMin > 0) setF('estimatedDuration', estMin.toString())
+      // Auto-calculate point arrival/departure times
+      const resultWithTimes = recalcTimes(result, avgSpeedKmh, 15)
+      setPoints(resultWithTimes)
+      const hrs = Math.floor(estMin / 60)
+      const mins = estMin % 60
+      toast.success(`Маршрут оптимизирован: ${totalDist.toFixed(1)} км, ~${hrs > 0 ? hrs + ' ч ' : ''}${mins > 0 ? mins + ' мин' : ''}`)
     } catch { toast.error('Ошибка оптимизации') }
     setOptimizing(false)
   }
@@ -5813,7 +5880,7 @@ function RouteTemplateFormDialog({ open, setOpen, editData, onSaved }: {
     setPoints(prev => [...prev, { name: `Точка ${prev.length + 1}`, address: '', latitude: '', longitude: '', plannedArrival: '', plannedDeparture: '', distanceFromPrev: '', notes: '' }])
   }
   const removePoint = (idx: number) => {
-    setPoints(prev => recalcDistances(prev.filter((_, i) => i !== idx)))
+    setPoints(prev => recalcTimes(recalcDistances(prev.filter((_, i) => i !== idx))))
   }
   const movePoint = (idx: number, dir: 'up' | 'down') => {
     const newIdx = dir === 'up' ? idx - 1 : idx + 1
@@ -5822,12 +5889,13 @@ function RouteTemplateFormDialog({ open, setOpen, editData, onSaved }: {
     const temp = newPoints[idx]
     newPoints[idx] = newPoints[newIdx]
     newPoints[newIdx] = temp
-    setPoints(recalcDistances(newPoints))
+    setPoints(recalcTimes(recalcDistances(newPoints)))
   }
   const updatePoint = (idx: number, field: string, value: string) => {
     setPoints(prev => {
       const newPoints = prev.map((p, i) => i === idx ? { ...p, [field]: value } : p)
-      if (field === 'latitude' || field === 'longitude') return recalcDistances(newPoints)
+      if (field === 'latitude' || field === 'longitude') return recalcTimes(recalcDistances(newPoints))
+      if (field === 'plannedArrival' || field === 'plannedDeparture') return recalcTimes(newPoints, 60, 15)
       return newPoints
     })
   }
@@ -5836,10 +5904,14 @@ function RouteTemplateFormDialog({ open, setOpen, editData, onSaved }: {
     if (!f('name').trim()) { toast.error('Укажите название маршрута'); return }
     setSaving(true)
     try {
+      // Auto-calculate estimatedDuration if not set but distance is known
+      const dist = parseFloat(f('totalDistance')) || totalDist
+      const estDur = f('estimatedDuration') ? f('estimatedDuration') : (dist > 0 ? Math.round((dist / 60) * 60).toString() : '')
       const url = editData ? `/api/route-templates/${editData.id}` : '/api/route-templates'
       const method = editData ? 'PUT' : 'POST'
       const payload = {
         ...form,
+        estimatedDuration: estDur,
         points: points.map((p, i) => ({
           id: p.id || undefined,
           name: p.name || `Точка ${i + 1}`,
@@ -5878,7 +5950,10 @@ function RouteTemplateFormDialog({ open, setOpen, editData, onSaved }: {
             <div><Label className="text-xs">Пункт отправления</Label><Input value={f('startPoint')} onChange={e => setF('startPoint', e.target.value)} placeholder="Москва" /></div>
             <div><Label className="text-xs">Пункт назначения</Label><Input value={f('endPoint')} onChange={e => setF('endPoint', e.target.value)} placeholder="Санкт-Петербург" /></div>
             <div><Label className="text-xs">Общее расстояние (км)</Label><Input type="number" value={f('totalDistance')} onChange={e => setF('totalDistance', e.target.value)} placeholder="700" /></div>
-            <div><Label className="text-xs">Ориентир. время (мин)</Label><Input type="number" value={f('estimatedDuration')} onChange={e => setF('estimatedDuration', e.target.value)} placeholder="480" /></div>
+            <div>
+              <Label className="text-xs">Ориентир. время (мин){totalDist > 0 && !f('estimatedDuration') && <span className="text-muted-foreground ml-1">~{Math.round((totalDist / 60) * 60)} мин при 60 км/ч</span>}</Label>
+              <Input type="number" value={f('estimatedDuration')} onChange={e => setF('estimatedDuration', e.target.value)} placeholder="480" />
+            </div>
           </div>
           <Separator />
           {/* Route points header */}
@@ -5928,8 +6003,8 @@ function RouteTemplateFormDialog({ open, setOpen, editData, onSaved }: {
                   <div className="grid grid-cols-4 gap-1.5">
                     <div><Label className="text-[10px] text-muted-foreground">Широта</Label><Input value={p.latitude} onChange={e => updatePoint(idx, 'latitude', e.target.value)} placeholder="55.75" className="h-7 text-[10px]" /></div>
                     <div><Label className="text-[10px] text-muted-foreground">Долгота</Label><Input value={p.longitude} onChange={e => updatePoint(idx, 'longitude', e.target.value)} placeholder="37.62" className="h-7 text-[10px]" /></div>
-                    <div><Label className="text-[10px] text-muted-foreground">Прибытие</Label><Input value={p.plannedArrival} onChange={e => updatePoint(idx, 'plannedArrival', e.target.value)} placeholder="08:00" className="h-7 text-[10px]" /></div>
-                    <div><Label className="text-[10px] text-muted-foreground">Отправл.</Label><Input value={p.plannedDeparture} onChange={e => updatePoint(idx, 'plannedDeparture', e.target.value)} placeholder="09:00" className="h-7 text-[10px]" /></div>
+                    <div><Label className="text-[10px] text-muted-foreground">Прибытие</Label><Input type="time" value={p.plannedArrival} onChange={e => updatePoint(idx, 'plannedArrival', e.target.value)} className="h-7 text-[10px]" /></div>
+                    <div><Label className="text-[10px] text-muted-foreground">Отправл.</Label><Input type="time" value={p.plannedDeparture} onChange={e => updatePoint(idx, 'plannedDeparture', e.target.value)} className="h-7 text-[10px]" /></div>
                   </div>
                   {/* Distance + notes row */}
                   <div className="flex items-center gap-2">
