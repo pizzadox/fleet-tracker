@@ -1,11 +1,12 @@
 import { db } from '@/lib/db'
 import { NextRequest } from 'next/server'
+import sharp from 'sharp'
 
 // ═══════════════════════════════════════════════════════════════
 // GET /api/trips/[id]/print — Print-friendly trip report (HTML A4)
 // Includes: trip info, crew, fuel/mileage, track data (trips,
-// parkings, stops, refuels, plums), sensor comparison, finances
-// Map: clean SVG with track on white background + grid (no tiles)
+// parkings, stops, refuels, plums), finances
+// Map: raster PNG with OSM tiles + track overlay (via sharp)
 // ═══════════════════════════════════════════════════════════════
 
 const MOSCOW_TZ = 'Europe/Moscow'
@@ -552,37 +553,23 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
       </div>`
     }
 
-    // ═══ SVG Track Map — Clean, printable (no tiles) ═══
-    let trackSvg = ''
+    // ═══ Raster Track Map with OSM tiles (via sharp) ═══
+    let trackMapHtml = ''
     if (trackData && trackData.trips.length > 0) {
       const allPoints = trackData.trips.flatMap(t => t.points)
 
-      // Also include route template points for the map bounds
+      // Include route template/trip points for bounds
       const templatePoints = trip.routeTemplate?.points.filter(p => p.latitude != null && p.longitude != null) || []
       const tripRoutePoints = trip.routePoints?.filter(p => p.latitude != null && p.longitude != null) || []
 
       if (allPoints.length >= 2) {
-        const lats = allPoints.map(p => p.lat)
-        const lngs = allPoints.map(p => p.lng)
-
-        // Include template/trip route points in bounds
-        for (const tp of templatePoints) {
-          if (tp.latitude != null && tp.longitude != null) {
-            lats.push(tp.latitude)
-            lngs.push(tp.longitude)
-          }
-        }
-        for (const rp of tripRoutePoints) {
-          if (rp.latitude != null && rp.longitude != null) {
-            lats.push(rp.latitude)
-            lngs.push(rp.longitude)
-          }
-        }
+        // Calculate bounds
+        const lats = [...allPoints.map(p => p.lat), ...templatePoints.map(p => p.latitude!), ...tripRoutePoints.map(p => p.latitude!)]
+        const lngs = [...allPoints.map(p => p.lng), ...templatePoints.map(p => p.longitude!), ...tripRoutePoints.map(p => p.longitude!)]
 
         const minLat = Math.min(...lats), maxLat = Math.max(...lats)
         const minLng = Math.min(...lngs), maxLng = Math.max(...lngs)
 
-        // Add padding (15% on each side, minimum 0.005°)
         const padLat = (maxLat - minLat) * 0.15 || 0.005
         const padLng = (maxLng - minLng) * 0.15 || 0.005
         const boundsMinLat = minLat - padLat
@@ -590,204 +577,218 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
         const boundsMinLng = minLng - padLng
         const boundsMaxLng = maxLng + padLng
 
-        const svgW = 700, svgH = 380
+        const imgW = 700, imgH = 380
+
+        // Determine zoom level
         const rangeLat = boundsMaxLat - boundsMinLat
         const rangeLng = boundsMaxLng - boundsMinLng
-        const scale = Math.min(svgW / rangeLng, svgH / rangeLat)
+        let zoom = 13
+        for (let z = 5; z <= 16; z++) {
+          const tilesAtZoom = 360 / Math.pow(2, z)
+          if (tilesAtZoom * 4 > Math.max(rangeLng, rangeLat)) { zoom = z; break }
+          zoom = z
+        }
+        zoom = Math.max(8, Math.min(15, zoom))
 
-        // Center the map in SVG
-        const usedW = rangeLng * scale
-        const usedH = rangeLat * scale
-        const offsetX = (svgW - usedW) / 2
-        const offsetY = (svgH - usedH) / 2
+        // Tile math helpers
+        const lng2tile = (lng: number, z: number) => Math.floor((lng + 180) / 360 * Math.pow(2, z))
+        const lat2tile = (lat: number, z: number) => Math.floor((1 - Math.log(Math.tan(lat * Math.PI / 180) + 1 / Math.cos(lat * Math.PI / 180)) / Math.PI) / 2 * Math.pow(2, z))
 
-        const toX = (lng: number) => offsetX + (lng - boundsMinLng) * scale
-        const toY = (lat: number) => offsetY + (boundsMaxLat - lat) * scale
+        // Calculate tile range
+        const minTileX = lng2tile(boundsMinLng, zoom)
+        const maxTileX = lng2tile(boundsMaxLng, zoom)
+        const minTileY = lat2tile(boundsMaxLat, zoom)  // Note: Y is inverted
+        const maxTileY = lat2tile(boundsMinLat, zoom)
 
-        // ── Build coordinate grid lines ──
-        let gridLines = ''
-        // Determine grid spacing based on range
-        const range = Math.max(rangeLat, rangeLng)
-        let gridStep: number
-        if (range > 5) gridStep = 1
-        else if (range > 2) gridStep = 0.5
-        else if (range > 0.5) gridStep = 0.1
-        else if (range > 0.1) gridStep = 0.05
-        else gridStep = 0.01
-
-        // Latitude grid lines (horizontal)
-        const firstGridLat = Math.ceil(boundsMinLat / gridStep) * gridStep
-        for (let lat = firstGridLat; lat <= boundsMaxLat; lat += gridStep) {
-          const y = toY(lat)
-          const isMajor = Math.abs(lat % (gridStep * 2)) < gridStep * 0.01
-          gridLines += `<line x1="${offsetX}" y1="${y.toFixed(2)}" x2="${offsetX + usedW}" y2="${y.toFixed(2)}" stroke="${isMajor ? '#cbd5e1' : '#e2e8f0'}" stroke-width="${isMajor ? 0.6 : 0.3}" stroke-dasharray="${isMajor ? 'none' : '2,2'}"/>`
-          // Label
-          gridLines += `<text x="${offsetX - 3}" y="${(y + 3).toFixed(2)}" font-size="6" fill="#94a3b8" text-anchor="end">${lat.toFixed(gridStep < 0.1 ? 2 : gridStep < 1 ? 1 : 0)}°</text>`
+        // Calculate pixel coordinates for bounds
+        const lng2px = (lng: number) => {
+          const tileX = (lng + 180) / 360 * Math.pow(2, zoom) * 256
+          return tileX - minTileX * 256
+        }
+        const lat2px = (lat: number) => {
+          const latRad = lat * Math.PI / 180
+          const tileY = (1 - Math.log(Math.tan(latRad) + 1 / Math.cos(latRad)) / Math.PI) / 2 * Math.pow(2, zoom) * 256
+          return tileY - minTileY * 256
         }
 
-        // Longitude grid lines (vertical)
-        const firstGridLng = Math.ceil(boundsMinLng / gridStep) * gridStep
-        for (let lng = firstGridLng; lng <= boundsMaxLng; lng += gridStep) {
-          const x = toX(lng)
-          const isMajor = Math.abs(lng % (gridStep * 2)) < gridStep * 0.01
-          gridLines += `<line x1="${x.toFixed(2)}" y1="${offsetY}" x2="${x.toFixed(2)}" y2="${offsetY + usedH}" stroke="${isMajor ? '#cbd5e1' : '#e2e8f0'}" stroke-width="${isMajor ? 0.6 : 0.3}" stroke-dasharray="${isMajor ? 'none' : '2,2'}"/>`
-          // Label
-          gridLines += `<text x="${x.toFixed(2)}" y="${offsetY + usedH + 9}" font-size="6" fill="#94a3b8" text-anchor="middle">${lng.toFixed(gridStep < 0.1 ? 2 : gridStep < 1 ? 1 : 0)}°</text>`
-        }
+        // Total pixel dimensions of tile grid
+        const tilesX = maxTileX - minTileX + 1
+        const tilesY = maxTileY - minTileY + 1
+        const fullW = tilesX * 256
+        const fullH = tilesY * 256
 
-        // ── Build track path with speed-based segment coloring ──
-        let trackSegmentPaths = ''
-        for (const t of trackData.trips) {
-          if (t.points.length < 2) continue
-          // Group consecutive points with same speed color into segments
-          let currentColor = speedColor(t.points[0].speed)
-          let segStart = 0
-          for (let i = 1; i <= t.points.length; i++) {
-            const newColor = i < t.points.length ? speedColor(t.points[i].speed) : ''
-            if (newColor !== currentColor || i === t.points.length) {
-              // Build segment from segStart to i-1 (inclusive)
+        // Scale to fit output dimensions while maintaining aspect ratio
+        const scaleF = Math.min(imgW / fullW, imgH / fullH)
+        const finalW = Math.round(fullW * scaleF)
+        const finalH = Math.round(fullH * scaleF)
+
+        // Map coordinate to output image pixel
+        const toX = (lng: number) => Math.round(lng2px(lng) * scaleF)
+        const toY = (lat: number) => Math.round(lat2px(lat) * scaleF)
+
+        try {
+          // Fetch all tiles
+          const tileBuffers: Map<string, Buffer> = new Map()
+          const tilePromises: Promise<void>[] = []
+          for (let tx = minTileX; tx <= maxTileX; tx++) {
+            for (let ty = minTileY; ty <= maxTileY; ty++) {
+              const key = `${tx}_${ty}`
+              const tileUrl = `https://tile.openstreetmap.org/${zoom}/${tx}/${ty}.png`
+              tilePromises.push(
+                fetch(tileUrl, {
+                  headers: { 'User-Agent': 'FleetTracker/1.0' },
+                  signal: AbortSignal.timeout(5000),
+                }).then(async res => {
+                  if (res.ok) {
+                    const buf = Buffer.from(await res.arrayBuffer())
+                    tileBuffers.set(key, buf)
+                  }
+                }).catch(() => {})
+              )
+            }
+          }
+          await Promise.all(tilePromises)
+
+          // Composite tiles into single image using sharp
+          const tileComposites: sharp.OverlayOptions[] = []
+          for (let tx = minTileX; tx <= maxTileX; tx++) {
+            for (let ty = minTileY; ty <= maxTileY; ty++) {
+              const key = `${tx}_${ty}`
+              const buf = tileBuffers.get(key)
+              if (!buf) continue
+              const offsetX = (tx - minTileX) * 256
+              const offsetY = (ty - minTileY) * 256
+              tileComposites.push({ input: buf, left: offsetX, top: offsetY })
+            }
+          }
+
+          let mapImageBase64 = ''
+          if (tileComposites.length > 0) {
+            // Create base image and composite tiles
+            const baseImage = sharp({ create: { width: fullW, height: fullH, channels: 3, background: { r: 232, g: 228, b: 216 } } })
+            const tiledPng = await baseImage.composite(tileComposites).png().toBuffer()
+
+            // Build SVG overlay for track + markers
+            // Build track paths
+            let trackPaths = ''
+            for (const t of trackData.trips) {
+              if (t.points.length < 2) continue
               let d = ''
-              for (let j = segStart; j < i; j++) {
-                const p = t.points[j]
-                d += `${j === segStart ? 'M' : 'L'}${toX(p.lng).toFixed(2)},${toY(p.lat).toFixed(2)} `
+              for (let i = 0; i < t.points.length; i++) {
+                const p = t.points[i]
+                d += `${i === 0 ? 'M' : 'L'}${toX(p.lng)},${toY(p.lat)} `
               }
-              trackSegmentPaths += `<path d="${d}" fill="none" stroke="${currentColor}" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" opacity="0.85"/>`
-              currentColor = newColor
-              segStart = i - 1
+              // White shadow
+              trackPaths += `<path d="${d}" fill="none" stroke="white" stroke-width="6" stroke-linecap="round" stroke-linejoin="round" opacity="0.8"/>`
+              // Track line
+              trackPaths += `<path d="${d}" fill="none" stroke="#2563eb" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>`
             }
-          }
-        }
 
-        // Also a single white shadow/outline for contrast
-        let mainTrackD = ''
-        for (const t of trackData.trips) {
-          for (let i = 0; i < t.points.length; i++) {
-            const p = t.points[i]
-            const cmd = i === 0 && !mainTrackD ? 'M' : 'L'
-            mainTrackD += `${cmd}${toX(p.lng).toFixed(2)},${toY(p.lat).toFixed(2)} `
-          }
-        }
-
-        // ── Parking markers ──
-        let parkingMarkers = ''
-        for (const p of trackData.parkings) {
-          if (p.lat != null && p.lng != null) {
-            const px = toX(p.lng), py = toY(p.lat)
-            parkingMarkers += `<rect x="${(px - 5).toFixed(2)}" y="${(py - 5).toFixed(2)}" width="10" height="10" fill="#f59e0b" stroke="#fff" stroke-width="1.5" rx="2"/>`
-          }
-        }
-
-        // ── Refuel markers ──
-        let refuelMarkers = ''
-        for (const r of trackData.refuels) {
-          if (r.lat != null && r.lng != null) {
-            refuelMarkers += `<circle cx="${toX(r.lng).toFixed(2)}" cy="${toY(r.lat).toFixed(2)}" r="6" fill="#10b981" stroke="#fff" stroke-width="1.5"/>`
-          }
-        }
-
-        // ── Plum markers ──
-        let plumMarkers = ''
-        for (const p of trackData.plums) {
-          if (p.lat != null && p.lng != null) {
-            plumMarkers += `<circle cx="${toX(p.lng).toFixed(2)}" cy="${toY(p.lat).toFixed(2)}" r="6" fill="#ef4444" stroke="#fff" stroke-width="1.5"/>`
-          }
-        }
-
-        // ── Route template waypoint markers (numbered circles) ──
-        let waypointMarkers = ''
-        const allWaypoints: Array<{ lat: number; lng: number; name: string; order: number }> = []
-
-        // Add template points
-        if (trip.routeTemplate && templatePoints.length > 0) {
-          for (let i = 0; i < templatePoints.length; i++) {
-            const pt = templatePoints[i]
-            if (pt.latitude != null && pt.longitude != null) {
-              allWaypoints.push({ lat: pt.latitude, lng: pt.longitude, name: pt.name, order: i + 1 })
+            // Speed-colored segments
+            for (const t of trackData.trips) {
+              if (t.points.length < 2) continue
+              let currentColor = speedColor(t.points[0].speed)
+              let segStart = 0
+              for (let i = 1; i <= t.points.length; i++) {
+                const newColor = i < t.points.length ? speedColor(t.points[i].speed) : ''
+                if (newColor !== currentColor || i === t.points.length) {
+                  let d = ''
+                  for (let j = segStart; j < i; j++) {
+                    const p = t.points[j]
+                    d += `${j === segStart ? 'M' : 'L'}${toX(p.lng)},${toY(p.lat)} `
+                  }
+                  trackPaths += `<path d="${d}" fill="none" stroke="${currentColor}" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" opacity="0.7"/>`
+                  currentColor = newColor
+                  segStart = i - 1
+                }
+              }
             }
-          }
-        }
 
-        // Add trip route points if no template points
-        if (allWaypoints.length === 0 && tripRoutePoints.length > 0) {
-          for (let i = 0; i < tripRoutePoints.length; i++) {
-            const pt = tripRoutePoints[i]
-            if (pt.latitude != null && pt.longitude != null) {
-              allWaypoints.push({ lat: pt.latitude, lng: pt.longitude, name: pt.name, order: i + 1 })
+            // Parking markers
+            for (const p of trackData.parkings) {
+              if (p.lat != null && p.lng != null) {
+                const px = toX(p.lng), py = toY(p.lat)
+                trackPaths += `<rect x="${px - 5}" y="${py - 5}" width="10" height="10" fill="#f59e0b" stroke="white" stroke-width="1.5" rx="2"/>`
+              }
             }
+
+            // Refuel markers
+            for (const r of trackData.refuels) {
+              if (r.lat != null && r.lng != null) {
+                trackPaths += `<circle cx="${toX(r.lng)}" cy="${toY(r.lat)}" r="6" fill="#10b981" stroke="white" stroke-width="1.5"/>`
+              }
+            }
+
+            // Plum markers
+            for (const p of trackData.plums) {
+              if (p.lat != null && p.lng != null) {
+                trackPaths += `<circle cx="${toX(p.lng)}" cy="${toY(p.lat)}" r="6" fill="#ef4444" stroke="white" stroke-width="1.5"/>`
+              }
+            }
+
+            // Route waypoints (numbered circles)
+            const allWaypoints: Array<{lat: number; lng: number; name: string; order: number}> = []
+            if (trip.routeTemplate && templatePoints.length > 0) {
+              for (let i = 0; i < templatePoints.length; i++) {
+                const pt = templatePoints[i]
+                allWaypoints.push({ lat: pt.latitude!, lng: pt.longitude!, name: pt.name, order: i + 1 })
+              }
+            }
+            if (allWaypoints.length === 0 && tripRoutePoints.length > 0) {
+              for (let i = 0; i < tripRoutePoints.length; i++) {
+                const pt = tripRoutePoints[i]
+                allWaypoints.push({ lat: pt.latitude!, lng: pt.longitude!, name: pt.name, order: i + 1 })
+              }
+            }
+            for (const wp of allWaypoints) {
+              const wx = toX(wp.lng), wy = toY(wp.lat)
+              trackPaths += `<circle cx="${wx}" cy="${wy}" r="10" fill="#6366f1" stroke="white" stroke-width="2"/>`
+              trackPaths += `<text x="${wx}" y="${wy + 4}" text-anchor="middle" font-size="9" fill="white" font-weight="bold" font-family="sans-serif">${wp.order}</text>`
+              if (wp.name) {
+                trackPaths += `<text x="${wx + 14}" y="${wy + 4}" font-size="8" fill="#4338ca" font-weight="600" stroke="white" stroke-width="3" paint-order="stroke" font-family="sans-serif">${wp.name}</text>`
+              }
+            }
+
+            // Start marker
+            const startPt = trackData.trips[0].points[0]
+            const lastTrip = trackData.trips[trackData.trips.length - 1]
+            const endPt = lastTrip.points[lastTrip.points.length - 1]
+
+            trackPaths += `<circle cx="${toX(startPt.lng)}" cy="${toY(startPt.lat)}" r="9" fill="#22c55e" stroke="white" stroke-width="2.5"/>`
+            trackPaths += `<text x="${toX(startPt.lng)}" y="${toY(startPt.lat) - 14}" text-anchor="middle" font-size="11" fill="#166534" font-weight="bold" stroke="white" stroke-width="3" paint-order="stroke" font-family="sans-serif">Старт</text>`
+            trackPaths += `<circle cx="${toX(endPt.lng)}" cy="${toY(endPt.lat)}" r="9" fill="#ef4444" stroke="white" stroke-width="2.5"/>`
+            trackPaths += `<text x="${toX(endPt.lng)}" y="${toY(endPt.lat) - 14}" text-anchor="middle" font-size="11" fill="#991b1b" font-weight="bold" stroke="white" stroke-width="3" paint-order="stroke" font-family="sans-serif">Финиш</text>`
+
+            // Scale bar
+            const mapWidthKm = haversineKm(boundsMinLat, boundsMinLng, boundsMinLat, boundsMaxLng)
+            const niceScaleDistances = [0.1, 0.2, 0.5, 1, 2, 5, 10, 20, 50, 100, 200, 500, 1000]
+            let scaleBarKm = niceScaleDistances[0]
+            for (const d of niceScaleDistances) { if (d < mapWidthKm * 0.2) scaleBarKm = d }
+            const scaleBarPx = Math.round((scaleBarKm / mapWidthKm) * fullW)
+            const scaleLabel = scaleBarKm >= 1 ? `${scaleBarKm} км` : `${(scaleBarKm * 1000).toFixed(0)} м`
+            trackPaths += `<rect x="8" y="${fullH - 16}" width="${scaleBarPx}" height="4" fill="#475569" rx="1"/>`
+            trackPaths += `<text x="${8 + scaleBarPx / 2}" y="${fullH - 20}" text-anchor="middle" font-size="10" fill="#475569" font-weight="500" font-family="sans-serif">${scaleLabel}</text>`
+
+            // OSM attribution
+            trackPaths += `<text x="${fullW - 4}" y="${fullH - 4}" text-anchor="end" font-size="8" fill="#9ca3af" font-family="sans-serif">© OpenStreetMap</text>`
+
+            const svgOverlay = Buffer.from(`<svg width="${fullW}" height="${fullH}" xmlns="http://www.w3.org/2000/svg">${trackPaths}</svg>`)
+
+            // Composite: tiles + SVG overlay
+            const finalImage = await sharp(tiledPng)
+              .composite([{ input: svgOverlay, left: 0, top: 0 }])
+              .resize(finalW, finalH)
+              .png()
+              .toBuffer()
+
+            mapImageBase64 = `data:image/png;base64,${finalImage.toString('base64')}`
           }
-        }
 
-        for (const wp of allWaypoints) {
-          const wx = toX(wp.lng), wy = toY(wp.lat)
-          // Circle with number
-          waypointMarkers += `<circle cx="${wx.toFixed(2)}" cy="${wy.toFixed(2)}" r="10" fill="#6366f1" stroke="#fff" stroke-width="2"/>`
-          waypointMarkers += `<text x="${wx.toFixed(2)}" y="${(wy + 3.5).toFixed(2)}" text-anchor="middle" font-size="9" fill="#fff" font-weight="bold">${wp.order}</text>`
-          // Name label
-          if (wp.name) {
-            waypointMarkers += `<text x="${(wx + 14).toFixed(2)}" y="${(wy + 3).toFixed(2)}" font-size="7" fill="#4338ca" font-weight="600" stroke="#fff" stroke-width="2.5" paint-order="stroke">${wp.name}</text>`
-          }
-        }
-
-        // ── Start/End markers ──
-        const startPt = trackData.trips[0].points[0]
-        const lastTrip = trackData.trips[trackData.trips.length - 1]
-        const endPt = lastTrip.points[lastTrip.points.length - 1]
-
-        // ── Scale bar ──
-        // Find a nice round distance that fits ~15-20% of map width
-        const mapWidthKm = haversineKm(boundsMinLat, boundsMinLng, boundsMinLat, boundsMaxLng)
-        const niceScaleDistances = [0.1, 0.2, 0.5, 1, 2, 5, 10, 20, 50, 100, 200, 500, 1000]
-        let scaleBarKm = niceScaleDistances[0]
-        for (const d of niceScaleDistances) {
-          if (d < mapWidthKm * 0.2) scaleBarKm = d
-        }
-        // Convert scale bar km to SVG pixels
-        const scaleBarPx = (scaleBarKm / mapWidthKm) * usedW
-        const scaleBarX = offsetX + 8
-        const scaleBarY = offsetY + usedH - 12
-        const scaleLabel = scaleBarKm >= 1 ? `${scaleBarKm} км` : `${(scaleBarKm * 1000).toFixed(0)} м`
-
-        trackSvg = `
+          // Build HTML with image
+          if (mapImageBase64) {
+            trackMapHtml = `
         <div class="track-map">
-          <svg viewBox="0 0 ${svgW} ${svgH}" xmlns="http://www.w3.org/2000/svg" style="width:100%;max-width:${svgW}px;height:auto;">
-            <defs>
-              <clipPath id="mapClip"><rect x="0" y="0" width="${svgW}" height="${svgH}" rx="4"/></clipPath>
-            </defs>
-            <g clip-path="url(#mapClip)">
-              <!-- White background -->
-              <rect width="100%" height="100%" fill="#f8fafc" rx="4"/>
-              <!-- Border frame -->
-              <rect x="${offsetX}" y="${offsetY}" width="${usedW.toFixed(2)}" height="${usedH.toFixed(2)}" fill="#fff" stroke="#d1d5db" stroke-width="0.5" rx="2"/>
-              <!-- Coordinate grid -->
-              ${gridLines}
-              <!-- Track shadow for visibility -->
-              <path d="${mainTrackD}" fill="none" stroke="#fff" stroke-width="5" stroke-linecap="round" stroke-linejoin="round" opacity="0.8"/>
-              <!-- Speed-colored track segments -->
-              ${trackSegmentPaths}
-              <!-- Parking markers -->
-              ${parkingMarkers}
-              <!-- Refuel markers -->
-              ${refuelMarkers}
-              <!-- Plum markers -->
-              ${plumMarkers}
-              <!-- Route template waypoints -->
-              ${waypointMarkers}
-              <!-- Start marker -->
-              <circle cx="${toX(startPt.lng).toFixed(2)}" cy="${toY(startPt.lat).toFixed(2)}" r="9" fill="#22c55e" stroke="#fff" stroke-width="2.5"/>
-              <text x="${toX(startPt.lng).toFixed(2)}" y="${(toY(startPt.lat) - 14).toFixed(2)}" text-anchor="middle" font-size="11" fill="#166534" font-weight="bold" stroke="#fff" stroke-width="3" paint-order="stroke">Старт</text>
-              <!-- End marker -->
-              <circle cx="${toX(endPt.lng).toFixed(2)}" cy="${toY(endPt.lat).toFixed(2)}" r="9" fill="#ef4444" stroke="#fff" stroke-width="2.5"/>
-              <text x="${toX(endPt.lng).toFixed(2)}" y="${(toY(endPt.lat) - 14).toFixed(2)}" text-anchor="middle" font-size="11" fill="#991b1b" font-weight="bold" stroke="#fff" stroke-width="3" paint-order="stroke">Финиш</text>
-              <!-- Corner coordinate labels -->
-              <text x="${(offsetX + 3).toFixed(2)}" y="${(offsetY + 9).toFixed(2)}" font-size="6" fill="#94a3b8">${boundsMaxLat.toFixed(4)}°ш</text>
-              <text x="${(offsetX + 3).toFixed(2)}" y="${(offsetY + usedH - 3).toFixed(2)}" font-size="6" fill="#94a3b8">${boundsMinLat.toFixed(4)}°ш</text>
-              <text x="${(offsetX + usedW - 3).toFixed(2)}" y="${(offsetY + 9).toFixed(2)}" font-size="6" fill="#94a3b8" text-anchor="end">${boundsMaxLng.toFixed(4)}°д</text>
-              <text x="${(offsetX + usedW - 3).toFixed(2)}" y="${(offsetY + usedH - 3).toFixed(2)}" font-size="6" fill="#94a3b8" text-anchor="end">${boundsMinLng.toFixed(4)}°д</text>
-              <!-- Scale bar -->
-              <rect x="${scaleBarX.toFixed(2)}" y="${scaleBarY.toFixed(2)}" width="${scaleBarPx.toFixed(2)}" height="4" fill="#475569" rx="1"/>
-              <text x="${(scaleBarX + scaleBarPx / 2).toFixed(2)}" y="${(scaleBarY - 3).toFixed(2)}" text-anchor="middle" font-size="7" fill="#475569" font-weight="500">${scaleLabel}</text>
-            </g>
-          </svg>
+          <img src="${mapImageBase64}" style="width:100%;max-width:${finalW}px;height:auto;border-radius:4px;" alt="Трек на карте"/>
           <div class="map-legend">
             <span class="legend-item"><span class="legend-dot" style="background:#22c55e"></span> Старт</span>
             <span class="legend-item"><span class="legend-dot" style="background:#ef4444"></span> Финиш</span>
@@ -795,10 +796,14 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
             <span class="legend-item"><span class="legend-dot" style="background:#f59e0b"></span> Стоянка</span>
             <span class="legend-item"><span class="legend-dot" style="background:#10b981"></span> Заправка</span>
             <span class="legend-item"><span class="legend-dot" style="background:#ef4444;border-radius:50%"></span> Слив</span>
-            ${allWaypoints.length > 0 ? '<span class="legend-item"><span class="legend-dot" style="background:#6366f1;border-radius:50%"></span> Пункт маршр.</span>' : ''}
-            <span class="legend-item" style="margin-left:auto;font-size:6.5pt;color:#9ca3af">${allPoints.length} точек трека</span>
+            ${(templatePoints.length > 0 || tripRoutePoints.length > 0) ? '<span class="legend-item"><span class="legend-dot" style="background:#6366f1;border-radius:50%"></span> Пункт маршр.</span>' : ''}
+            <span class="legend-item" style="margin-left:auto;font-size:6.5pt;color:#9ca3af">z${zoom} | ${allPoints.length} точек</span>
           </div>
         </div>`
+          }
+        } catch (mapErr) {
+          console.error('[Print] Map rendering error:', mapErr)
+        }
       }
     }
 
@@ -990,30 +995,11 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
     </div>
   </div>` : ''}
 
-  <!-- ═══ SENSOR COMPARISON ═══ -->
-  ${mainCompRows ? `
-  <div class="section">
-    <div class="section-title">Показания датчиков (старт / финиш)</div>
-    <table>
-      <thead><tr><th>Показатель</th><th>Старт</th><th>Финиш</th><th>Разница</th></tr></thead>
-      <tbody>${mainCompRows}</tbody>
-    </table>
-  </div>` : ''}
-
-  ${sensorCompRows ? `
-  <div class="section">
-    <div class="section-title">Датчики</div>
-    <table>
-      <thead><tr><th>Датчик</th><th>Старт</th><th>Финиш</th><th>Разница</th></tr></thead>
-      <tbody>${sensorCompRows}</tbody>
-    </table>
-  </div>` : ''}
-
   <!-- ═══ TRACK MAP ═══ -->
-  ${trackSvg ? `
+  ${trackMapHtml ? `
   <div class="section">
     <div class="section-title">Трек на карте</div>
-    ${trackSvg}
+    ${trackMapHtml}
   </div>` : ''}
 
   <!-- ═══ TRACK TABLE: TRIPS ═══ -->
