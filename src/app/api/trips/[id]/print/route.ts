@@ -570,25 +570,40 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
         const minLat = Math.min(...lats), maxLat = Math.max(...lats)
         const minLng = Math.min(...lngs), maxLng = Math.max(...lngs)
 
-        const padLat = (maxLat - minLat) * 0.08 || 0.005
-        const padLng = (maxLng - minLng) * 0.08 || 0.005
+        // Small padding so route fills most of the map
+        const padLat = (maxLat - minLat) * 0.06 || 0.003
+        const padLng = (maxLng - minLng) * 0.06 || 0.003
         const boundsMinLat = minLat - padLat
         const boundsMaxLat = maxLat + padLat
         const boundsMinLng = minLng - padLng
         const boundsMaxLng = maxLng + padLng
 
-        const imgW = 760, imgH = 500
+        // A4 printable area: ~174mm wide → ~660px at 96dpi. Use full width, reasonable height.
+        const imgW = 760, imgH = 480
 
-        // Determine zoom level
+        // ═══ Determine optimal zoom level ═══
+        // We want the route to fill the image. At each zoom level, one tile = 256px covers
+        // a certain number of degrees. We pick the highest zoom where the route still fits.
         const rangeLat = boundsMaxLat - boundsMinLat
         const rangeLng = boundsMaxLng - boundsMinLng
-        let zoom = 13
-        for (let z = 5; z <= 16; z++) {
-          const tilesAtZoom = 360 / Math.pow(2, z)
-          if (tilesAtZoom * 4 > Math.max(rangeLng, rangeLat)) { zoom = z; break }
-          zoom = z
+
+        // Degrees per pixel at zoom z: 360 / (256 * 2^z) horizontally
+        // We need: rangeLng / (degPerPx * imgW) <= 1 AND rangeLat / (degPerPx_lat * imgH) <= 1
+        // Simplification: at high zoom, meters per pixel ≈ cos(lat)*156543/2^z
+        // For simplicity, pick zoom where tile count covering the route is reasonable
+        let zoom = 16
+        for (let z = 18; z >= 8; z--) {
+          // How many tiles does the range span at this zoom?
+          const tilesPerDeg = Math.pow(2, z) / 360
+          const tilesH = rangeLng * tilesPerDeg
+          const tilesV = rangeLat * tilesPerDeg / Math.cos((minLat + maxLat) / 2 * Math.PI / 180)
+          // Route fits in imgW/imgH if: tilesH*256 <= imgW AND tilesV*256 <= imgH
+          if (tilesH * 256 <= imgW * 1.2 && tilesV * 256 <= imgH * 1.2) {
+            zoom = z
+            break
+          }
         }
-        zoom = Math.max(8, Math.min(15, zoom))
+        zoom = Math.max(8, Math.min(16, zoom))
 
         // Tile math helpers
         const lng2tile = (lng: number, z: number) => Math.floor((lng + 180) / 360 * Math.pow(2, z))
@@ -627,27 +642,41 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
         const toY = (lat: number) => Math.round(lat2px(lat) * scaleF)
 
         try {
-          // Fetch all tiles
+          // Fetch all tiles — use OSM tile CDN with fallback servers
           const tileBuffers: Map<string, Buffer> = new Map()
-          const tilePromises: Promise<void>[] = []
-          for (let tx = minTileX; tx <= maxTileX; tx++) {
-            for (let ty = minTileY; ty <= maxTileY; ty++) {
-              const key = `${tx}_${ty}`
-              const tileUrl = `https://tile.openstreetmap.org/${zoom}/${tx}/${ty}.png`
-              tilePromises.push(
-                fetch(tileUrl, {
-                  headers: { 'User-Agent': 'FleetTracker/1.0' },
-                  signal: AbortSignal.timeout(5000),
-                }).then(async res => {
-                  if (res.ok) {
-                    const buf = Buffer.from(await res.arrayBuffer())
-                    tileBuffers.set(key, buf)
-                  }
-                }).catch(() => {})
-              )
+          const tileServers = [
+            (z: number, x: number, y: number) => `https://a.tile.openstreetmap.org/${z}/${x}/${y}.png`,
+            (z: number, x: number, y: number) => `https://b.tile.openstreetmap.org/${z}/${x}/${y}.png`,
+            (z: number, x: number, y: number) => `https://c.tile.openstreetmap.org/${z}/${x}/${y}.png`,
+          ]
+          // Limit total tiles to avoid excessive fetching (max ~20 tiles)
+          const totalTileCount = (maxTileX - minTileX + 1) * (maxTileY - minTileY + 1)
+          if (totalTileCount <= 25) {
+            const tilePromises: Promise<void>[] = []
+            for (let tx = minTileX; tx <= maxTileX; tx++) {
+              for (let ty = minTileY; ty <= maxTileY; ty++) {
+                const key = `${tx}_${ty}`
+                const serverIdx = ((tx + ty) % 3)
+                const tileUrl = tileServers[serverIdx](zoom, tx, ty)
+                tilePromises.push(
+                  fetch(tileUrl, {
+                    headers: { 'User-Agent': 'FleetTracker/1.0', 'Referer': 'https://www.openstreetmap.org/' },
+                    signal: AbortSignal.timeout(8000),
+                  }).then(async res => {
+                    if (res.ok) {
+                      const buf = Buffer.from(await res.arrayBuffer())
+                      if (buf.length > 200) tileBuffers.set(key, buf)
+                    }
+                  }).catch(() => {})
+                )
+              }
             }
+            // Wait for all tiles with a global timeout
+            await Promise.race([
+              Promise.allSettled(tilePromises),
+              new Promise<void>(r => setTimeout(r, 15000)), // 15s max for all tiles
+            ])
           }
-          await Promise.all(tilePromises)
 
           // Composite tiles into single image using sharp
           const tileComposites: sharp.OverlayOptions[] = []
@@ -663,10 +692,34 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
           }
 
           let mapImageBase64 = ''
-          if (tileComposites.length > 0) {
-            // Create base image and composite tiles
-            const baseImage = sharp({ create: { width: fullW, height: fullH, channels: 3, background: { r: 232, g: 228, b: 216 } } })
-            const tiledPng = await baseImage.composite(tileComposites).png().toBuffer()
+          // Always render the map — with tiles if available, or with a plain background + grid
+          {
+            // Create base image: if we have tiles, composite them; otherwise use a light background with grid
+            let tiledPng: Buffer
+            if (tileComposites.length > 0) {
+              const baseImage = sharp({ create: { width: fullW, height: fullH, channels: 3, background: { r: 232, g: 228, b: 216 } } })
+              tiledPng = await baseImage.composite(tileComposites).png().toBuffer()
+            } else {
+              // No tiles loaded — create a plain light background with coordinate grid
+              let gridSvg = `<svg width="${fullW}" height="${fullH}" xmlns="http://www.w3.org/2000/svg">
+                <rect width="${fullW}" height="${fullH}" fill="#f0efe7"/>`
+              // Draw lat/lng grid lines
+              const gridStep = 0.01 // ~1km grid
+              const startLngGrid = Math.floor(boundsMinLng / gridStep) * gridStep
+              const startLatGrid = Math.floor(boundsMinLat / gridStep) * gridStep
+              for (let gLng = startLngGrid; gLng <= boundsMaxLng; gLng += gridStep) {
+                const gx = toX(gLng)
+                gridSvg += `<line x1="${gx}" y1="0" x2="${gx}" y2="${fullH}" stroke="#d4d0c8" stroke-width="0.5"/>`
+              }
+              for (let gLat = startLatGrid; gLat <= boundsMaxLat; gLat += gridStep) {
+                const gy = toY(gLat)
+                gridSvg += `<line x1="0" y1="${gy}" x2="${fullW}" y2="${gy}" stroke="#d4d0c8" stroke-width="0.5"/>`
+              }
+              gridSvg += `</svg>`
+              const gridBuf = Buffer.from(gridSvg)
+              const baseImg = sharp({ create: { width: fullW, height: fullH, channels: 3, background: { r: 240, g: 239, b: 231 } } })
+              tiledPng = await baseImg.composite([{ input: gridBuf, left: 0, top: 0 }]).png().toBuffer()
+            }
 
             // Build SVG overlay for track + markers
             // Build track paths
@@ -788,7 +841,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
           if (mapImageBase64) {
             trackMapHtml = `
         <div class="track-map">
-          <img src="${mapImageBase64}" style="width:100%;max-width:${finalW}px;height:auto;border-radius:4px;" alt="Трек на карте"/>
+          <img src="${mapImageBase64}" style="width:100%;height:auto;border-radius:4px;display:block;" alt="Трек на карте"/>
           <div class="map-legend">
             <span class="legend-item"><span class="legend-dot" style="background:#22c55e"></span> Старт</span>
             <span class="legend-item"><span class="legend-dot" style="background:#ef4444"></span> Финиш</span>
