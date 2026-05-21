@@ -570,88 +570,83 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
         const minLat = Math.min(...lats), maxLat = Math.max(...lats)
         const minLng = Math.min(...lngs), maxLng = Math.max(...lngs)
 
-        // Small padding so route fills most of the map
-        const padLat = (maxLat - minLat) * 0.06 || 0.003
-        const padLng = (maxLng - minLng) * 0.06 || 0.003
+        // Padding so route doesn't touch edges (10% on each side)
+        const padLat = (maxLat - minLat) * 0.10 || 0.003
+        const padLng = (maxLng - minLng) * 0.10 || 0.003
         const boundsMinLat = minLat - padLat
         const boundsMaxLat = maxLat + padLat
         const boundsMinLng = minLng - padLng
         const boundsMaxLng = maxLng + padLng
 
-        // A4 printable area: ~174mm wide → ~660px at 96dpi. Use full width, reasonable height.
-        const imgW = 760, imgH = 480
+        // A4 printable area target dimensions
+        const imgW = 760, imgH = 500
 
         // ═══ Determine optimal zoom level ═══
-        // We want the route to fill the image. At each zoom level, one tile = 256px covers
-        // a certain number of degrees. We pick the highest zoom where the route still fits.
+        // Pick the highest zoom where the route (with padding) fits in imgW × imgH
         const rangeLat = boundsMaxLat - boundsMinLat
         const rangeLng = boundsMaxLng - boundsMinLng
+        const midLat = (minLat + maxLat) / 2
 
-        // Degrees per pixel at zoom z: 360 / (256 * 2^z) horizontally
-        // We need: rangeLng / (degPerPx * imgW) <= 1 AND rangeLat / (degPerPx_lat * imgH) <= 1
-        // Simplification: at high zoom, meters per pixel ≈ cos(lat)*156543/2^z
-        // For simplicity, pick zoom where tile count covering the route is reasonable
         let zoom = 16
         for (let z = 18; z >= 8; z--) {
-          // How many tiles does the range span at this zoom?
           const tilesPerDeg = Math.pow(2, z) / 360
           const tilesH = rangeLng * tilesPerDeg
-          const tilesV = rangeLat * tilesPerDeg / Math.cos((minLat + maxLat) / 2 * Math.PI / 180)
-          // Route fits in imgW/imgH if: tilesH*256 <= imgW AND tilesV*256 <= imgH
-          if (tilesH * 256 <= imgW * 1.2 && tilesV * 256 <= imgH * 1.2) {
+          const tilesV = rangeLat * tilesPerDeg / Math.cos(midLat * Math.PI / 180)
+          // Route fits if the pixel span at this zoom fits in imgW × imgH
+          if (tilesH * 256 <= imgW * 1.1 && tilesV * 256 <= imgH * 1.1) {
             zoom = z
             break
           }
         }
-        zoom = Math.max(8, Math.min(16, zoom))
+        zoom = Math.max(8, Math.min(18, zoom))
 
-        // Tile math helpers
-        const lng2tile = (lng: number, z: number) => Math.floor((lng + 180) / 360 * Math.pow(2, z))
-        const lat2tile = (lat: number, z: number) => Math.floor((1 - Math.log(Math.tan(lat * Math.PI / 180) + 1 / Math.cos(lat * Math.PI / 180)) / Math.PI) / 2 * Math.pow(2, z))
-
-        // Calculate tile range
-        const minTileX = lng2tile(boundsMinLng, zoom)
-        const maxTileX = lng2tile(boundsMaxLng, zoom)
-        const minTileY = lat2tile(boundsMaxLat, zoom)  // Note: Y is inverted
-        const maxTileY = lat2tile(boundsMinLat, zoom)
-
-        // Calculate pixel coordinates for bounds
-        const lng2px = (lng: number) => {
-          const tileX = (lng + 180) / 360 * Math.pow(2, zoom) * 256
-          return tileX - minTileX * 256
-        }
-        const lat2px = (lat: number) => {
+        // ═══ Web Mercator pixel math ═══
+        // Convert lat/lng to global pixel coordinates at the chosen zoom
+        const lng2globalPx = (lng: number) => (lng + 180) / 360 * Math.pow(2, zoom) * 256
+        const lat2globalPx = (lat: number) => {
           const latRad = lat * Math.PI / 180
-          const tileY = (1 - Math.log(Math.tan(latRad) + 1 / Math.cos(latRad)) / Math.PI) / 2 * Math.pow(2, zoom) * 256
-          return tileY - minTileY * 256
+          return (1 - Math.log(Math.tan(latRad) + 1 / Math.cos(latRad)) / Math.PI) / 2 * Math.pow(2, zoom) * 256
         }
 
-        // Total pixel dimensions of tile grid
-        const tilesX = maxTileX - minTileX + 1
-        const tilesY = maxTileY - minTileY + 1
-        const fullW = tilesX * 256
-        const fullH = tilesY * 256
+        // Calculate the route's bounding box in global pixels
+        const originX = lng2globalPx(boundsMinLng)
+        const originY = lat2globalPx(boundsMaxLat) // Y inverted: max lat = min Y
+        const endGlobalX = lng2globalPx(boundsMaxLng)
+        const endGlobalY = lat2globalPx(boundsMinLat) // min lat = max Y
 
-        // Scale to fit output dimensions while maintaining aspect ratio
+        // Image dimensions = route bounding box in pixels (NOT tile-aligned)
+        const fullW = Math.max(64, Math.round(endGlobalX - originX))
+        const fullH = Math.max(64, Math.round(endGlobalY - originY))
+
+        // Map lat/lng to image-local pixel coordinates
+        const toX = (lng: number) => Math.round(lng2globalPx(lng) - originX)
+        const toY = (lat: number) => Math.round(lat2globalPx(lat) - originY)
+
+        // Determine final output size: fit imgW × imgH maintaining aspect ratio
         const scaleF = Math.min(imgW / fullW, imgH / fullH)
         const finalW = Math.round(fullW * scaleF)
         const finalH = Math.round(fullH * scaleF)
 
-        // Map coordinate to output image pixel
-        const toX = (lng: number) => Math.round(lng2px(lng) * scaleF)
-        const toY = (lat: number) => Math.round(lat2px(lat) * scaleF)
-
         try {
-          // Fetch all tiles — use OSM tile CDN with fallback servers
+          // ═══ Fetch OSM tiles that overlap with the route area ═══
           const tileBuffers: Map<string, Buffer> = new Map()
           const tileServers = [
             (z: number, x: number, y: number) => `https://a.tile.openstreetmap.org/${z}/${x}/${y}.png`,
             (z: number, x: number, y: number) => `https://b.tile.openstreetmap.org/${z}/${x}/${y}.png`,
             (z: number, x: number, y: number) => `https://c.tile.openstreetmap.org/${z}/${x}/${y}.png`,
           ]
-          // Limit total tiles to avoid excessive fetching (max ~20 tiles)
+
+          // Tile range that overlaps with the route bounding box
+          const lng2tile = (lng: number, z: number) => Math.floor((lng + 180) / 360 * Math.pow(2, z))
+          const lat2tile = (lat: number, z: number) => Math.floor((1 - Math.log(Math.tan(lat * Math.PI / 180) + 1 / Math.cos(lat * Math.PI / 180)) / Math.PI) / 2 * Math.pow(2, z))
+
+          const minTileX = lng2tile(boundsMinLng, zoom)
+          const maxTileX = lng2tile(boundsMaxLng, zoom)
+          const minTileY = lat2tile(boundsMaxLat, zoom)
+          const maxTileY = lat2tile(boundsMinLat, zoom)
+
           const totalTileCount = (maxTileX - minTileX + 1) * (maxTileY - minTileY + 1)
-          if (totalTileCount <= 25) {
+          if (totalTileCount <= 30) {
             const tilePromises: Promise<void>[] = []
             for (let tx = minTileX; tx <= maxTileX; tx++) {
               for (let ty = minTileY; ty <= maxTileY; ty++) {
@@ -671,40 +666,41 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
                 )
               }
             }
-            // Wait for all tiles with a global timeout
             await Promise.race([
               Promise.allSettled(tilePromises),
-              new Promise<void>(r => setTimeout(r, 15000)), // 15s max for all tiles
+              new Promise<void>(r => setTimeout(r, 15000)),
             ])
           }
 
-          // Composite tiles into single image using sharp
+          // Composite tiles into the route bounding box image
+          // Tiles are positioned relative to the image origin (originX, originY)
           const tileComposites: sharp.OverlayOptions[] = []
           for (let tx = minTileX; tx <= maxTileX; tx++) {
             for (let ty = minTileY; ty <= maxTileY; ty++) {
               const key = `${tx}_${ty}`
               const buf = tileBuffers.get(key)
               if (!buf) continue
-              const offsetX = (tx - minTileX) * 256
-              const offsetY = (ty - minTileY) * 256
+              // Tile's global pixel position relative to image origin
+              const tileGlobalX = tx * 256
+              const tileGlobalY = ty * 256
+              const offsetX = Math.round(tileGlobalX - originX)
+              const offsetY = Math.round(tileGlobalY - originY)
               tileComposites.push({ input: buf, left: offsetX, top: offsetY })
             }
           }
 
           let mapImageBase64 = ''
-          // Always render the map — with tiles if available, or with a plain background + grid
           {
-            // Create base image: if we have tiles, composite them; otherwise use a light background with grid
+            // Create base image at route bounding box dimensions
             let tiledPng: Buffer
             if (tileComposites.length > 0) {
               const baseImage = sharp({ create: { width: fullW, height: fullH, channels: 3, background: { r: 232, g: 228, b: 216 } } })
               tiledPng = await baseImage.composite(tileComposites).png().toBuffer()
             } else {
-              // No tiles loaded — create a plain light background with coordinate grid
+              // No tiles — plain background with grid
               let gridSvg = `<svg width="${fullW}" height="${fullH}" xmlns="http://www.w3.org/2000/svg">
                 <rect width="${fullW}" height="${fullH}" fill="#f0efe7"/>`
-              // Draw lat/lng grid lines
-              const gridStep = 0.01 // ~1km grid
+              const gridStep = 0.01
               const startLngGrid = Math.floor(boundsMinLng / gridStep) * gridStep
               const startLatGrid = Math.floor(boundsMinLat / gridStep) * gridStep
               for (let gLng = startLngGrid; gLng <= boundsMaxLng; gLng += gridStep) {
@@ -722,7 +718,6 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
             }
 
             // Build SVG overlay for track + markers
-            // Build track paths
             let trackPaths = ''
             for (const t of trackData.trips) {
               if (t.points.length < 2) continue
@@ -731,9 +726,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
                 const p = t.points[i]
                 d += `${i === 0 ? 'M' : 'L'}${toX(p.lng)},${toY(p.lat)} `
               }
-              // White shadow
               trackPaths += `<path d="${d}" fill="none" stroke="white" stroke-width="8" stroke-linecap="round" stroke-linejoin="round" opacity="0.8"/>`
-              // Track line
               trackPaths += `<path d="${d}" fill="none" stroke="#2563eb" stroke-width="4.5" stroke-linecap="round" stroke-linejoin="round"/>`
             }
 
@@ -802,7 +795,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
               }
             }
 
-            // Start marker
+            // Start/End markers
             const startPt = trackData.trips[0].points[0]
             const lastTrip = trackData.trips[trackData.trips.length - 1]
             const endPt = lastTrip.points[lastTrip.points.length - 1]
@@ -825,11 +818,23 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
             // OSM attribution
             trackPaths += `<text x="${fullW - 4}" y="${fullH - 4}" text-anchor="end" font-size="8" fill="#9ca3af" font-family="sans-serif">© OpenStreetMap</text>`
 
-            const svgOverlay = Buffer.from(`<svg width="${fullW}" height="${fullH}" xmlns="http://www.w3.org/2000/svg">${trackPaths}</svg>`)
+            // SVG overlay with explicit dimensions and viewBox
+            const svgOverlay = Buffer.from(`<svg width="${fullW}" height="${fullH}" viewBox="0 0 ${fullW} ${fullH}" xmlns="http://www.w3.org/2000/svg">${trackPaths}</svg>`)
 
-            // Composite: tiles + SVG overlay
-            const finalImage = await sharp(tiledPng)
-              .composite([{ input: svgOverlay, left: 0, top: 0 }])
+            // Step 1: Render SVG overlay to PNG
+            const overlayPng = await sharp(svgOverlay)
+              .resize(fullW, fullH)
+              .png()
+              .toBuffer()
+
+            // Step 2: Composite overlay onto tiled background
+            const compositedPng = await sharp(tiledPng)
+              .composite([{ input: overlayPng, left: 0, top: 0 }])
+              .png()
+              .toBuffer()
+
+            // Step 3: Resize to final output dimensions
+            const finalImage = await sharp(compositedPng)
               .resize(finalW, finalH)
               .png()
               .toBuffer()
