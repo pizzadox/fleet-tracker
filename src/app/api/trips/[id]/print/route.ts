@@ -570,14 +570,14 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
         const minLat = Math.min(...lats), maxLat = Math.max(...lats)
         const minLng = Math.min(...lngs), maxLng = Math.max(...lngs)
 
-        const padLat = (maxLat - minLat) * 0.15 || 0.005
-        const padLng = (maxLng - minLng) * 0.15 || 0.005
+        const padLat = (maxLat - minLat) * 0.08 || 0.005
+        const padLng = (maxLng - minLng) * 0.08 || 0.005
         const boundsMinLat = minLat - padLat
         const boundsMaxLat = maxLat + padLat
         const boundsMinLng = minLng - padLng
         const boundsMaxLng = maxLng + padLng
 
-        const imgW = 700, imgH = 380
+        const imgW = 760, imgH = 500
 
         // Determine zoom level
         const rangeLat = boundsMaxLat - boundsMinLat
@@ -679,9 +679,9 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
                 d += `${i === 0 ? 'M' : 'L'}${toX(p.lng)},${toY(p.lat)} `
               }
               // White shadow
-              trackPaths += `<path d="${d}" fill="none" stroke="white" stroke-width="6" stroke-linecap="round" stroke-linejoin="round" opacity="0.8"/>`
+              trackPaths += `<path d="${d}" fill="none" stroke="white" stroke-width="8" stroke-linecap="round" stroke-linejoin="round" opacity="0.8"/>`
               // Track line
-              trackPaths += `<path d="${d}" fill="none" stroke="#2563eb" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>`
+              trackPaths += `<path d="${d}" fill="none" stroke="#2563eb" stroke-width="4.5" stroke-linecap="round" stroke-linejoin="round"/>`
             }
 
             // Speed-colored segments
@@ -697,7 +697,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
                     const p = t.points[j]
                     d += `${j === segStart ? 'M' : 'L'}${toX(p.lng)},${toY(p.lat)} `
                   }
-                  trackPaths += `<path d="${d}" fill="none" stroke="${currentColor}" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" opacity="0.7"/>`
+                  trackPaths += `<path d="${d}" fill="none" stroke="${currentColor}" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round" opacity="0.7"/>`
                   currentColor = newColor
                   segStart = i - 1
                 }
@@ -742,8 +742,8 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
             }
             for (const wp of allWaypoints) {
               const wx = toX(wp.lng), wy = toY(wp.lat)
-              trackPaths += `<circle cx="${wx}" cy="${wy}" r="10" fill="#6366f1" stroke="white" stroke-width="2"/>`
-              trackPaths += `<text x="${wx}" y="${wy + 4}" text-anchor="middle" font-size="9" fill="white" font-weight="bold" font-family="sans-serif">${wp.order}</text>`
+              trackPaths += `<circle cx="${wx}" cy="${wy}" r="13" fill="#6366f1" stroke="white" stroke-width="2"/>`
+              trackPaths += `<text x="${wx}" y="${wy + 4}" text-anchor="middle" font-size="11" fill="white" font-weight="bold" font-family="sans-serif">${wp.order}</text>`
               if (wp.name) {
                 trackPaths += `<text x="${wx + 14}" y="${wy + 4}" font-size="8" fill="#4338ca" font-weight="600" stroke="white" stroke-width="3" paint-order="stroke" font-family="sans-serif">${wp.name}</text>`
               }
@@ -754,10 +754,10 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
             const lastTrip = trackData.trips[trackData.trips.length - 1]
             const endPt = lastTrip.points[lastTrip.points.length - 1]
 
-            trackPaths += `<circle cx="${toX(startPt.lng)}" cy="${toY(startPt.lat)}" r="9" fill="#22c55e" stroke="white" stroke-width="2.5"/>`
-            trackPaths += `<text x="${toX(startPt.lng)}" y="${toY(startPt.lat) - 14}" text-anchor="middle" font-size="11" fill="#166534" font-weight="bold" stroke="white" stroke-width="3" paint-order="stroke" font-family="sans-serif">Старт</text>`
-            trackPaths += `<circle cx="${toX(endPt.lng)}" cy="${toY(endPt.lat)}" r="9" fill="#ef4444" stroke="white" stroke-width="2.5"/>`
-            trackPaths += `<text x="${toX(endPt.lng)}" y="${toY(endPt.lat) - 14}" text-anchor="middle" font-size="11" fill="#991b1b" font-weight="bold" stroke="white" stroke-width="3" paint-order="stroke" font-family="sans-serif">Финиш</text>`
+            trackPaths += `<circle cx="${toX(startPt.lng)}" cy="${toY(startPt.lat)}" r="12" fill="#22c55e" stroke="white" stroke-width="2.5"/>`
+            trackPaths += `<text x="${toX(startPt.lng)}" y="${toY(startPt.lat) - 17}" text-anchor="middle" font-size="14" fill="#166534" font-weight="bold" stroke="white" stroke-width="3" paint-order="stroke" font-family="sans-serif">Старт</text>`
+            trackPaths += `<circle cx="${toX(endPt.lng)}" cy="${toY(endPt.lat)}" r="12" fill="#ef4444" stroke="white" stroke-width="2.5"/>`
+            trackPaths += `<text x="${toX(endPt.lng)}" y="${toY(endPt.lat) - 17}" text-anchor="middle" font-size="14" fill="#991b1b" font-weight="bold" stroke="white" stroke-width="3" paint-order="stroke" font-family="sans-serif">Финиш</text>`
 
             // Scale bar
             const mapWidthKm = haversineKm(boundsMinLat, boundsMinLng, boundsMinLat, boundsMaxLng)
@@ -943,7 +943,6 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
       <div class="field"><span class="label">Груз</span><span class="value">${trip.cargo || '—'}</span></div>
       <div class="field"><span class="label">Вес груза</span><span class="value">${trip.cargoWeight != null ? trip.cargoWeight + ' т' : '—'}</span></div>
       <div class="field"><span class="label">Расстояние</span><span class="value val-green">${displayDist != null ? fmtNum(displayDist, 1) + ' км' : (isInProgress ? unknownLabel : '—')}</span></div>
-      ${trip.routeTemplate ? `<div class="field"><span class="label">Шаблон маршрута</span><span class="value">${trip.routeTemplate.name}</span></div>` : ''}
     </div>
   </div>
 
@@ -1041,9 +1040,6 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
       <tbody>${plumsHtml}</tbody>
     </table>
   </div>` : ''}
-
-  <!-- ═══ ROUTE TEMPLATE POINTS ═══ -->
-  ${routeTemplateHtml}
 
   <!-- ═══ TRIP ROUTE POINTS ═══ -->
   ${routePointsHtml}

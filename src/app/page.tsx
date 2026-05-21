@@ -5293,25 +5293,29 @@ function TripDetailDialog({ open, onOpenChange, trip, loading, crews, onEdit, on
                         <span className="flex items-center gap-1"><span className="w-3 h-1 rounded" style={{background:'#ef4444'}} />&gt;80</span>
                         <span className="text-muted-foreground">км/ч</span>
                       </div>
-                      {/* Clickable trip segments — same style as MapTab */}
+                      {/* Collapsible trip segments */}
                       {(trackData as any).trips && (trackData as any).trips.length > 0 && (
-                        <div className="space-y-1">
-                          <div className="flex items-center gap-1.5 text-[10px] font-medium text-muted-foreground">
-                            <ChevronRight className="size-3" />
+                        <Collapsible>
+                          <CollapsibleTrigger className="flex items-center gap-1.5 w-full text-[10px] font-medium text-muted-foreground hover:text-foreground transition-colors py-1 px-2 rounded hover:bg-muted/50">
+                            <ChevronRight className="size-3 transition-transform [[data-state=open]>&]:rotate-90" />
                             Сегменты поездок ({(trackData as any).trips.length})
-                          </div>
-                          {(trackData as any).trips.map((trip: any, i: number) => (
-                            <div key={i} className={`flex items-center gap-2 text-[10px] rounded px-2 py-1.5 cursor-pointer transition-colors ${selectedTripIndex === i ? 'bg-primary/15 ring-1 ring-primary/40' : 'bg-muted/50 hover:bg-muted'}`} onClick={() => setSelectedTripIndex(selectedTripIndex === i ? null : i)}>
-                              <span className="font-semibold text-emerald-600">🟢 A</span>
-                              <span>{formatTime(trip.startDate)}</span>
-                              <span className="text-muted-foreground">→</span>
-                              <span className="font-semibold text-red-500">🔴 B</span>
-                              <span>{formatTime(trip.endDate)}</span>
-                              <span className="text-muted-foreground ml-auto">{trip.distance != null ? trip.distance.toFixed(1) : '—'} км • {trip.points?.length || 0} т.</span>
-                              {selectedTripIndex === i && <X className="size-3 text-muted-foreground shrink-0" />}
+                          </CollapsibleTrigger>
+                          <CollapsibleContent>
+                            <div className="space-y-1 mt-1">
+                              {(trackData as any).trips.map((trip: any, i: number) => (
+                                <div key={i} className={`flex items-center gap-2 text-[10px] rounded px-2 py-1.5 cursor-pointer transition-colors ${selectedTripIndex === i ? 'bg-primary/15 ring-1 ring-primary/40' : 'bg-muted/50 hover:bg-muted'}`} onClick={() => setSelectedTripIndex(selectedTripIndex === i ? null : i)}>
+                                  <span className="font-semibold text-emerald-600">🟢 A</span>
+                                  <span>{formatTime(trip.startDate)}</span>
+                                  <span className="text-muted-foreground">→</span>
+                                  <span className="font-semibold text-red-500">🔴 B</span>
+                                  <span>{formatTime(trip.endDate)}</span>
+                                  <span className="text-muted-foreground ml-auto">{trip.distance != null ? trip.distance.toFixed(1) : '—'} км • {trip.points?.length || 0} т.</span>
+                                  {selectedTripIndex === i && <X className="size-3 text-muted-foreground shrink-0" />}
+                                </div>
+                              ))}
                             </div>
-                          ))}
-                        </div>
+                          </CollapsibleContent>
+                        </Collapsible>
                       )}
                       {/* Collapsible parkings */}
                       {(trackData as any).parkings && (trackData as any).parkings.length > 0 && (
