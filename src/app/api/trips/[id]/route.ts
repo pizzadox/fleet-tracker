@@ -587,13 +587,15 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
     const { searchParams } = new URL(request.url)
     const action = searchParams.get('action')
 
-    // ── Track action: fetch track from Axenta ──
+    // ── Track action: fetch track from Axenta (or use cache) ──
     if (action === 'track') {
       const trip = await db.trip.findUnique({
         where: { id },
         include: { equipment: { select: { id: true, name: true, registrationNum: true } } },
       })
       if (!trip) return NextResponse.json({ error: 'Рейс не найден' }, { status: 404 })
+
+      const forceRefresh = searchParams.get('force') === '1'
 
       // Allow overriding dates via query params so that tracks can be loaded
       // for trips without endDate (e.g. in_progress) or with custom date range
@@ -605,6 +607,17 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
 
       if (!trackStartDate) {
         return NextResponse.json({ error: 'Укажите дату начала для загрузки трека' }, { status: 400 })
+      }
+
+      // ── Check cache first (if no force refresh and using default dates) ──
+      if (!forceRefresh && !overrideFrom && !overrideTo && trip.trackDataJson) {
+        try {
+          const cached = JSON.parse(trip.trackDataJson)
+          // Add cache metadata so frontend knows it's cached data
+          cached._cached = true
+          cached._cachedAt = trip.trackDataLoadedAt
+          return NextResponse.json(cached)
+        } catch { /* cache corrupt, re-fetch */ }
       }
 
       // Find any tracker (not just active ones) — some trackers may be offline but still have Axenta ID
@@ -706,6 +719,22 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
             startDate: p.startDate, endDate: p.endDate, volume: p.volume || p.fuelDiff, lat: p.latitude ?? p.lat, lng: p.longitude ?? p.lng,
           })).filter((p: { lat: unknown; lng: unknown }) => p.lat != null && p.lng != null)
         }
+
+        // ── Save track data to cache (only when using default dates, no overrides) ──
+        if (!overrideFrom && !overrideTo) {
+          try {
+            await db.trip.update({
+              where: { id },
+              data: {
+                trackDataJson: JSON.stringify(result),
+                trackDataLoadedAt: new Date(),
+              },
+            })
+          } catch (cacheErr) {
+            console.error('[Trip Track] Failed to cache track data:', cacheErr)
+          }
+        }
+
         return NextResponse.json(result)
       } catch (fetchErr: any) {
         console.error('[Trip Track] Fetch failed:', fetchErr)
@@ -1252,7 +1281,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
     }
 
     // ── Default: get trip detail ──
-    const trip = await db.trip.findUnique({
+    const tripRaw = await db.trip.findUnique({
       where: { id },
       include: {
         equipment: { select: { id: true, name: true, registrationNum: true, brand: true, model: true } },
@@ -1261,8 +1290,10 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
         routeTemplate: { select: { id: true, name: true, points: { select: { id: true, name: true, address: true, latitude: true, longitude: true, sortOrder: true, distanceFromPrev: true, plannedArrival: true, plannedDeparture: true, notes: true }, orderBy: { sortOrder: 'asc' } } } },
       },
     })
-    if (!trip) return NextResponse.json({ error: 'Trip not found' }, { status: 404 })
-    return NextResponse.json(trip)
+    if (!tripRaw) return NextResponse.json({ error: 'Trip not found' }, { status: 404 })
+    // Exclude heavy trackDataJson from detail response (use track action instead)
+    const { trackDataJson, ...trip } = tripRaw
+    return NextResponse.json({ ...trip, hasCachedTrack: !!trackDataJson })
   } catch (error) {
     console.error('Error fetching trip:', error)
     return NextResponse.json({ error: 'Failed to fetch trip' }, { status: 500 })

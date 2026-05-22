@@ -317,6 +317,8 @@ model Trip {
   parkingsDuration Int?    // Время стоянок (секунды)
   trackerSnapshot     String?  // JSON-снапшот данных трекера на момент завершения
   trackerSnapshotStart String? // JSON-снапшот данных трекера на момент старта
+  trackDataJson       String? // Кэшированные данные трека (поездки, стоянки, заправки и т.д.)
+  trackDataLoadedAt   DateTime? // Время загрузки кэшированного трека
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 

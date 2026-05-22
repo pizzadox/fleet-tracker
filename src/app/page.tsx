@@ -241,6 +241,8 @@ interface Trip {
   tripDuration?: number | null; engineHours?: number | null; avgFuelRate?: number | null;
   refuelVolume?: number | null; plumVolume?: number | null; idleTime?: number | null;
   parkingsDuration?: number | null; trackerSnapshot?: string | null; trackerSnapshotStart?: string | null;
+  trackDataJson?: string | null; trackDataLoadedAt?: string | null;
+  hasCachedTrack?: boolean;
   routeTemplateId?: string | null;
   createdAt: string; updatedAt: string;
   equipment?: { id: string; name: string; registrationNum?: string | null; brand?: string | null; model?: string | null };
@@ -4541,31 +4543,25 @@ function TripDetailDialog({ open, onOpenChange, trip, loading, crews, onEdit, on
     setCompleteDialog(prev => ({ ...prev, loading: false }))
   }
 
-  // Auto-load track when dialog opens or trip changes (sensor comparison only on request)
+  // Auto-load track when dialog opens or trip changes (use cache if available)
   useEffect(() => {
     if (!open || !trip?.id || !trip.startDate) return
     let cancelled = false
 
     const autoLoad = async () => {
-      // Auto-load track only
       setTrackLoading(true)
       setTrackError(null)
       try {
-        const from = trackDateFrom || toLocalDatetime(trip.startDate)
-        const to = trackDateTo || (trip.endDate ? toLocalDatetime(trip.endDate) : toLocalDatetime(new Date()))
-        if (from) {
-          const params = new URLSearchParams({ action: 'track' })
-          params.set('from', new Date(from).toISOString())
-          params.set('to', new Date(to).toISOString())
-          const res = await fetch(`/api/trips/${trip.id}?${params}`)
-          if (!cancelled) {
-            if (res.ok) {
-              const data = await res.json()
-              setTrackData(data)
-            } else {
-              const errData = await res.json().catch(() => null)
-              setTrackError(errData?.error || 'Не удалось загрузить трек')
-            }
+        // Use default dates — the API will return cached data if available
+        const params = new URLSearchParams({ action: 'track' })
+        const res = await fetch(`/api/trips/${trip.id}?${params}`)
+        if (!cancelled) {
+          if (res.ok) {
+            const data = await res.json()
+            setTrackData(data)
+          } else {
+            const errData = await res.json().catch(() => null)
+            setTrackError(errData?.error || 'Не удалось загрузить трек')
           }
         }
       } catch (e: any) {
@@ -4578,7 +4574,7 @@ function TripDetailDialog({ open, onOpenChange, trip, loading, crews, onEdit, on
     return () => { cancelled = true }
   }, [trip?.id, open])
 
-  // Reload track when date range changes manually
+  // Reload track (force refresh from Axenta API)
   const reloadTrack = async () => {
     if (!trip) return
     setTrackLoading(true)
@@ -4587,7 +4583,7 @@ function TripDetailDialog({ open, onOpenChange, trip, loading, crews, onEdit, on
       const from = trackDateFrom || (trip.startDate ? toLocalDatetime(trip.startDate) : '')
       const to = trackDateTo || (trip.endDate ? toLocalDatetime(trip.endDate) : toLocalDatetime(new Date()))
       if (!from) throw new Error('Укажите дату начала')
-      const params = new URLSearchParams({ action: 'track' })
+      const params = new URLSearchParams({ action: 'track', force: '1' })
       params.set('from', new Date(from).toISOString())
       params.set('to', new Date(to).toISOString())
       const res = await fetch(`/api/trips/${trip.id}?${params}`)
@@ -5224,8 +5220,9 @@ function TripDetailDialog({ open, onOpenChange, trip, loading, crews, onEdit, on
                   <div className="flex items-center justify-between">
                     <h4 className="text-xs font-semibold flex items-center gap-1.5"><Map className="size-3.5" />Трек на карте</h4>
                     <div className="flex items-center gap-1">
-                      <Button variant="ghost" size="sm" className="h-7 text-[10px] gap-1" onClick={reloadTrack} disabled={trackLoading} title="Обновить трек">
+                      <Button variant="ghost" size="sm" className="h-7 text-[10px] gap-1" onClick={reloadTrack} disabled={trackLoading} title="Обновить трек из API">
                         <RefreshCw className={`size-3 ${trackLoading ? 'animate-spin' : ''}`} />
+                        {(trackData as any)?._cached ? 'Из кэша' : ''}
                       </Button>
                       <Button variant="outline" size="sm" className="h-7 text-[10px] gap-1" onClick={reloadSensors} disabled={compareLoading} title="Загрузить показания датчиков">
                         <CircuitBoard className="size-3" />

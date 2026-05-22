@@ -189,7 +189,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
     const fuelDiff = (trip.fuelStart != null && trip.fuelEnd != null) ? trip.fuelEnd - trip.fuelStart : null
     const mileageDiff = (trip.mileageStart != null && trip.mileageEnd != null) ? trip.mileageEnd - trip.mileageStart : null
 
-    // ═══ Fetch track data from Axenta ═══
+    // ═══ Fetch track data — use cache if available, otherwise fetch from Axenta ═══
     let trackData: {
       trips: Array<{ distance: number; startDate: string; endDate: string; points: Array<{ lat: number; lng: number; speed: number; time: string | null }> }>;
       parkings: Array<{ startDate: string; endDate: string; lat: number | null; lng: number | null; duration: number }>;
@@ -198,107 +198,148 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
       plums: Array<{ startDate: string; endDate: string; volume: number | null; lat: number | null; lng: number | null }>;
     } | null = null
 
+    // ── Try cached track data first ──
+    if (trip.trackDataJson) {
+      try {
+        const cached = JSON.parse(trip.trackDataJson)
+        // Validate it has the expected structure
+        if (cached.trips && Array.isArray(cached.trips)) {
+          trackData = {
+            trips: cached.trips,
+            parkings: cached.parkings || [],
+            stops: cached.stops || [],
+            refuels: cached.refuels || [],
+            plums: cached.plums || [],
+          }
+          console.log('[Print] Using cached track data, loaded at:', trip.trackDataLoadedAt)
+        }
+      } catch { /* cache corrupt, fall through to API fetch */ }
+    }
+
+    // ── Always load tracker and settings (needed for geocoding too) ──
     const tracker = await db.glonassTracker.findFirst({ where: { equipmentId: trip.equipmentId } })
     const settings = await db.axentaSettings.findFirst()
 
-    if (tracker && settings?.isActive && settings.apiUrl && settings.apiKey && trip.startDate) {
-      try {
-        const token = await getValidToken(settings as any)
-        const objectId = tracker.axentaCloudId || tracker.trackerId
-        if (objectId) {
-          const trackStartDate = trip.startDate
-          const trackEndDate = trip.endDate || new Date()
+    // ── If no cache, fetch from Axenta API ──
+    if (!trackData) {
+      if (tracker && settings?.isActive && settings.apiUrl && settings.apiKey && trip.startDate) {
+        try {
+          const token = await getValidToken(settings as any)
+          const objectId = tracker.axentaCloudId || tracker.trackerId
+          if (objectId) {
+            const trackStartDate = trip.startDate
+            const trackEndDate = trip.endDate || new Date()
 
-          const tracksRes = await fetch(`${settings.apiUrl}/api/tracks/create/`, {
-            method: 'POST',
-            headers: { 'Authorization': `Token ${token}`, 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              objectId: Number(objectId),
-              startDate: new Date(trackStartDate).toISOString(),
-              endDate: new Date(trackEndDate).toISOString(),
-              trackType: 'single', detectTrips: true, withStops: true, withParkings: true, withRefuels: true, withPlums: true,
-            }),
-            signal: AbortSignal.timeout(30000),
-          })
+            const tracksRes = await fetch(`${settings.apiUrl}/api/tracks/create/`, {
+              method: 'POST',
+              headers: { 'Authorization': `Token ${token}`, 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                objectId: Number(objectId),
+                startDate: new Date(trackStartDate).toISOString(),
+                endDate: new Date(trackEndDate).toISOString(),
+                trackType: 'single', detectTrips: true, withStops: true, withParkings: true, withRefuels: true, withPlums: true,
+              }),
+              signal: AbortSignal.timeout(30000),
+            })
 
-          if (tracksRes.ok) {
-            const raw = await tracksRes.json()
-            const tripsArr = raw.trips || raw.track || []
+            if (tracksRes.ok) {
+              const raw = await tracksRes.json()
+              const tripsArr = raw.trips || raw.track || []
 
-            // Transform trips
-            const transformedTrips: typeof trackData extends null ? never : NonNullable<typeof trackData>['trips'] = []
-            if (Array.isArray(tripsArr)) {
-              for (const t of tripsArr) {
-                const coords = t.messagesCoordinates || t.points || t.route || t.coordinates
-                const points: Array<{ lat: number; lng: number; speed: number; time: string | null }> = []
-                if (Array.isArray(coords) && coords.length > 0) {
-                  const first = coords[0]
-                  if (Array.isArray(first)) {
-                    for (const pt of coords) {
-                      if (Array.isArray(pt) && pt.length >= 2) {
-                        const lat = Number(pt[0]), lng = Number(pt[1])
+              // Transform trips
+              const transformedTrips: typeof trackData extends null ? never : NonNullable<typeof trackData>['trips'] = []
+              if (Array.isArray(tripsArr)) {
+                for (const t of tripsArr) {
+                  const coords = t.messagesCoordinates || t.points || t.route || t.coordinates
+                  const points: Array<{ lat: number; lng: number; speed: number; time: string | null }> = []
+                  if (Array.isArray(coords) && coords.length > 0) {
+                    const first = coords[0]
+                    if (Array.isArray(first)) {
+                      for (const pt of coords) {
+                        if (Array.isArray(pt) && pt.length >= 2) {
+                          const lat = Number(pt[0]), lng = Number(pt[1])
+                          if (isFinite(lat) && isFinite(lng) && lat !== 0 && lng !== 0)
+                            points.push({ lat, lng, speed: Number(pt[2]) || 0, time: String(pt[5] || pt[3] || '') })
+                        }
+                      }
+                    } else if (typeof first === 'object' && first !== null) {
+                      for (const pt of coords) {
+                        const lat = Number(pt.latitude ?? pt.lat ?? 0), lng = Number(pt.longitude ?? pt.lng ?? 0)
                         if (isFinite(lat) && isFinite(lng) && lat !== 0 && lng !== 0)
-                          points.push({ lat, lng, speed: Number(pt[2]) || 0, time: String(pt[5] || pt[3] || '') })
+                          points.push({ lat, lng, speed: Number(pt.speed ?? 0), time: String(pt.date || pt.time || '') })
                       }
                     }
-                  } else if (typeof first === 'object' && first !== null) {
-                    for (const pt of coords) {
-                      const lat = Number(pt.latitude ?? pt.lat ?? 0), lng = Number(pt.longitude ?? pt.lng ?? 0)
-                      if (isFinite(lat) && isFinite(lng) && lat !== 0 && lng !== 0)
-                        points.push({ lat, lng, speed: Number(pt.speed ?? 0), time: String(pt.date || pt.time || '') })
-                    }
+                  }
+                  if (points.length >= 2) {
+                    transformedTrips.push({
+                      distance: t.distance || 0,
+                      startDate: t.startDate || t.startTime || '',
+                      endDate: t.endDate || t.endTime || '',
+                      points,
+                    })
                   }
                 }
-                if (points.length >= 2) {
-                  transformedTrips.push({
-                    distance: t.distance || 0,
-                    startDate: t.startDate || t.startTime || '',
-                    endDate: t.endDate || t.endTime || '',
-                    points,
-                  })
-                }
+              }
+
+              // Transform parkings
+              const transformedParkings = (raw.parkings || []).map((p: any) => ({
+                startDate: p.startDate || '', endDate: p.endDate || '',
+                lat: p.latitude ?? p.lat ?? null, lng: p.longitude ?? p.lng ?? null,
+                duration: p.duration || 0,
+              })).filter((p: any) => p.lat != null && p.lng != null)
+
+              // Transform stops
+              const transformedStops = (raw.stops || []).map((s: any) => ({
+                startDate: s.startDate || '', endDate: s.endDate || '',
+                lat: s.latitude ?? s.lat ?? null, lng: s.longitude ?? s.lng ?? null,
+                duration: s.duration || 0,
+              })).filter((s: any) => s.lat != null && s.lng != null)
+
+              // Transform refuels
+              const transformedRefuels = (raw.refuels || []).map((r: any) => ({
+                startDate: r.startDate || '', endDate: r.endDate || '',
+                volume: r.volume || r.fuelDiff || null,
+                lat: r.latitude ?? r.lat ?? null, lng: r.longitude ?? r.lng ?? null,
+              })).filter((r: any) => r.lat != null && r.lng != null)
+
+              // Transform plums
+              const transformedPlums = (raw.plums || []).map((p: any) => ({
+                startDate: p.startDate || '', endDate: p.endDate || '',
+                volume: p.volume || p.fuelDiff || null,
+                lat: p.latitude ?? p.lat ?? null, lng: p.longitude ?? p.lng ?? null,
+              })).filter((p: any) => p.lat != null && p.lng != null)
+
+              trackData = {
+                trips: transformedTrips,
+                parkings: transformedParkings,
+                stops: transformedStops,
+                refuels: transformedRefuels,
+                plums: transformedPlums,
+              }
+
+              // Save to cache for future use
+              try {
+                await db.trip.update({
+                  where: { id: trip.id },
+                  data: {
+                    trackDataJson: JSON.stringify({
+                      tripId: trip.id, equipmentName: trip.equipment.name,
+                      registrationNum: trip.equipment.registrationNum,
+                      trips: trackData.trips, parkings: trackData.parkings,
+                      stops: trackData.stops, refuels: trackData.refuels,
+                      plums: trackData.plums,
+                    }),
+                    trackDataLoadedAt: new Date(),
+                  },
+                })
+              } catch (cacheErr) {
+                console.error('[Print] Failed to cache track data:', cacheErr)
               }
             }
-
-            // Transform parkings
-            const transformedParkings = (raw.parkings || []).map((p: any) => ({
-              startDate: p.startDate || '', endDate: p.endDate || '',
-              lat: p.latitude ?? p.lat ?? null, lng: p.longitude ?? p.lng ?? null,
-              duration: p.duration || 0,
-            })).filter((p: any) => p.lat != null && p.lng != null)
-
-            // Transform stops
-            const transformedStops = (raw.stops || []).map((s: any) => ({
-              startDate: s.startDate || '', endDate: s.endDate || '',
-              lat: s.latitude ?? s.lat ?? null, lng: s.longitude ?? s.lng ?? null,
-              duration: s.duration || 0,
-            })).filter((s: any) => s.lat != null && s.lng != null)
-
-            // Transform refuels
-            const transformedRefuels = (raw.refuels || []).map((r: any) => ({
-              startDate: r.startDate || '', endDate: r.endDate || '',
-              volume: r.volume || r.fuelDiff || null,
-              lat: r.latitude ?? r.lat ?? null, lng: r.longitude ?? r.lng ?? null,
-            })).filter((r: any) => r.lat != null && r.lng != null)
-
-            // Transform plums
-            const transformedPlums = (raw.plums || []).map((p: any) => ({
-              startDate: p.startDate || '', endDate: p.endDate || '',
-              volume: p.volume || p.fuelDiff || null,
-              lat: p.latitude ?? p.lat ?? null, lng: p.longitude ?? p.lng ?? null,
-            })).filter((p: any) => p.lat != null && p.lng != null)
-
-            trackData = {
-              trips: transformedTrips,
-              parkings: transformedParkings,
-              stops: transformedStops,
-              refuels: transformedRefuels,
-              plums: transformedPlums,
-            }
           }
+        } catch (trackErr) {
+          console.error('[Print] Track fetch error:', trackErr)
         }
-      } catch (trackErr) {
-        console.error('[Print] Track fetch error:', trackErr)
       }
     }
 

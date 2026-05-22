@@ -15,7 +15,15 @@ export async function GET(request: NextRequest) {
 
     const trips = await db.trip.findMany({
       where,
-      include: {
+      select: {
+        id: true, equipmentId: true, crewId: true, route: true, startPoint: true, endPoint: true,
+        cargo: true, cargoWeight: true, distance: true, startDate: true, endDate: true,
+        plannedEndDate: true, status: true, fuelStart: true, fuelEnd: true,
+        mileageStart: true, mileageEnd: true, cost: true, revenue: true, notes: true,
+        avgSpeed: true, maxSpeed: true, fuelConsumed: true, tripDuration: true,
+        engineHours: true, avgFuelRate: true, refuelVolume: true, plumVolume: true,
+        idleTime: true, parkingsDuration: true, trackerSnapshot: true, trackerSnapshotStart: true,
+        routeTemplateId: true, createdAt: true, updatedAt: true,
         equipment: { select: { id: true, name: true, registrationNum: true, brand: true, model: true } },
         crew: { select: { id: true, name: true, members: { select: { fullName: true, role: true } } } },
         routePoints: { orderBy: { sortOrder: 'asc' } },
