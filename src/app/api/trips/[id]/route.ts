@@ -1548,6 +1548,11 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
       plumVolume: body.plumVolume !== undefined ? (body.plumVolume ? parseFloat(body.plumVolume) : null) : undefined,
       idleTime: body.idleTime !== undefined ? (body.idleTime ? parseInt(body.idleTime) : null) : undefined,
       parkingsDuration: body.parkingsDuration !== undefined ? (body.parkingsDuration ? parseInt(body.parkingsDuration) : null) : undefined,
+      // Track data cache
+      trackerSnapshot: body.trackerSnapshot !== undefined ? (body.trackerSnapshot || null) : undefined,
+      trackerSnapshotStart: body.trackerSnapshotStart !== undefined ? (body.trackerSnapshotStart || null) : undefined,
+      trackDataJson: body.trackDataJson !== undefined ? (body.trackDataJson || null) : undefined,
+      trackDataLoadedAt: body.trackDataLoadedAt !== undefined ? (body.trackDataLoadedAt || null) : undefined,
     }
 
     // Handle route points upsert/delete

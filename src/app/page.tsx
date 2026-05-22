@@ -4283,6 +4283,7 @@ function TripDetailDialog({ open, onOpenChange, trip, loading, crews, onEdit, on
   }>({ open: false, diffs: [], autoFields: {} })
   const [tripSaved, setTripSaved] = useState(false)
   const [savingTrip, setSavingTrip] = useState(false)
+  const [loadedTripId, setLoadedTripId] = useState<string | null>(null) // track which trip's data is loaded
   const [showRouteMap, setShowRouteMap] = useState(false)
   const [selectedTripIndex, setSelectedTripIndex] = useState<number | null>(null)
   const [routeMapLoading, setRouteMapLoading] = useState(false)
@@ -4311,15 +4312,18 @@ function TripDetailDialog({ open, onOpenChange, trip, loading, crews, onEdit, on
   const trackSectionRef = useRef<HTMLDivElement>(null)
 
   // Reset all data when trip changes — must be before any early return (Rules of Hooks)
+  // Keep trackData if same trip is reopened (avoid re-fetching)
   useEffect(() => {
-    setTrackData(null)
-    setTrackError(null)
-    setTrackDateFrom('')
-    setTrackDateTo('')
+    if (trip?.id !== loadedTripId) {
+      setTrackData(null)
+      setTrackError(null)
+      setTrackDateFrom('')
+      setTrackDateTo('')
+      setTripSaved(false)
+    }
     setCompareData(null)
     setCompareError(null)
     setApplySuccess(null)
-    setTripSaved(false)
     setShowRouteMap(false)
     setRouteMapTrackData(null)
     setSelectedTripIndex(null)
@@ -4543,9 +4547,12 @@ function TripDetailDialog({ open, onOpenChange, trip, loading, crews, onEdit, on
     setCompleteDialog(prev => ({ ...prev, loading: false }))
   }
 
-  // Auto-load track when dialog opens or trip changes (use cache if available)
+  // Auto-load track when dialog opens or trip changes
+  // Skip if trackData already loaded for this trip (use cached data in state)
   useEffect(() => {
     if (!open || !trip?.id || !trip.startDate) return
+    // Already loaded for this trip — no need to re-fetch
+    if (loadedTripId === trip.id && trackData) return
     let cancelled = false
 
     const autoLoad = async () => {
@@ -4559,6 +4566,7 @@ function TripDetailDialog({ open, onOpenChange, trip, loading, crews, onEdit, on
           if (res.ok) {
             const data = await res.json()
             setTrackData(data)
+            setLoadedTripId(trip.id)
           } else {
             const errData = await res.json().catch(() => null)
             setTrackError(errData?.error || 'Не удалось загрузить трек')
@@ -4593,6 +4601,7 @@ function TripDetailDialog({ open, onOpenChange, trip, loading, crews, onEdit, on
       }
       const data = await res.json()
       setTrackData(data)
+      setLoadedTripId(trip.id)
     } catch (e: any) {
       setTrackError(e.message || 'Ошибка загрузки трека')
     }
@@ -4664,6 +4673,12 @@ function TripDetailDialog({ open, onOpenChange, trip, loading, crews, onEdit, on
       if (fields.mileageEnd != null && (fields.mileageStart != null || t.mileageStart != null)) {
         const ms = (fields.mileageStart as number) ?? t.mileageStart!
         fields.distance = (fields.mileageEnd as number) - ms
+      }
+
+      // Also save track data to cache so it doesn't need re-fetching
+      if (trackData) {
+        fields.trackDataJson = JSON.stringify(trackData)
+        fields.trackDataLoadedAt = new Date().toISOString()
       }
 
       if (Object.keys(fields).length > 0) {
@@ -5222,8 +5237,13 @@ function TripDetailDialog({ open, onOpenChange, trip, loading, crews, onEdit, on
                     <div className="flex items-center gap-1">
                       <Button variant="ghost" size="sm" className="h-7 text-[10px] gap-1" onClick={reloadTrack} disabled={trackLoading} title="Обновить трек из API">
                         <RefreshCw className={`size-3 ${trackLoading ? 'animate-spin' : ''}`} />
-                        {(trackData as any)?._cached ? 'Из кэша' : ''}
+                        {trackData ? (trackLoading ? 'Обновление...' : 'Обновить') : 'Загрузить'}
                       </Button>
+                      {trackData && !trackLoading && (
+                        <span className="text-[9px] text-muted-foreground">
+                          {(trackData as any)?._cached ? `Кэш ${(() => { try { return (trackData as any)._cachedAt ? new Date((trackData as any)._cachedAt).toLocaleString('ru-RU', { hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Moscow' }) : '' } catch { return '' } })()}` : 'Загружено'}
+                        </span>
+                      )}
                       <Button variant="outline" size="sm" className="h-7 text-[10px] gap-1" onClick={reloadSensors} disabled={compareLoading} title="Загрузить показания датчиков">
                         <CircuitBoard className="size-3" />
                         {compareLoading ? <Loader2 className="size-3 animate-spin" /> : null}
