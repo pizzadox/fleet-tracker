@@ -251,6 +251,47 @@ interface Trip {
   routeTemplate?: { id: string; name: string; points: RouteTemplatePoint[] } | null;
 }
 
+// ─── Auth Types ─────────────────────────────────────────────────
+interface AppUserType {
+  id: string; name: string; role: string; isActive: boolean; avatar: string | null;
+  createdAt?: string; updatedAt?: string;
+}
+
+type RoleKey = 'admin' | 'manager' | 'trip_master' | 'repair_worker' | 'worker'
+
+const ROLE_LABELS: Record<RoleKey, string> = {
+  admin: 'Администратор',
+  manager: 'Управляющий',
+  trip_master: 'Мастер рейсов',
+  repair_worker: 'Работник ремонта',
+  worker: 'Работник',
+}
+
+const ROLE_PERMISSIONS: Record<RoleKey, string[]> = {
+  admin: ['equipment', 'repairs', 'trips', 'employees', 'companies', 'crews', 'map', 'settings', 'users'],
+  manager: ['equipment', 'repairs', 'trips', 'employees', 'companies', 'crews', 'map'],
+  trip_master: ['trips', 'crews', 'map', 'equipment_read'],
+  repair_worker: ['repairs', 'equipment_read'],
+  worker: ['equipment_read', 'map'],
+}
+
+function hasPermission(role: string, perm: string): boolean {
+  const perms = ROLE_PERMISSIONS[role as RoleKey] || []
+  return perms.includes(perm) || (perm.endsWith('_read') && perms.includes(perm)) || perms.includes('equipment') && perm === 'equipment_read'
+}
+
+const AVATAR_COLORS = [
+  '#6366f1', '#8b5cf6', '#ec4899', '#f43f5e', '#ef4444',
+  '#f97316', '#eab308', '#84cc16', '#22c55e', '#14b8a6',
+  '#06b6d4', '#0ea5e9', '#3b82f6', '#a855f7', '#d946ef',
+]
+
+function getInitials(name: string): string {
+  const parts = name.trim().split(/\s+/)
+  if (parts.length >= 2) return (parts[0][0] + parts[1][0]).toUpperCase()
+  return name.substring(0, 2).toUpperCase()
+}
+
 // ═══════════════════════════════════════════════════════════════
 // CONSTANTS
 // ═══════════════════════════════════════════════════════════════
@@ -515,6 +556,208 @@ function useDebounce<T>(value: T, delay: number): T {
 }
 
 // ═══════════════════════════════════════════════════════════════
+// PIN LOGIN SCREEN
+// ═══════════════════════════════════════════════════════════════
+
+function PinLoginScreen({ onLogin, users: allUsers, fetchUsers }: {
+  onLogin: (user: AppUserType) => void
+  users: AppUserType[]
+  fetchUsers: () => void
+}) {
+  const [selectedUser, setSelectedUser] = useState<AppUserType | null>(null)
+  const [pin, setPin] = useState('')
+  const [error, setError] = useState('')
+  const [loading, setLoading] = useState(false)
+  const [usersList, setUsersList] = useState<AppUserType[]>(allUsers)
+
+  useEffect(() => { setUsersList(allUsers) }, [allUsers])
+  useEffect(() => { fetchUsers() }, [fetchUsers])
+
+  // Remember last login
+  useEffect(() => {
+    const lastUserId = localStorage.getItem('fleet_lastUserId')
+    if (lastUserId && !selectedUser) {
+      const last = usersList.find(u => u.id === lastUserId && u.isActive)
+      if (last) setSelectedUser(last)
+    }
+  }, [usersList, selectedUser])
+
+  const handlePinInput = (digit: string) => {
+    if (pin.length < 6) {
+      setPin(prev => prev + digit)
+      setError('')
+    }
+  }
+
+  const handleBackspace = () => {
+    setPin(prev => prev.slice(0, -1))
+    setError('')
+  }
+
+  const handleSubmit = async () => {
+    if (!selectedUser || pin.length < 4) return
+    setLoading(true)
+    setError('')
+    try {
+      const res = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: selectedUser.id, pin }),
+      })
+      const data = await res.json()
+      if (res.ok && data.success) {
+        localStorage.setItem('fleet_lastUserId', selectedUser.id)
+        onLogin(data.user)
+      } else {
+        setError(data.error || 'Ошибка входа')
+        setPin('')
+      }
+    } catch {
+      setError('Ошибка подключения')
+      setPin('')
+    }
+    setLoading(false)
+  }
+
+  // Auto-submit when PIN is 4+ digits
+  useEffect(() => {
+    if (pin.length >= 4 && selectedUser) {
+      handleSubmit()
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pin, selectedUser])
+
+  const activeUsers = usersList.filter(u => u.isActive)
+
+  if (!selectedUser) {
+    // User selection screen
+    return (
+      <div className="min-h-screen flex flex-col items-center justify-center bg-background p-4">
+        <div className="w-full max-w-md">
+          <div className="text-center mb-8">
+            <div className="size-16 rounded-2xl bg-primary text-primary-foreground flex items-center justify-center mx-auto mb-4">
+              <Truck className="size-8" />
+            </div>
+            <h1 className="text-2xl font-bold">Учёт техники</h1>
+            <p className="text-muted-foreground text-sm mt-1">Выберите пользователя для входа</p>
+          </div>
+          <div className="grid grid-cols-3 sm:grid-cols-4 gap-3">
+            {activeUsers.map(user => (
+              <button
+                key={user.id}
+                onClick={() => { setSelectedUser(user); setPin(''); setError('') }}
+                className="flex flex-col items-center gap-2 p-3 rounded-xl hover:bg-accent transition-colors group"
+              >
+                <div
+                  className="size-14 rounded-full flex items-center justify-center text-white font-bold text-lg shadow-md group-hover:scale-110 transition-transform"
+                  style={{ backgroundColor: user.avatar || '#6366f1' }}
+                >
+                  {getInitials(user.name)}
+                </div>
+                <span className="text-xs font-medium text-center leading-tight max-w-[80px] truncate">{user.name}</span>
+                <span className="text-[9px] text-muted-foreground">{ROLE_LABELS[user.role as RoleKey] || user.role}</span>
+              </button>
+            ))}
+          </div>
+          {activeUsers.length === 0 && (
+            <div className="text-center text-muted-foreground py-8">
+              <User className="size-8 mx-auto mb-2 opacity-30" />
+              <p className="text-sm">Нет активных пользователей</p>
+            </div>
+          )}
+        </div>
+      </div>
+    )
+  }
+
+  // PIN entry screen
+  return (
+    <div className="min-h-screen flex flex-col items-center justify-center bg-background p-4">
+      <div className="w-full max-w-xs">
+        <button
+          onClick={() => { setSelectedUser(null); setPin(''); setError('') }}
+          className="flex items-center gap-1 text-muted-foreground text-sm mb-6 hover:text-foreground transition-colors"
+        >
+          <ArrowLeft className="size-4" />Назад
+        </button>
+
+        <div className="text-center mb-6">
+          <div
+            className="size-20 rounded-full flex items-center justify-center text-white font-bold text-2xl shadow-lg mx-auto mb-3"
+            style={{ backgroundColor: selectedUser.avatar || '#6366f1' }}
+          >
+            {getInitials(selectedUser.name)}
+          </div>
+          <h2 className="text-lg font-semibold">{selectedUser.name}</h2>
+          <p className="text-sm text-muted-foreground">{ROLE_LABELS[selectedUser.role as RoleKey] || selectedUser.role}</p>
+        </div>
+
+        {/* PIN dots */}
+        <div className="flex justify-center gap-3 mb-6">
+          {[0, 1, 2, 3, 4, 5].map(i => (
+            <div
+              key={i}
+              className={`size-3 rounded-full transition-all duration-150 ${
+                i < pin.length
+                  ? 'bg-primary scale-125'
+                  : 'bg-muted-foreground/30'
+              }`}
+            />
+          ))}
+        </div>
+
+        {error && (
+          <p className="text-center text-sm text-red-500 mb-3 animate-pulse">{error}</p>
+        )}
+
+        {loading && (
+          <div className="flex justify-center mb-3">
+            <Loader2 className="size-5 animate-spin text-primary" />
+          </div>
+        )}
+
+        {/* Numeric keypad */}
+        <div className="grid grid-cols-3 gap-2">
+          {['1','2','3','4','5','6','7','8','9','','0','⌫'].map((key, i) => {
+            if (key === '') return <div key={i} />
+            if (key === '⌫') {
+              return (
+                <button
+                  key={i}
+                  onClick={handleBackspace}
+                  className="h-14 rounded-xl bg-muted hover:bg-muted/80 flex items-center justify-center active:scale-95 transition-transform text-lg"
+                >
+                  <X className="size-5" />
+                </button>
+              )
+            }
+            return (
+              <button
+                key={i}
+                onClick={() => handlePinInput(key)}
+                className="h-14 rounded-xl bg-muted hover:bg-muted/80 flex items-center justify-center active:scale-95 transition-transform text-xl font-medium"
+              >
+                {key}
+              </button>
+            )
+          })}
+        </div>
+
+        {/* Enter button for 5-6 digit PINs */}
+        {pin.length >= 4 && !loading && (
+          <button
+            onClick={handleSubmit}
+            className="w-full mt-4 h-12 rounded-xl bg-primary text-primary-foreground font-medium hover:bg-primary/90 active:scale-[0.98] transition-all flex items-center justify-center gap-2"
+          >
+            <CheckCircle2 className="size-5" />Войти
+          </button>
+        )}
+      </div>
+    </div>
+  )
+}
+
+// ═══════════════════════════════════════════════════════════════
 // MAIN APP COMPONENT
 // ═══════════════════════════════════════════════════════════════
 
@@ -609,6 +852,13 @@ export default function Home() {
   const [globalSearchOpen, setGlobalSearchOpen] = useState(false)
   const [globalSearchQuery, setGlobalSearchQuery] = useState('')
 
+  // ─── Auth state ─────────────────────────────────────────────
+  const [currentUser, setCurrentUser] = useState<AppUserType | null>(null)
+  const [authLoading, setAuthLoading] = useState(true)
+  const [users, setUsers] = useState<AppUserType[]>([])
+  const [mgmtSubTab, setMgmtSubTab] = useState<'companies' | 'employees' | 'crews'>('companies')
+  const [settingsSubTab, setSettingsSubTab] = useState<'users' | 'axenta' | 'about'>('users')
+
   // ═══════════════════════════════════════════════════════════════
   // DATA FETCHING
   // ═══════════════════════════════════════════════════════════════
@@ -694,6 +944,47 @@ export default function Home() {
   }, [fetchEquipment, fetchCompanies, fetchRepairs, fetchTrips, fetchCrews, fetchRouteTemplates, fetchEmployees])
 
   useEffect(() => { fetchAll() }, [fetchAll])
+
+  // ─── Auth check on mount ───────────────────────────────────
+  useEffect(() => {
+    const checkAuth = async () => {
+      try {
+        const res = await fetch('/api/auth/me')
+        if (res.ok) {
+          const data = await res.json()
+          setCurrentUser(data.user)
+          // Restore last tab from localStorage
+          const lastTab = localStorage.getItem('fleet_lastTab')
+          if (lastTab) setMainTab(lastTab)
+        }
+      } catch {}
+      setAuthLoading(false)
+    }
+    checkAuth()
+  }, [])
+
+  // Fetch users list (for admin settings and login screen)
+  const fetchUsers = useCallback(async () => {
+    try {
+      const res = await fetch('/api/users')
+      if (res.ok) {
+        const data = await res.json()
+        setUsers(data)
+      }
+    } catch {}
+  }, [])
+
+  // Fetch users when authenticated as admin
+  useEffect(() => {
+    if (currentUser?.role === 'admin') fetchUsers()
+  }, [currentUser, fetchUsers])
+
+  // Save tab to localStorage
+  useEffect(() => {
+    if (currentUser) {
+      localStorage.setItem('fleet_lastTab', mainTab)
+    }
+  }, [mainTab, currentUser])
 
   // Global search shortcut (Ctrl+K)
   useEffect(() => {
@@ -921,6 +1212,28 @@ export default function Home() {
   }
 
   // ═══════════════════════════════════════════════════════════════
+  // RENDER — AUTH CHECK
+  // ═══════════════════════════════════════════════════════════════
+
+  if (authLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-background">
+        <Loader2 className="size-8 animate-spin text-primary" />
+      </div>
+    )
+  }
+
+  if (!currentUser) {
+    return (
+      <PinLoginScreen
+        onLogin={(user) => setCurrentUser(user)}
+        users={users}
+        fetchUsers={fetchUsers}
+      />
+    )
+  }
+
+  // ═══════════════════════════════════════════════════════════════
   // RENDER — LOADING (Skeleton)
   // ═══════════════════════════════════════════════════════════════
 
@@ -1080,6 +1393,24 @@ export default function Home() {
                 {theme === 'dark' ? <Sun className="size-3.5" /> : <Moon className="size-3.5" />}
               </Button>
             )}
+            {/* Current user avatar + logout */}
+            <div className="flex items-center gap-1.5 ml-1 pl-2 border-l">
+              <div
+                className="size-6 rounded-full flex items-center justify-center text-white text-[10px] font-bold cursor-pointer shrink-0"
+                style={{ backgroundColor: currentUser.avatar || '#6366f1' }}
+                title={`${currentUser.name} (${ROLE_LABELS[currentUser.role as RoleKey] || currentUser.role})`}
+              >
+                {getInitials(currentUser.name)}
+              </div>
+              <span className="text-[11px] font-medium hidden sm:inline max-w-[80px] truncate">{currentUser.name}</span>
+              <Button variant="ghost" size="icon" className="size-6 text-muted-foreground hover:text-destructive" onClick={async () => {
+                try { await fetch('/api/auth/logout', { method: 'POST' }) } catch {}
+                setCurrentUser(null)
+                localStorage.removeItem('fleet_lastUserId')
+              }} aria-label="Выход" title="Выйти">
+                <X className="size-3" />
+              </Button>
+            </div>
           </div>
         </div>
       </header>
@@ -1087,56 +1418,137 @@ export default function Home() {
       {/* ─── MAIN CONTENT ─────────────────────────────────────── */}
       <main className="flex-1 max-w-7xl mx-auto w-full px-3 sm:px-6 py-4">
         {/* Desktop tabs */}
-        <Tabs value={mainTab} onValueChange={setMainTab} className="hidden md:block">
+        <Tabs value={mainTab} onValueChange={(v) => { setMainTab(v); if (v === 'management') setMgmtSubTab('companies'); if (v === 'settings') setSettingsSubTab('users'); }} className="hidden md:block">
           <TabsList className="mb-4">
-            <TabsTrigger value="equipment" className="gap-1.5"><Truck className="size-4" />Техника<Badge variant="secondary" className="ml-1 h-4 min-w-4 px-1 text-[10px]">{stats.total}</Badge></TabsTrigger>
-            <TabsTrigger value="repairs" className="gap-1.5"><Wrench className="size-4" />Ремонты<Badge variant="secondary" className="ml-1 h-4 min-w-4 px-1 text-[10px]">{stats.repairsTotal}</Badge></TabsTrigger>
-            <TabsTrigger value="trips" className="gap-1.5"><Route className="size-4" />Рейсы<Badge variant="secondary" className="ml-1 h-4 min-w-4 px-1 text-[10px]">{stats.tripsTotal}</Badge></TabsTrigger>
-            <TabsTrigger value="employees" className="gap-1.5"><Users className="size-4" />Сотрудники<Badge variant="secondary" className="ml-1 h-4 min-w-4 px-1 text-[10px]">{stats.employeesTotal}</Badge></TabsTrigger>
-            <TabsTrigger value="companies" className="gap-1.5"><Building2 className="size-4" />Компании<Badge variant="secondary" className="ml-1 h-4 min-w-4 px-1 text-[10px]">{stats.companiesTotal}</Badge></TabsTrigger>
-            <TabsTrigger value="map" className="gap-1.5"><Map className="size-4" />Карта</TabsTrigger>
+            {hasPermission(currentUser.role, 'equipment') && <TabsTrigger value="equipment" className="gap-1.5"><Truck className="size-4" />Техника<Badge variant="secondary" className="ml-1 h-4 min-w-4 px-1 text-[10px]">{stats.total}</Badge></TabsTrigger>}
+            {hasPermission(currentUser.role, 'repairs') && <TabsTrigger value="repairs" className="gap-1.5"><Wrench className="size-4" />Ремонты<Badge variant="secondary" className="ml-1 h-4 min-w-4 px-1 text-[10px]">{stats.repairsTotal}</Badge></TabsTrigger>}
+            {hasPermission(currentUser.role, 'trips') && <TabsTrigger value="trips" className="gap-1.5"><Route className="size-4" />Рейсы<Badge variant="secondary" className="ml-1 h-4 min-w-4 px-1 text-[10px]">{stats.tripsTotal}</Badge></TabsTrigger>}
+            {hasPermission(currentUser.role, 'employees') && hasPermission(currentUser.role, 'companies') && (
+              <TabsTrigger value="management" className="gap-1.5"><ClipboardCheck className="size-4" />Управление</TabsTrigger>
+            )}
+            {hasPermission(currentUser.role, 'map') && <TabsTrigger value="map" className="gap-1.5"><Map className="size-4" />Карта</TabsTrigger>}
+            {hasPermission(currentUser.role, 'settings') && <TabsTrigger value="settings" className="gap-1.5"><Cog className="size-4" />Настройки</TabsTrigger>}
           </TabsList>
-          <TabsContent value="equipment">
-            <EquipmentTab equipment={equipment} companies={companies} eqSearch={eqSearch} setEqSearch={setEqSearch} eqStatusFilter={eqStatusFilter} setEqStatusFilter={setEqStatusFilter} eqTypeFilter={eqTypeFilter} setEqTypeFilter={setEqTypeFilter} onOpenDetail={openEquipmentDetail} onAdd={() => { setEqFormEdit(null); setEqFormStep(0); setEqFormOpen(true) }} onEdit={(eq) => { setEqFormEdit(eq); setEqFormStep(0); setEqFormOpen(true) }} onDelete={(eq) => setDeleteDialog({ open: true, type: 'equipment', id: eq.id, name: eq.name })} onGoToMap={(eq) => openEquipmentDetail(eq, 'glonass')} onCreateTrip={(eq) => { setTripFormEdit(null); setTripFormEquipmentId(eq.id); setTripFormOpen(true) }} />
-          </TabsContent>
-          <TabsContent value="repairs">
-            <RepairsTab repairs={repairs} equipment={equipment} onOpenDetail={openRepairDetail} onAdd={(eqId) => { setRepairFormEdit(null); setRepairFormEquipmentId(eqId || ''); setRepairFormOpen(true) }} onDelete={(r) => setDeleteDialog({ open: true, type: 'repair', id: r.id, name: r.description })} />
-          </TabsContent>
-          <TabsContent value="trips">
-            <TripsTab trips={trips} equipment={equipment} crews={crews} routeTemplates={routeTemplates} onOpenDetail={openTripDetail} onAdd={(eqId) => { setTripFormEdit(null); setTripFormEquipmentId(eqId || ''); setTripFormOpen(true) }} onDelete={(t) => setDeleteDialog({ open: true, type: 'trip', id: t.id, name: t.route })} onAddCrew={() => { setCrewFormEdit(null); setCrewFormOpen(true) }} onEditCrew={(c) => { setCrewFormEdit(c); setCrewFormOpen(true) }} onDeleteCrew={(c) => setDeleteDialog({ open: true, type: 'crew', id: c.id, name: c.name })} onAddRouteTemplate={() => { setRouteTemplateFormEdit(null); setRouteTemplateFormOpen(true) }} onEditRouteTemplate={(rt) => { setRouteTemplateFormEdit(rt); setRouteTemplateFormOpen(true) }} onDeleteRouteTemplate={(rt) => setDeleteDialog({ open: true, type: 'routeTemplate', id: rt.id, name: rt.name })} />
-          </TabsContent>
-          <TabsContent value="employees">
-            <EmployeesTab employees={employees} crews={crews} empSearch={empSearch} setEmpSearch={setEmpSearch} empPositionFilter={empPositionFilter} setEmpPositionFilter={setEmpPositionFilter} empStatusFilter={empStatusFilter} setEmpStatusFilter={setEmpStatusFilter} onOpenDetail={openEmployeeDetail} onAdd={() => { setEmpFormEdit(null); setEmpFormOpen(true) }} onEdit={(emp) => { setEmpFormEdit(emp); setEmpFormOpen(true) }} onDelete={(emp) => setDeleteDialog({ open: true, type: 'employee', id: emp.id, name: emp.fullName })} />
-          </TabsContent>
-          <TabsContent value="companies">
-            <CompaniesTab companies={companies} onAdd={() => { setCompanyFormEdit(null); setCompanyFormOpen(true) }} onEdit={(c) => { setCompanyFormEdit(c); setCompanyFormOpen(true) }} onDelete={(c) => setDeleteDialog({ open: true, type: 'company', id: c.id, name: c.name })} />
-          </TabsContent>
-          <TabsContent value="map">
-            <MapTab equipment={equipment} onOpenDetail={openEquipmentDetailById} onSync={async () => { try { const res = await fetch('/api/glonass/sync', { method: 'POST' }); const data = await res.json(); if (data.synced !== undefined) toast.success(`Синхронизация: ${data.synced} из ${data.totalTrackers}`); else toast.error(data.error || 'Ошибка'); fetchEquipment() } catch { toast.error('Ошибка синхронизации') } }} />
-          </TabsContent>
+          {hasPermission(currentUser.role, 'equipment') && (
+            <TabsContent value="equipment">
+              <EquipmentTab equipment={equipment} companies={companies} eqSearch={eqSearch} setEqSearch={setEqSearch} eqStatusFilter={eqStatusFilter} setEqStatusFilter={setEqStatusFilter} eqTypeFilter={eqTypeFilter} setEqTypeFilter={setEqTypeFilter} onOpenDetail={openEquipmentDetail} onAdd={() => { setEqFormEdit(null); setEqFormStep(0); setEqFormOpen(true) }} onEdit={(eq) => { setEqFormEdit(eq); setEqFormStep(0); setEqFormOpen(true) }} onDelete={(eq) => setDeleteDialog({ open: true, type: 'equipment', id: eq.id, name: eq.name })} onGoToMap={(eq) => openEquipmentDetail(eq, 'glonass')} onCreateTrip={(eq) => { setTripFormEdit(null); setTripFormEquipmentId(eq.id); setTripFormOpen(true) }} readOnly={!hasPermission(currentUser.role, 'equipment')} />
+            </TabsContent>
+          )}
+          {hasPermission(currentUser.role, 'repairs') && (
+            <TabsContent value="repairs">
+              <RepairsTab repairs={repairs} equipment={equipment} onOpenDetail={openRepairDetail} onAdd={(eqId) => { setRepairFormEdit(null); setRepairFormEquipmentId(eqId || ''); setRepairFormOpen(true) }} onDelete={(r) => setDeleteDialog({ open: true, type: 'repair', id: r.id, name: r.description })} readOnly={!hasPermission(currentUser.role, 'repairs')} />
+            </TabsContent>
+          )}
+          {hasPermission(currentUser.role, 'trips') && (
+            <TabsContent value="trips">
+              <TripsTab trips={trips} equipment={equipment} crews={crews} routeTemplates={routeTemplates} onOpenDetail={openTripDetail} onAdd={(eqId) => { setTripFormEdit(null); setTripFormEquipmentId(eqId || ''); setTripFormOpen(true) }} onDelete={(t) => setDeleteDialog({ open: true, type: 'trip', id: t.id, name: t.route })} onAddCrew={() => { setCrewFormEdit(null); setCrewFormOpen(true) }} onEditCrew={(c) => { setCrewFormEdit(c); setCrewFormOpen(true) }} onDeleteCrew={(c) => setDeleteDialog({ open: true, type: 'crew', id: c.id, name: c.name })} onAddRouteTemplate={() => { setRouteTemplateFormEdit(null); setRouteTemplateFormOpen(true) }} onEditRouteTemplate={(rt) => { setRouteTemplateFormEdit(rt); setRouteTemplateFormOpen(true) }} onDeleteRouteTemplate={(rt) => setDeleteDialog({ open: true, type: 'routeTemplate', id: rt.id, name: rt.name })} readOnly={!hasPermission(currentUser.role, 'trips')} />
+            </TabsContent>
+          )}
+          {hasPermission(currentUser.role, 'employees') && hasPermission(currentUser.role, 'companies') && (
+            <TabsContent value="management">
+              <div className="space-y-4">
+                <Tabs value={mgmtSubTab} onValueChange={(v) => setMgmtSubTab(v as 'companies' | 'employees' | 'crews')}>
+                  <TabsList>
+                    <TabsTrigger value="companies" className="gap-1.5"><Building2 className="size-3.5" />Компании<Badge variant="secondary" className="ml-1 h-4 min-w-4 px-1 text-[10px]">{stats.companiesTotal}</Badge></TabsTrigger>
+                    <TabsTrigger value="employees" className="gap-1.5"><Users className="size-3.5" />Сотрудники<Badge variant="secondary" className="ml-1 h-4 min-w-4 px-1 text-[10px]">{stats.employeesTotal}</Badge></TabsTrigger>
+                    <TabsTrigger value="crews" className="gap-1.5"><Users className="size-3.5" />Экипажи</TabsTrigger>
+                  </TabsList>
+                </Tabs>
+                {mgmtSubTab === 'companies' && <CompaniesTab companies={companies} onAdd={() => { setCompanyFormEdit(null); setCompanyFormOpen(true) }} onEdit={(c) => { setCompanyFormEdit(c); setCompanyFormOpen(true) }} onDelete={(c) => setDeleteDialog({ open: true, type: 'company', id: c.id, name: c.name })} />}
+                {mgmtSubTab === 'employees' && <EmployeesTab employees={employees} crews={crews} empSearch={empSearch} setEmpSearch={setEmpSearch} empPositionFilter={empPositionFilter} setEmpPositionFilter={setEmpPositionFilter} empStatusFilter={empStatusFilter} setEmpStatusFilter={setEmpStatusFilter} onOpenDetail={openEmployeeDetail} onAdd={() => { setEmpFormEdit(null); setEmpFormOpen(true) }} onEdit={(emp) => { setEmpFormEdit(emp); setEmpFormOpen(true) }} onDelete={(emp) => setDeleteDialog({ open: true, type: 'employee', id: emp.id, name: emp.fullName })} />}
+                {mgmtSubTab === 'crews' && (
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between">
+                      <h3 className="text-sm font-semibold">Экипажи</h3>
+                      <Button size="sm" onClick={() => { setCrewFormEdit(null); setCrewFormOpen(true) }}><Plus className="size-3.5 mr-1" />Добавить</Button>
+                    </div>
+                    {crews.length === 0 ? (
+                      <p className="text-sm text-muted-foreground text-center py-6">Нет экипажей</p>
+                    ) : (
+                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                        {crews.map(crew => (
+                          <Card key={crew.id} className="cursor-pointer hover:shadow-md transition-shadow" onClick={() => { setCrewFormEdit(crew); setCrewFormOpen(true) }}>
+                            <CardHeader className="p-3 pb-1"><CardTitle className="text-xs font-semibold">{crew.name}</CardTitle></CardHeader>
+                            <CardContent className="p-3 pt-1">
+                              <p className="text-[10px] text-muted-foreground">{CREW_TYPE_MAP[crew.type] || crew.type} • {crew.status === 'active' ? 'Активен' : 'Неактивен'}</p>
+                              {crew.members && crew.members.length > 0 && <p className="text-[10px] text-muted-foreground mt-1">Членов: {crew.members.length}</p>}
+                            </CardContent>
+                          </Card>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            </TabsContent>
+          )}
+          {hasPermission(currentUser.role, 'map') && (
+            <TabsContent value="map">
+              <MapTab equipment={equipment} onOpenDetail={openEquipmentDetailById} onSync={async () => { try { const res = await fetch('/api/glonass/sync', { method: 'POST' }); const data = await res.json(); if (data.synced !== undefined) toast.success(`Синхронизация: ${data.synced} из ${data.totalTrackers}`); else toast.error(data.error || 'Ошибка'); fetchEquipment() } catch { toast.error('Ошибка синхронизации') } }} />
+            </TabsContent>
+          )}
+          {hasPermission(currentUser.role, 'settings') && (
+            <TabsContent value="settings">
+              <SettingsTabContent
+                users={users}
+                fetchUsers={fetchUsers}
+                axentaSettings={axentaSettings}
+                setAxentaSettings={setAxentaSettings}
+                settingsSaving={settingsSaving}
+                setSettingsSaving={setSettingsSaving}
+                syncing={syncing}
+                setSyncing={setSyncing}
+                settingsSubTab={settingsSubTab}
+                setSettingsSubTab={setSettingsSubTab}
+                onRefreshAll={fetchAll}
+              />
+            </TabsContent>
+          )}
         </Tabs>
 
         {/* Mobile: show active tab content directly */}
         <div className="md:hidden">
-          {mainTab === 'equipment' && <EquipmentTab equipment={equipment} companies={companies} eqSearch={eqSearch} setEqSearch={setEqSearch} eqStatusFilter={eqStatusFilter} setEqStatusFilter={setEqStatusFilter} eqTypeFilter={eqTypeFilter} setEqTypeFilter={setEqTypeFilter} onOpenDetail={openEquipmentDetail} onAdd={() => { setEqFormEdit(null); setEqFormStep(0); setEqFormOpen(true) }} onEdit={(eq) => { setEqFormEdit(eq); setEqFormStep(0); setEqFormOpen(true) }} onDelete={(eq) => setDeleteDialog({ open: true, type: 'equipment', id: eq.id, name: eq.name })} onGoToMap={(eq) => openEquipmentDetail(eq, 'glonass')} onCreateTrip={(eq) => { setTripFormEdit(null); setTripFormEquipmentId(eq.id); setTripFormOpen(true) }} />}
-          {mainTab === 'repairs' && <RepairsTab repairs={repairs} equipment={equipment} onOpenDetail={openRepairDetail} onAdd={(eqId) => { setRepairFormEdit(null); setRepairFormEquipmentId(eqId || ''); setRepairFormOpen(true) }} onDelete={(r) => setDeleteDialog({ open: true, type: 'repair', id: r.id, name: r.description })} />}
-          {mainTab === 'trips' && <TripsTab trips={trips} equipment={equipment} crews={crews} routeTemplates={routeTemplates} onOpenDetail={openTripDetail} onAdd={(eqId) => { setTripFormEdit(null); setTripFormEquipmentId(eqId || ''); setTripFormOpen(true) }} onDelete={(t) => setDeleteDialog({ open: true, type: 'trip', id: t.id, name: t.route })} onAddCrew={() => { setCrewFormEdit(null); setCrewFormOpen(true) }} onEditCrew={(c) => { setCrewFormEdit(c); setCrewFormOpen(true) }} onDeleteCrew={(c) => setDeleteDialog({ open: true, type: 'crew', id: c.id, name: c.name })} onAddRouteTemplate={() => { setRouteTemplateFormEdit(null); setRouteTemplateFormOpen(true) }} onEditRouteTemplate={(rt) => { setRouteTemplateFormEdit(rt); setRouteTemplateFormOpen(true) }} onDeleteRouteTemplate={(rt) => setDeleteDialog({ open: true, type: 'routeTemplate', id: rt.id, name: rt.name })} />}
-          {mainTab === 'employees' && <EmployeesTab employees={employees} crews={crews} empSearch={empSearch} setEmpSearch={setEmpSearch} empPositionFilter={empPositionFilter} setEmpPositionFilter={setEmpPositionFilter} empStatusFilter={empStatusFilter} setEmpStatusFilter={setEmpStatusFilter} onOpenDetail={openEmployeeDetail} onAdd={() => { setEmpFormEdit(null); setEmpFormOpen(true) }} onEdit={(emp) => { setEmpFormEdit(emp); setEmpFormOpen(true) }} onDelete={(emp) => setDeleteDialog({ open: true, type: 'employee', id: emp.id, name: emp.fullName })} />}
-          {mainTab === 'companies' && <CompaniesTab companies={companies} onAdd={() => { setCompanyFormEdit(null); setCompanyFormOpen(true) }} onEdit={(c) => { setCompanyFormEdit(c); setCompanyFormOpen(true) }} onDelete={(c) => setDeleteDialog({ open: true, type: 'company', id: c.id, name: c.name })} />}
-          {mainTab === 'map' && <MapTab equipment={equipment} onOpenDetail={openEquipmentDetailById} onSync={async () => { try { const res = await fetch('/api/glonass/sync', { method: 'POST' }); const data = await res.json(); if (data.synced !== undefined) toast.success(`Синхронизация: ${data.synced} из ${data.totalTrackers}`); else toast.error(data.error || 'Ошибка'); fetchEquipment() } catch { toast.error('Ошибка синхронизации') } }} />}
+          {mainTab === 'equipment' && hasPermission(currentUser.role, 'equipment') && <EquipmentTab equipment={equipment} companies={companies} eqSearch={eqSearch} setEqSearch={setEqSearch} eqStatusFilter={eqStatusFilter} setEqStatusFilter={setEqStatusFilter} eqTypeFilter={eqTypeFilter} setEqTypeFilter={setEqTypeFilter} onOpenDetail={openEquipmentDetail} onAdd={() => { setEqFormEdit(null); setEqFormStep(0); setEqFormOpen(true) }} onEdit={(eq) => { setEqFormEdit(eq); setEqFormStep(0); setEqFormOpen(true) }} onDelete={(eq) => setDeleteDialog({ open: true, type: 'equipment', id: eq.id, name: eq.name })} onGoToMap={(eq) => openEquipmentDetail(eq, 'glonass')} onCreateTrip={(eq) => { setTripFormEdit(null); setTripFormEquipmentId(eq.id); setTripFormOpen(true) }} readOnly={!hasPermission(currentUser.role, 'equipment')} />}
+          {mainTab === 'repairs' && hasPermission(currentUser.role, 'repairs') && <RepairsTab repairs={repairs} equipment={equipment} onOpenDetail={openRepairDetail} onAdd={(eqId) => { setRepairFormEdit(null); setRepairFormEquipmentId(eqId || ''); setRepairFormOpen(true) }} onDelete={(r) => setDeleteDialog({ open: true, type: 'repair', id: r.id, name: r.description })} readOnly={!hasPermission(currentUser.role, 'repairs')} />}
+          {mainTab === 'trips' && hasPermission(currentUser.role, 'trips') && <TripsTab trips={trips} equipment={equipment} crews={crews} routeTemplates={routeTemplates} onOpenDetail={openTripDetail} onAdd={(eqId) => { setTripFormEdit(null); setTripFormEquipmentId(eqId || ''); setTripFormOpen(true) }} onDelete={(t) => setDeleteDialog({ open: true, type: 'trip', id: t.id, name: t.route })} onAddCrew={() => { setCrewFormEdit(null); setCrewFormOpen(true) }} onEditCrew={(c) => { setCrewFormEdit(c); setCrewFormOpen(true) }} onDeleteCrew={(c) => setDeleteDialog({ open: true, type: 'crew', id: c.id, name: c.name })} onAddRouteTemplate={() => { setRouteTemplateFormEdit(null); setRouteTemplateFormOpen(true) }} onEditRouteTemplate={(rt) => { setRouteTemplateFormEdit(rt); setRouteTemplateFormOpen(true) }} onDeleteRouteTemplate={(rt) => setDeleteDialog({ open: true, type: 'routeTemplate', id: rt.id, name: rt.name })} readOnly={!hasPermission(currentUser.role, 'trips')} />}
+          {mainTab === 'management' && hasPermission(currentUser.role, 'employees') && (
+            <div className="space-y-4">
+              <Tabs value={mgmtSubTab} onValueChange={(v) => setMgmtSubTab(v as 'companies' | 'employees' | 'crews')}>
+                <TabsList>
+                  <TabsTrigger value="companies" className="gap-1 text-xs"><Building2 className="size-3" />Компании</TabsTrigger>
+                  <TabsTrigger value="employees" className="gap-1 text-xs"><Users className="size-3" />Сотрудники</TabsTrigger>
+                  <TabsTrigger value="crews" className="gap-1 text-xs"><Users className="size-3" />Экипажи</TabsTrigger>
+                </TabsList>
+              </Tabs>
+              {mgmtSubTab === 'companies' && <CompaniesTab companies={companies} onAdd={() => { setCompanyFormEdit(null); setCompanyFormOpen(true) }} onEdit={(c) => { setCompanyFormEdit(c); setCompanyFormOpen(true) }} onDelete={(c) => setDeleteDialog({ open: true, type: 'company', id: c.id, name: c.name })} />}
+              {mgmtSubTab === 'employees' && <EmployeesTab employees={employees} crews={crews} empSearch={empSearch} setEmpSearch={setEmpSearch} empPositionFilter={empPositionFilter} setEmpPositionFilter={setEmpPositionFilter} empStatusFilter={empStatusFilter} setEmpStatusFilter={setEmpStatusFilter} onOpenDetail={openEmployeeDetail} onAdd={() => { setEmpFormEdit(null); setEmpFormOpen(true) }} onEdit={(emp) => { setEmpFormEdit(emp); setEmpFormOpen(true) }} onDelete={(emp) => setDeleteDialog({ open: true, type: 'employee', id: emp.id, name: emp.fullName })} />}
+              {mgmtSubTab === 'crews' && (
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between"><h3 className="text-sm font-semibold">Экипажи</h3><Button size="sm" onClick={() => { setCrewFormEdit(null); setCrewFormOpen(true) }}><Plus className="size-3.5 mr-1" />Добавить</Button></div>
+                  {crews.length === 0 ? <p className="text-sm text-muted-foreground text-center py-6">Нет экипажей</p> : (
+                    <div className="space-y-2">{crews.map(crew => (<Card key={crew.id} className="cursor-pointer hover:shadow-md transition-shadow" onClick={() => { setCrewFormEdit(crew); setCrewFormOpen(true) }}><CardHeader className="p-3 pb-1"><CardTitle className="text-xs font-semibold">{crew.name}</CardTitle></CardHeader><CardContent className="p-3 pt-1"><p className="text-[10px] text-muted-foreground">{CREW_TYPE_MAP[crew.type] || crew.type}</p></CardContent></Card>))}</div>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+          {mainTab === 'map' && hasPermission(currentUser.role, 'map') && <MapTab equipment={equipment} onOpenDetail={openEquipmentDetailById} onSync={async () => { try { const res = await fetch('/api/glonass/sync', { method: 'POST' }); const data = await res.json(); if (data.synced !== undefined) toast.success(`Синхронизация: ${data.synced} из ${data.totalTrackers}`); else toast.error(data.error || 'Ошибка'); fetchEquipment() } catch { toast.error('Ошибка синхронизации') } }} />}
+          {mainTab === 'settings' && hasPermission(currentUser.role, 'settings') && (
+            <SettingsTabContent users={users} fetchUsers={fetchUsers} axentaSettings={axentaSettings} setAxentaSettings={setAxentaSettings} settingsSaving={settingsSaving} setSettingsSaving={setSettingsSaving} syncing={syncing} setSyncing={setSyncing} settingsSubTab={settingsSubTab} setSettingsSubTab={setSettingsSubTab} onRefreshAll={fetchAll} />
+          )}
         </div>
       </main>
 
       {/* ─── MOBILE BOTTOM NAV ────────────────────────────────── */}
       <nav className="md:hidden fixed bottom-0 left-0 right-0 z-40 border-t bg-card/95 backdrop-blur-sm">
-        <div className="grid grid-cols-6 h-14">
+        <div className={`grid h-14 ${hasPermission(currentUser.role, 'settings') ? 'grid-cols-5' : 'grid-cols-4'}`}>
           {[
-            { value: 'equipment', icon: <Truck className="size-5" />, label: 'Техника', count: stats.total },
-            { value: 'repairs', icon: <Wrench className="size-5" />, label: 'Ремонты', count: stats.repairsTotal },
-            { value: 'trips', icon: <Route className="size-5" />, label: 'Рейсы', count: stats.tripsTotal },
-            { value: 'employees', icon: <Users className="size-5" />, label: 'Сотрудники', count: stats.employeesTotal },
-            { value: 'companies', icon: <Building2 className="size-5" />, label: 'Компании', count: stats.companiesTotal },
-            { value: 'map', icon: <Map className="size-5" />, label: 'Карта', count: 0 },
+            ...(hasPermission(currentUser.role, 'equipment') ? [{ value: 'equipment', icon: <Truck className="size-5" />, label: 'Техника' }] : []),
+            ...(hasPermission(currentUser.role, 'repairs') ? [{ value: 'repairs', icon: <Wrench className="size-5" />, label: 'Ремонты' }] : []),
+            ...(hasPermission(currentUser.role, 'trips') ? [{ value: 'trips', icon: <Route className="size-5" />, label: 'Рейсы' }] : []),
+            ...(hasPermission(currentUser.role, 'employees') && hasPermission(currentUser.role, 'companies') ? [{ value: 'management', icon: <ClipboardCheck className="size-5" />, label: 'Управление' }] : []),
+            ...(hasPermission(currentUser.role, 'map') ? [{ value: 'map', icon: <Map className="size-5" />, label: 'Карта' }] : []),
+            ...(hasPermission(currentUser.role, 'settings') ? [{ value: 'settings', icon: <Cog className="size-5" />, label: 'Настройки' }] : []),
           ].map(tab => (
             <button key={tab.value} onClick={() => setMainTab(tab.value)}
               className={`flex flex-col items-center justify-center gap-0.5 transition-colors ${mainTab === tab.value ? 'text-primary' : 'text-muted-foreground'}`}>
@@ -1170,83 +1582,7 @@ export default function Home() {
         </DialogContent>
       </Dialog>
 
-      {/* Axenta settings */}
-      <Dialog open={settingsOpen} onOpenChange={setSettingsOpen}>
-        <DialogContent className="sm:max-w-lg">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2"><Cog className="size-4" />Настройки Axenta.cloud</DialogTitle>
-            <DialogDescription>Авторизация и подключение к API ГЛОНАСС</DialogDescription>
-          </DialogHeader>
-          <div className="space-y-3 px-4 sm:px-5 overflow-y-auto flex-1 min-h-0">
-            <div className="rounded-md bg-muted/50 border p-3 space-y-1.5">
-              <p className="text-xs font-medium flex items-center gap-1.5"><Info className="size-3.5" />Как получить токен</p>
-              <ol className="text-[11px] text-muted-foreground list-decimal list-inside space-y-0.5">
-                <li>Зарегистрируйтесь на <span className="font-medium text-foreground">axenta.cloud</span></li>
-                <li>Создайте учётную запись в разделе «Учетные записи»</li>
-                <li>Введите логин и пароль ниже — токен будет получен автоматически</li>
-              </ol>
-              <p className="text-[10px] text-muted-foreground">API: <code className="text-[10px] bg-muted px-1 py-0.5 rounded">POST /api/auth/login/</code> → <code className="text-[10px] bg-muted px-1 py-0.5 rounded">Authorization: Token &lt;ваш_токен&gt;</code></p>
-            </div>
-            <div><Label className="text-xs">API URL *</Label><Input placeholder="https://axenta.cloud" value={axentaSettings.apiUrl} onChange={e => setAxentaSettings(s => ({ ...s, apiUrl: e.target.value }))} /><p className="text-[10px] text-muted-foreground mt-0.5">Базовый адрес: https://axenta.cloud</p></div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <div><Label className="text-xs">Логин *</Label><Input placeholder="Логин Axenta" value={axentaSettings.username || ''} onChange={e => setAxentaSettings(s => ({ ...s, username: e.target.value }))} /></div>
-              <div><Label className="text-xs">Пароль *</Label><Input type="password" placeholder="Пароль Axenta" value={axentaSettings.password || ''} onChange={e => setAxentaSettings(s => ({ ...s, password: e.target.value }))} /></div>
-            </div>
-            {axentaSettings.apiKey && (
-              <div className="rounded-md bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-800 p-2.5">
-                <p className="text-[11px] font-medium text-emerald-700 dark:text-emerald-400 flex items-center gap-1.5"><CheckCircle2 className="size-3.5" />Токен получен</p>
-                <p className="text-[10px] text-emerald-600 dark:text-emerald-500 mt-0.5">Ключ: {axentaSettings.apiKey.substring(0, 10)}...{axentaSettings.apiKey.slice(-4)}</p>
-              </div>
-            )}
-            <div><Label className="text-xs">Интервал синхронизации (сек)</Label><Input type="number" value={axentaSettings.syncInterval} onChange={e => setAxentaSettings(s => ({ ...s, syncInterval: parseInt(e.target.value) || 300 }))} /></div>
-            <div className="flex items-center justify-between">
-              <Label className="text-xs">Интеграция активна</Label>
-              <Button variant={axentaSettings.isActive ? 'default' : 'outline'} size="sm" onClick={() => setAxentaSettings(s => ({ ...s, isActive: !s.isActive }))}>{axentaSettings.isActive ? 'Вкл' : 'Выкл'}</Button>
-            </div>
-            {axentaSettings.lastSyncAt && <p className="text-[10px] text-muted-foreground">Последняя синхронизация: {formatDateTime(axentaSettings.lastSyncAt)}</p>}
-          </div>
-          <DialogFooter className="gap-2 sm:gap-0 flex-wrap">
-            <Button variant="outline" size="sm" onClick={async () => { setSyncing(true); try { const res = await fetch('/api/glonass/sync', { method: 'POST' }); const data = await res.json(); if (data.synced !== undefined) toast.success(`Синхронизация: ${data.synced} из ${data.totalTrackers}`); else toast.error(data.error || 'Ошибка') } catch { toast.error('Ошибка синхронизации') }; setSyncing(false) }} disabled={syncing}>
-              {syncing ? <Loader2 className="size-3.5 animate-spin" /> : <RefreshCw className="size-3.5" />}Синхронизировать
-            </Button>
-            <Button size="sm" onClick={async () => {
-              setSettingsSaving(true);
-              try {
-                // Авторизация через API — автоматически получает токен
-                if (axentaSettings.username && axentaSettings.password && axentaSettings.apiUrl) {
-                  const authRes = await fetch('/api/glonass/auth', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(axentaSettings)
-                  });
-                  const authData = await authRes.json();
-                  if (authRes.ok && authData.success) {
-                    toast.success(authData.message || 'Авторизация успешна');
-                    // Обновим настройки из БД
-                    const settingsRes = await fetch('/api/glonass/settings');
-                    if (settingsRes.ok) {
-                      const settingsData = await settingsRes.json();
-                      if (settingsData.apiUrl) setAxentaSettings(settingsData);
-                    }
-                  } else {
-                    toast.error(authData.error || 'Ошибка авторизации');
-                  }
-                } else {
-                  // Если нет логина/пароля — сохраняем как есть (ручной ввод ключа)
-                  const res = await fetch('/api/glonass/settings', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(axentaSettings) });
-                  if (!res.ok) throw new Error();
-                  const data = await res.json();
-                  setAxentaSettings(data);
-                  toast.success('Настройки сохранены');
-                }
-              } catch { toast.error('Ошибка сохранения') }
-              setSettingsSaving(false);
-            }} disabled={settingsSaving}>
-              {settingsSaving ? <Loader2 className="size-3.5 animate-spin" /> : <Satellite className="size-3.5" />}Войти и сохранить
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      {/* Axenta settings dialog - kept for backward compat, now accessible from Settings tab */}
 
       {/* Delete confirm */}
       <AlertDialog open={deleteDialog.open} onOpenChange={(open) => setDeleteDialog({ ...deleteDialog, open })}>
@@ -1325,7 +1661,7 @@ function StatCard({ icon, label, value, color }: { icon: React.ReactNode; label:
 // EQUIPMENT TAB
 // ═══════════════════════════════════════════════════════════════
 
-function EquipmentTab({ equipment, companies, eqSearch, setEqSearch, eqStatusFilter, setEqStatusFilter, eqTypeFilter, setEqTypeFilter, onOpenDetail, onAdd, onEdit, onDelete, onGoToMap, onCreateTrip }: {
+function EquipmentTab({ equipment, companies, eqSearch, setEqSearch, eqStatusFilter, setEqStatusFilter, eqTypeFilter, setEqTypeFilter, onOpenDetail, onAdd, onEdit, onDelete, onGoToMap, onCreateTrip, readOnly }: {
   equipment: Equipment[]; companies: Company[];
   eqSearch: string; setEqSearch: (v: string) => void;
   eqStatusFilter: string; setEqStatusFilter: (v: string) => void;
@@ -1334,6 +1670,7 @@ function EquipmentTab({ equipment, companies, eqSearch, setEqSearch, eqStatusFil
   onAdd: () => void; onEdit: (eq: Equipment) => void; onDelete: (eq: Equipment) => void;
   onGoToMap: (eq: Equipment) => void;
   onCreateTrip: (eq: Equipment) => void;
+  readOnly?: boolean;
 }) {
   const [copiedId, setCopiedId] = useState<string | null>(null)
   const containerRef = useRef<HTMLDivElement>(null)
@@ -2909,10 +3246,11 @@ function EquipmentFormDialog({ open, onOpenChange, editData, companies, step, se
 // REPAIRS TAB
 // ═══════════════════════════════════════════════════════════════
 
-function RepairsTab({ repairs, equipment, onOpenDetail, onAdd, onDelete }: {
+function RepairsTab({ repairs, equipment, onOpenDetail, onAdd, onDelete, readOnly }: {
   repairs: Repair[]; equipment: Equipment[];
   onOpenDetail: (r: Repair) => void; onAdd: (eqId?: string) => void;
   onDelete: (r: Repair) => void;
+  readOnly?: boolean;
 }) {
   const [statusFilter, setStatusFilter] = useState('all')
   const [eqFilter, setEqFilter] = useState('all')
@@ -3919,12 +4257,13 @@ function RepairPhotoUploadDialog({ open, onOpenChange, targetId, stages, onUploa
 // TRIPS TAB
 // ═══════════════════════════════════════════════════════════════
 
-function TripsTab({ trips, equipment, crews, routeTemplates, onOpenDetail, onAdd, onDelete, onAddCrew, onEditCrew, onDeleteCrew, onAddRouteTemplate, onEditRouteTemplate, onDeleteRouteTemplate }: {
+function TripsTab({ trips, equipment, crews, routeTemplates, onOpenDetail, onAdd, onDelete, onAddCrew, onEditCrew, onDeleteCrew, onAddRouteTemplate, onEditRouteTemplate, onDeleteRouteTemplate, readOnly }: {
   trips: Trip[]; equipment: Equipment[]; crews: Crew[]; routeTemplates: RouteTemplate[];
   onOpenDetail: (t: Trip, focusTrack?: boolean) => void; onAdd: (eqId?: string) => void;
   onDelete: (t: Trip) => void;
   onAddCrew: () => void; onEditCrew: (c: Crew) => void; onDeleteCrew: (c: Crew) => void;
   onAddRouteTemplate: () => void; onEditRouteTemplate: (rt: RouteTemplate) => void; onDeleteRouteTemplate: (rt: RouteTemplate) => void;
+  readOnly?: boolean;
 }) {
   const [statusFilter, setStatusFilter] = useState('all')
   const [eqFilter, setEqFilter] = useState('all')
@@ -8140,6 +8479,255 @@ function MapTab({ equipment, onSync, onOpenDetail }: {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+    </div>
+  )
+}
+
+// ═══════════════════════════════════════════════════════════════
+// SETTINGS TAB CONTENT (Admin only)
+// ═══════════════════════════════════════════════════════════════
+
+function SettingsTabContent({
+  users, fetchUsers, axentaSettings, setAxentaSettings, settingsSaving, setSettingsSaving,
+  syncing, setSyncing, settingsSubTab, setSettingsSubTab, onRefreshAll
+}: {
+  users: AppUserType[]; fetchUsers: () => void;
+  axentaSettings: AxentaSettings; setAxentaSettings: React.Dispatch<React.SetStateAction<AxentaSettings>>;
+  settingsSaving: boolean; setSettingsSaving: (v: boolean) => void;
+  syncing: boolean; setSyncing: (v: boolean) => void;
+  settingsSubTab: 'users' | 'axenta' | 'about'; setSettingsSubTab: (v: 'users' | 'axenta' | 'about') => void;
+  onRefreshAll: () => void;
+}) {
+  const [userFormOpen, setUserFormOpen] = useState(false)
+  const [userFormEdit, setUserFormEdit] = useState<AppUserType | null>(null)
+  const [userFormSaving, setUserFormSaving] = useState(false)
+  const [userDeleteDialog, setUserDeleteDialog] = useState<{ open: boolean; id: string; name: string }>({ open: false, id: '', name: '' })
+
+  const handleSaveUser = async (data: { name: string; pin: string; role: string; isActive: boolean; avatar: string }) => {
+    setUserFormSaving(true)
+    try {
+      if (userFormEdit) {
+        const res = await fetch(`/api/users/${userFormEdit.id}`, {
+          method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data),
+        })
+        if (!res.ok) throw new Error()
+        toast.success('Пользователь обновлён')
+      } else {
+        const res = await fetch('/api/users', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data),
+        })
+        if (!res.ok) throw new Error()
+        toast.success('Пользователь создан')
+      }
+      setUserFormOpen(false)
+      fetchUsers()
+    } catch { toast.error('Ошибка сохранения') }
+    setUserFormSaving(false)
+  }
+
+  const handleDeleteUser = async () => {
+    try {
+      const res = await fetch(`/api/users/${userDeleteDialog.id}`, { method: 'DELETE' })
+      if (!res.ok) { const d = await res.json().catch(() => null); throw new Error(d?.error || 'Ошибка') }
+      toast.success('Пользователь удалён')
+      fetchUsers()
+    } catch (e: any) { toast.error(e.message || 'Ошибка удаления') }
+    setUserDeleteDialog({ open: false, id: '', name: '' })
+  }
+
+  return (
+    <div className="space-y-4">
+      <Tabs value={settingsSubTab} onValueChange={(v) => setSettingsSubTab(v as 'users' | 'axenta' | 'about')}>
+        <TabsList>
+          <TabsTrigger value="users" className="gap-1.5"><Users className="size-3.5" />Пользователи</TabsTrigger>
+          <TabsTrigger value="axenta" className="gap-1.5"><Satellite className="size-3.5" />Axenta</TabsTrigger>
+          <TabsTrigger value="about" className="gap-1.5"><Info className="size-3.5" />О системе</TabsTrigger>
+        </TabsList>
+      </Tabs>
+
+      {settingsSubTab === 'users' && (
+        <div className="space-y-4">
+          <div className="flex items-center justify-between">
+            <h3 className="text-sm font-semibold">Пользователи ({users.length})</h3>
+            <Button size="sm" onClick={() => { setUserFormEdit(null); setUserFormOpen(true) }}>
+              <UserPlus className="size-3.5 mr-1" />Добавить
+            </Button>
+          </div>
+          <div className="space-y-2">
+            {users.map(user => (
+              <Card key={user.id} className="p-3">
+                <div className="flex items-center gap-3">
+                  <div className="size-9 rounded-full flex items-center justify-center text-white font-bold text-xs shrink-0"
+                    style={{ backgroundColor: user.avatar || '#6366f1' }}>
+                    {getInitials(user.name)}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium truncate">{user.name}</p>
+                    <p className="text-[11px] text-muted-foreground">{ROLE_LABELS[user.role as RoleKey] || user.role} • {!user.isActive ? 'Неактивен' : 'Активен'}</p>
+                  </div>
+                  <div className="flex items-center gap-1">
+                    <Button variant="ghost" size="icon" className="size-7" onClick={() => { setUserFormEdit(user); setUserFormOpen(true) }}>
+                      <Edit className="size-3" />
+                    </Button>
+                    <Button variant="ghost" size="icon" className="size-7 text-destructive hover:text-destructive"
+                      onClick={() => setUserDeleteDialog({ open: true, id: user.id, name: user.name })}>
+                      <Trash2 className="size-3" />
+                    </Button>
+                  </div>
+                </div>
+              </Card>
+            ))}
+          </div>
+
+          {/* User Form Dialog */}
+          <Dialog open={userFormOpen} onOpenChange={setUserFormOpen}>
+            <DialogContent className="sm:max-w-md">
+              <DialogHeader>
+                <DialogTitle>{userFormEdit ? 'Редактировать пользователя' : 'Новый пользователь'}</DialogTitle>
+              </DialogHeader>
+              <UserForm editData={userFormEdit} saving={userFormSaving} onSave={handleSaveUser} />
+            </DialogContent>
+          </Dialog>
+
+          {/* Delete confirm */}
+          <AlertDialog open={userDeleteDialog.open} onOpenChange={(open) => setUserDeleteDialog({ ...userDeleteDialog, open })}>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>Удалить пользователя?</AlertDialogTitle>
+                <AlertDialogDescription>Удалить &laquo;{userDeleteDialog.name}&raquo;? Это действие нельзя отменить.</AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel>Отмена</AlertDialogCancel>
+                <AlertDialogAction onClick={handleDeleteUser} className="bg-destructive text-white hover:bg-destructive/90">Удалить</AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
+        </div>
+      )}
+
+      {settingsSubTab === 'axenta' && (
+        <Card className="p-4">
+          <div className="space-y-3">
+            <div className="flex items-center gap-2 mb-2">
+              <Satellite className="size-4" />
+              <h3 className="text-sm font-semibold">Интеграция Axenta.cloud</h3>
+            </div>
+            <div className="rounded-md bg-muted/50 border p-3 space-y-1.5">
+              <p className="text-xs font-medium flex items-center gap-1.5"><Info className="size-3.5" />Как получить токен</p>
+              <ol className="text-[11px] text-muted-foreground list-decimal list-inside space-y-0.5">
+                <li>Зарегистрируйтесь на <span className="font-medium text-foreground">axenta.cloud</span></li>
+                <li>Создайте учётную запись в разделе «Учетные записи»</li>
+                <li>Введите логин и пароль ниже — токен будет получен автоматически</li>
+              </ol>
+            </div>
+            <div><Label className="text-xs">API URL *</Label><Input placeholder="https://axenta.cloud" value={axentaSettings.apiUrl} onChange={e => setAxentaSettings(s => ({ ...s, apiUrl: e.target.value }))} /></div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div><Label className="text-xs">Логин *</Label><Input placeholder="Логин Axenta" value={axentaSettings.username || ''} onChange={e => setAxentaSettings(s => ({ ...s, username: e.target.value }))} /></div>
+              <div><Label className="text-xs">Пароль *</Label><Input type="password" placeholder="Пароль Axenta" value={axentaSettings.password || ''} onChange={e => setAxentaSettings(s => ({ ...s, password: e.target.value }))} /></div>
+            </div>
+            {axentaSettings.apiKey && (
+              <div className="rounded-md bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-800 p-2.5">
+                <p className="text-[11px] font-medium text-emerald-700 dark:text-emerald-400 flex items-center gap-1.5"><CheckCircle2 className="size-3.5" />Токен получен</p>
+                <p className="text-[10px] text-emerald-600 dark:text-emerald-500 mt-0.5">Ключ: {axentaSettings.apiKey.substring(0, 10)}...{axentaSettings.apiKey.slice(-4)}</p>
+              </div>
+            )}
+            <div><Label className="text-xs">Интервал синхронизации (сек)</Label><Input type="number" value={axentaSettings.syncInterval} onChange={e => setAxentaSettings(s => ({ ...s, syncInterval: parseInt(e.target.value) || 300 }))} /></div>
+            <div className="flex items-center justify-between">
+              <Label className="text-xs">Интеграция активна</Label>
+              <Button variant={axentaSettings.isActive ? 'default' : 'outline'} size="sm" onClick={() => setAxentaSettings(s => ({ ...s, isActive: !s.isActive }))}>{axentaSettings.isActive ? 'Вкл' : 'Выкл'}</Button>
+            </div>
+            {axentaSettings.lastSyncAt && <p className="text-[10px] text-muted-foreground">Последняя синхронизация: {formatDateTime(axentaSettings.lastSyncAt)}</p>}
+            <div className="flex gap-2 pt-2">
+              <Button variant="outline" size="sm" onClick={async () => { setSyncing(true); try { const res = await fetch('/api/glonass/sync', { method: 'POST' }); const data = await res.json(); if (data.synced !== undefined) toast.success(`Синхронизация: ${data.synced} из ${data.totalTrackers}`); else toast.error(data.error || 'Ошибка') } catch { toast.error('Ошибка синхронизации') }; setSyncing(false) }} disabled={syncing}>
+                {syncing ? <Loader2 className="size-3.5 animate-spin" /> : <RefreshCw className="size-3.5" />}Синхронизировать
+              </Button>
+              <Button size="sm" onClick={async () => {
+                setSettingsSaving(true);
+                try {
+                  if (axentaSettings.username && axentaSettings.password && axentaSettings.apiUrl) {
+                    const authRes = await fetch('/api/glonass/auth', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(axentaSettings) });
+                    const authData = await authRes.json();
+                    if (authRes.ok && authData.success) {
+                      toast.success(authData.message || 'Авторизация успешна');
+                      const settingsRes = await fetch('/api/glonass/settings');
+                      if (settingsRes.ok) { const settingsData = await settingsRes.json(); if (settingsData.apiUrl) setAxentaSettings(settingsData); }
+                    } else { toast.error(authData.error || 'Ошибка авторизации'); }
+                  } else {
+                    const res = await fetch('/api/glonass/settings', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(axentaSettings) });
+                    if (!res.ok) throw new Error();
+                    const data = await res.json(); setAxentaSettings(data); toast.success('Настройки сохранены');
+                  }
+                } catch { toast.error('Ошибка сохранения') }
+                setSettingsSaving(false);
+              }} disabled={settingsSaving}>
+                {settingsSaving ? <Loader2 className="size-3.5 animate-spin" /> : <Satellite className="size-3.5" />}Войти и сохранить
+              </Button>
+            </div>
+          </div>
+        </Card>
+      )}
+
+      {settingsSubTab === 'about' && (
+        <Card className="p-4">
+          <div className="space-y-3">
+            <div className="flex items-center gap-2 mb-2">
+              <Truck className="size-4" />
+              <h3 className="text-sm font-semibold">О системе</h3>
+            </div>
+            <div className="space-y-2">
+              <div className="flex justify-between text-xs"><span className="text-muted-foreground">Название</span><span className="font-medium">Учёт техники</span></div>
+              <div className="flex justify-between text-xs"><span className="text-muted-foreground">Версия</span><span className="font-medium">1.0.0</span></div>
+              <div className="flex justify-between text-xs"><span className="text-muted-foreground">Фреймворк</span><span className="font-medium">Next.js 16</span></div>
+              <div className="flex justify-between text-xs"><span className="text-muted-foreground">База данных</span><span className="font-medium">SQLite (Prisma)</span></div>
+              <Separator />
+              <p className="text-[10px] text-muted-foreground">Комплексная система учёта оборудования, ремонтов, рейсов и отслеживания техники на карте.</p>
+            </div>
+          </div>
+        </Card>
+      )}
+    </div>
+  )
+}
+
+// User form component for settings
+function UserForm({ editData, saving, onSave }: {
+  editData: AppUserType | null; saving: boolean; onSave: (data: { name: string; pin: string; role: string; isActive: boolean; avatar: string }) => void;
+}) {
+  const [name, setName] = useState(editData?.name || '')
+  const [pin, setPin] = useState('')
+  const [role, setRole] = useState(editData?.role || 'worker')
+  const [isActive, setIsActive] = useState(editData?.isActive ?? true)
+  const [avatar] = useState(editData?.avatar || AVATAR_COLORS[Math.floor(Math.random() * AVATAR_COLORS.length)])
+
+  return (
+    <div className="space-y-3 px-1">
+      <div><Label className="text-xs">Имя *</Label><Input value={name} onChange={e => setName(e.target.value)} placeholder="Имя пользователя" /></div>
+      <div><Label className="text-xs">{editData ? 'Новый PIN (оставьте пустым чтобы не менять)' : 'PIN (4-6 цифр) *'}</Label><Input type="password" value={pin} onChange={e => setPin(e.target.value.replace(/\D/g, '').slice(0, 6))} placeholder="1234" /></div>
+      <div>
+        <Label className="text-xs">Роль</Label>
+        <Select value={role} onValueChange={setRole}>
+          <SelectTrigger><SelectValue /></SelectTrigger>
+          <SelectContent>
+            {Object.entries(ROLE_LABELS).map(([key, label]) => (
+              <SelectItem key={key} value={key}>{label}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+      <div className="flex items-center justify-between">
+        <Label className="text-xs">Активен</Label>
+        <Button variant={isActive ? 'default' : 'outline'} size="sm" onClick={() => setIsActive(!isActive)}>{isActive ? 'Да' : 'Нет'}</Button>
+      </div>
+      <div className="flex items-center gap-2">
+        <div className="size-8 rounded-full flex items-center justify-center text-white font-bold text-xs" style={{ backgroundColor: avatar }}>{getInitials(name || '?')}</div>
+        <span className="text-[10px] text-muted-foreground">Цвет аватара назначен автоматически</span>
+      </div>
+      <DialogFooter>
+        <Button size="sm" disabled={saving || !name || (!editData && pin.length < 4)} onClick={() => onSave({ name, pin, role, isActive, avatar })}>
+          {saving ? <Loader2 className="size-3.5 animate-spin mr-1" /> : <Save className="size-3.5 mr-1" />}
+          {editData ? 'Сохранить' : 'Создать'}
+        </Button>
+      </DialogFooter>
     </div>
   )
 }

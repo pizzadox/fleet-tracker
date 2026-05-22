@@ -408,3 +408,28 @@ model NotificationRule {
 
   equipment       Equipment @relation(fields: [equipmentId], references: [id], onDelete: Cascade)
 }
+
+model AppUser {
+  id          String   @id @default(cuid())
+  name        String   // Display name
+  pin         String   // 4-6 digit PIN (hashed with SHA-256)
+  role        String   @default("worker") // admin | manager | trip_master | repair_worker | worker
+  isActive    Boolean  @default(true)
+  avatar      String?  // Avatar color hex
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  sessions    UserSession[]
+}
+
+model UserSession {
+  id        String   @id @default(cuid())
+  userId    String
+  token     String   // Session token
+  createdAt DateTime @default(now())
+  expiresAt DateTime // Expiry time
+
+  user      AppUser  @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([token])
+}
