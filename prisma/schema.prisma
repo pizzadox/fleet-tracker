@@ -54,7 +54,27 @@ model Equipment {
   insuranceExpiry DateTime? // Срок действия страховки
   inspectionDate  DateTime? // Дата техосмотра
   inspectionExpiry DateTime? // Срок действия ТО
-  status          String   @default("active") // active | repair | decommissioned | rented
+  status          String   @default("active") // active | repair | decommissioned | rented | reserved
+  condition       String   @default("good") // excellent | good | fair | poor
+  location        String?  // Местоположение/гараж
+  depot           String?  // Гараж/депо
+  lastMaintenanceDate DateTime? // Дата последнего ТО
+  nextMaintenanceDate DateTime? // Дата следующего ТО
+  maintenanceInterval Int?   // Интервал ТО (км)
+  fuelConsumptionNorm Float? // Норма расхода топлива (л/100км)
+  tireSize        String?  // Размер шин
+  tireReplacementDate DateTime? // Дата замены шин
+  oilChangeDate   DateTime? // Дата замены масла
+  oilChangeMileage Int?    // Пробег при замене масла
+  oilChangeInterval Int?   // Интервал замены масла (км)
+  assignedDriver  String?  // Назначенный водитель (ФИО)
+  garageNumber    String?  // Гаражный номер
+  unitNumber      String?  // Бригадный/отрядный номер
+  rentalStartDate DateTime? // Дата начала аренды
+  rentalEndDate   DateTime? // Дата окончания аренды
+  rentalCost      Float?   // Стоимость аренды (₽/мес)
+  decommissionDate DateTime? // Дата списания
+  decommissionReason String? // Причина списания
   notes           String?  // Дополнительные заметки
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
@@ -86,27 +106,40 @@ model EquipmentPhoto {
 }
 
 model Repair {
-  id            String   @id @default(cuid())
-  equipmentId   String
-  description   String   // Описание ремонта
-  reason        String?  // Причина ремонта
-  startDate     DateTime // Дата начала
-  endDate       DateTime? // Дата окончания
-  status        String   @default("in_progress") // in_progress | completed | cancelled
-  cost          Float?   // Стоимость ремонта
-  contractor    String?  // Подрядчик/СТО
-  contractorPhone String? // Телефон подрядчика
-  workPerformed String?  // Выполненные работы
-  spareParts    String?  // Запчасти
-  nextInspection DateTime? // Дата следующего ТО после ремонта
-  notes         String?  // Заметки
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  id              String   @id @default(cuid())
+  equipmentId     String
+  description     String   // Описание ремонта
+  reason          String?  // Причина ремонта
+  startDate       DateTime // Дата начала
+  endDate         DateTime? // Дата окончания
+  status          String   @default("in_progress") // in_progress | completed | cancelled | paused
+  priority        String   @default("medium") // low | medium | high | critical
+  repairType      String   @default("planned") // planned | emergency | warranty | preventive
+  estimatedEndDate DateTime? // Планируемая дата окончания
+  estimatedCost   Float?   // Ориентировочная стоимость
+  cost            Float?   // Фактическая стоимость ремонта
+  contractor      String?  // Подрядчик/СТО
+  contractorPhone String?  // Телефон подрядчика
+  contractorEmail String?  // Email подрядчика
+  workPerformed   String?  // Выполненные работы
+  spareParts      String?  // Запчасти
+  nextInspection  DateTime? // Дата следующего ТО после ремонта
+  location        String?  // Место проведения ремонта
+  mileageStart    Int?     // Пробег на начало ремонта
+  mileageEnd      Int?     // Пробег на конец ремонта
+  downtimeHours   Float?   // Время простоя (часы)
+  warrantyRepair  Boolean  @default(false) // Гарантийный ремонт
+  insuranceClaim  Boolean  @default(false) // Страховой случай
+  insuranceNumber String?  // Номер страхового полиса/заявки
+  notes           String?  // Заметки
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
 
-  equipment     Equipment @relation(fields: [equipmentId], references: [id], onDelete: Cascade)
-  photos        RepairPhoto[]
-  stages        RepairStage[]
-  masters       RepairEmployee[]
+  equipment       Equipment @relation(fields: [equipmentId], references: [id], onDelete: Cascade)
+  photos          RepairPhoto[]
+  stages          RepairStage[]
+  masters         RepairEmployee[]
+  comments        RepairComment[]
 }
 
 model RepairEmployee {
@@ -124,20 +157,22 @@ model RepairEmployee {
 }
 
 model RepairStage {
-  id          String   @id @default(cuid())
-  repairId    String
-  name        String   // Название этапа
-  description String?  // Описание этапа
-  status      String   @default("pending") // pending | in_progress | completed
-  startDate   DateTime? // Дата начала этапа
-  endDate     DateTime? // Дата окончания этапа
-  performer   String?  // Исполнитель
-  cost        Float?   // Стоимость этапа
-  sortOrder   Int      @default(0)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id                String   @id @default(cuid())
+  repairId          String
+  name              String   // Название этапа
+  description       String?  // Описание этапа
+  status            String   @default("pending") // pending | in_progress | completed | paused
+  startDate         DateTime? // Дата начала этапа
+  endDate           DateTime? // Дата окончания этапа
+  performer         String?  // Исполнитель
+  cost              Float?   // Стоимость этапа
+  estimatedDuration Float?   // Ожидаемая длительность (часы)
+  notes             String?  // Заметки к этапу
+  sortOrder         Int      @default(0)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
 
-  repair      Repair   @relation(fields: [repairId], references: [id], onDelete: Cascade)
+  repair            Repair   @relation(fields: [repairId], references: [id], onDelete: Cascade)
 }
 
 model RepairPhoto {
@@ -145,10 +180,21 @@ model RepairPhoto {
   repairId    String
   url         String   // Путь к файлу
   description String?  // Описание фото
+  category    String   @default("during") // before | during | after | document | other
   stageId     String?  // Привязка к этапу ремонта
   createdAt   DateTime @default(now())
 
   repair      Repair   @relation(fields: [repairId], references: [id], onDelete: Cascade)
+}
+
+model RepairComment {
+  id        String   @id @default(cuid())
+  repairId  String
+  text      String   // Текст комментария
+  author    String?  // Автор комментария
+  createdAt DateTime @default(now())
+
+  repair    Repair   @relation(fields: [repairId], references: [id], onDelete: Cascade)
 }
 
 model EquipmentHistory {

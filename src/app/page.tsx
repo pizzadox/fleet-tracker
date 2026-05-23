@@ -4,7 +4,8 @@
    УЧЁТ ТЕХНИКИ — Комплексная система учёта оборудования
    ═══════════════════════════════════════════════════════════════ */
 
-import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'
+import React, { useState, useEffect, useCallback, useRef, useMemo, useId } from 'react'
+import { AnimatePresence, motion } from 'framer-motion'
 import { toast } from 'sonner'
 import { useTheme } from 'next-themes'
 import dynamic from 'next/dynamic'
@@ -74,7 +75,11 @@ import {
   ScanLine, Receipt, Truck as TruckIcon, Flame,
   ArrowUp, ArrowDown, GripVertical, MapPinned, ToggleRight,
   LogOut, Globe, Database, Palette, LayoutGrid, List, FileDown, CheckCheck,
-  ArrowUpCircle, MousePointerClick, Layers
+  ArrowUpCircle, MousePointerClick, Layers, Terminal, Send,
+  Pause, Play, MessageSquare, Flag, CalendarDays, Kanban, LayoutDashboard,
+  CopyPlus, RefreshCw as RefreshCwIcon, ExternalLink, ImageOff, SortAsc, SortDesc,
+  PauseCircle, ShieldCheck, FileBadge2, GaugeDashboard, BookmarkCheck, MessageCircle,
+  HeartPulse
 } from 'lucide-react'
 
 // ═══════════════════════════════════════════════════════════════
@@ -98,17 +103,23 @@ interface RepairStage {
   id: string; repairId: string; name: string; description?: string | null;
   status: string; startDate?: string | null; endDate?: string | null;
   performer?: string | null; cost?: number | null; sortOrder: number;
+  estimatedDuration?: number | null; notes?: string | null;
 }
 
 interface RepairPhoto {
   id: string; repairId: string; url: string;
   description?: string | null; stageId?: string | null;
+  category: string;
 }
 
 interface RepairEmployee {
   id: string; repairId: string; employeeId: string; role: string;
   assignedAt: string; notes?: string | null;
   employee: { id: string; fullName: string; position: string; phone?: string | null; status: string; licenseCat?: string | null };
+}
+
+interface RepairComment {
+  id: string; repairId: string; text: string; author?: string | null; createdAt: string;
 }
 
 interface Repair {
@@ -118,7 +129,14 @@ interface Repair {
   contractorPhone?: string | null; workPerformed?: string | null;
   spareParts?: string | null; nextInspection?: string | null;
   notes?: string | null; createdAt: string; updatedAt: string;
-  equipment?: { id: string; name: string; registrationNum?: string | null; brand?: string | null; model?: string | null };
+  priority: string; repairType: string;
+  estimatedEndDate?: string | null; estimatedCost?: number | null;
+  contractorEmail?: string | null; location?: string | null;
+  mileageStart?: number | null; mileageEnd?: number | null;
+  downtimeHours?: number | null; warrantyRepair: boolean;
+  insuranceClaim: boolean; insuranceNumber?: string | null;
+  comments?: RepairComment[];
+  equipment?: { id: string; name: string; registrationNum?: string | null; brand?: string | null; model?: string | null; type?: string | null };
   photos?: RepairPhoto[]; stages?: RepairStage[];
   masters?: RepairEmployee[];
 }
@@ -149,6 +167,16 @@ interface Equipment {
   inspectionDate?: string | null; inspectionExpiry?: string | null;
   status: string; notes?: string | null; ownerId?: string | null;
   renterId?: string | null; createdAt: string; updatedAt: string;
+  condition?: string; location?: string | null; depot?: string | null;
+  lastMaintenanceDate?: string | null; nextMaintenanceDate?: string | null;
+  maintenanceInterval?: number | null; fuelConsumptionNorm?: number | null;
+  tireSize?: string | null; tireReplacementDate?: string | null;
+  oilChangeDate?: string | null; oilChangeMileage?: number | null;
+  oilChangeInterval?: number | null; assignedDriver?: string | null;
+  garageNumber?: string | null; unitNumber?: string | null;
+  rentalStartDate?: string | null; rentalEndDate?: string | null;
+  rentalCost?: number | null; decommissionDate?: string | null;
+  decommissionReason?: string | null;
   owner?: Company | null; renter?: Company | null;
   _count?: { repairs: number; photos: number };
   photos?: EquipmentPhoto[]; repairs?: Repair[];
@@ -332,18 +360,21 @@ const EQUIPMENT_STATUS_MAP: Record<string, { label: string; color: string; borde
   repair: { label: 'На ремонте', color: 'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-400', border: 'border-l-amber-500' },
   decommissioned: { label: 'Списана', color: 'bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-400', border: 'border-l-red-500' },
   rented: { label: 'В аренде', color: 'bg-sky-100 text-sky-800 dark:bg-sky-900/40 dark:text-sky-400', border: 'border-l-sky-500' },
+  reserved: { label: 'Зарезервирована', color: 'bg-violet-100 text-violet-800 dark:bg-violet-900/40 dark:text-violet-400', border: 'border-l-violet-500' },
 }
 
 const REPAIR_STATUS_MAP: Record<string, { label: string; color: string }> = {
   in_progress: { label: 'В процессе', color: 'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-400' },
   completed: { label: 'Завершён', color: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-400' },
   cancelled: { label: 'Отменён', color: 'bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-400' },
+  paused: { label: 'Приостановлен', color: 'bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-400' },
 }
 
 const STAGE_STATUS_MAP: Record<string, { label: string; color: string }> = {
   pending: { label: 'Ожидание', color: 'bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-400' },
   in_progress: { label: 'В процессе', color: 'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-400' },
   completed: { label: 'Завершён', color: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-400' },
+  paused: { label: 'Пауза', color: 'bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-400' },
 }
 
 interface EquipmentTypeInfo {
@@ -422,6 +453,23 @@ function TypeBadge({ type }: { type: string }) {
   )
 }
 
+const EQUIPMENT_CONDITION_MAP: Record<string, { label: string; color: string; icon: string }> = {
+  excellent: { label: 'Отличное', color: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-400', icon: '✓' },
+  good: { label: 'Хорошее', color: 'bg-sky-100 text-sky-800 dark:bg-sky-900/40 dark:text-sky-400', icon: '○' },
+  fair: { label: 'Удовлетворительное', color: 'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-400', icon: '△' },
+  poor: { label: 'Плохое', color: 'bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-400', icon: '✗' },
+}
+
+const FUEL_TYPE_MAP: Record<string, string> = {
+  diesel: 'Дизель', petrol: 'Бензин', gas: 'Газ', electric: 'Электро', hybrid: 'Гибрид',
+}
+
+const ENGINE_TYPE_MAP: Record<string, string> = {
+  internal_combustion: 'ДВС', electric: 'Электрический', hybrid: 'Гибридный',
+}
+
+const MAINTENANCE_WARN_DAYS = 30
+
 const PHOTO_CATEGORIES: Record<string, string> = {
   general: 'Общие', document: 'Документы', damage: 'Повреждения', repair: 'Ремонт'
 }
@@ -465,6 +513,39 @@ const REPAIR_MASTER_ROLE_MAP: Record<string, { label: string; color: string }> =
   assistant: { label: 'Помощник', color: 'bg-sky-100 text-sky-800 dark:bg-sky-900/40 dark:text-sky-400' },
   supervisor: { label: 'Ответственный', color: 'bg-violet-100 text-violet-800 dark:bg-violet-900/40 dark:text-violet-400' },
 }
+
+const REPAIR_PRIORITY_MAP: Record<string, { label: string; color: string; icon?: string }> = {
+  low: { label: 'Низкий', color: 'bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-400' },
+  medium: { label: 'Средний', color: 'bg-sky-100 text-sky-800 dark:bg-sky-900/40 dark:text-sky-400' },
+  high: { label: 'Высокий', color: 'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-400' },
+  critical: { label: 'Критический', color: 'bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-400' },
+}
+
+const REPAIR_TYPE_MAP: Record<string, { label: string; color: string }> = {
+  planned: { label: 'Плановый', color: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-400' },
+  emergency: { label: 'Аварийный', color: 'bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-400' },
+  warranty: { label: 'Гарантийный', color: 'bg-violet-100 text-violet-800 dark:bg-violet-900/40 dark:text-violet-400' },
+  preventive: { label: 'Профилактический', color: 'bg-sky-100 text-sky-800 dark:bg-sky-900/40 dark:text-sky-400' },
+}
+
+const REPAIR_PHOTO_CATEGORY_MAP: Record<string, { label: string; color: string }> = {
+  before: { label: 'До ремонта', color: 'bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-400' },
+  during: { label: 'В процессе', color: 'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-400' },
+  after: { label: 'После ремонта', color: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-400' },
+  document: { label: 'Документы', color: 'bg-sky-100 text-sky-800 dark:bg-sky-900/40 dark:text-sky-400' },
+  other: { label: 'Другое', color: 'bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-400' },
+}
+
+const STAGE_TEMPLATES = [
+  { name: 'Диагностика', description: 'Проведение диагностики неисправности' },
+  { name: 'Разборка', description: 'Демонтаж и разборка узлов' },
+  { name: 'Закупка запчастей', description: 'Заказ и получение запчастей' },
+  { name: 'Ремонт/замена', description: 'Выполнение ремонтных работ' },
+  { name: 'Сборка', description: 'Обратная сборка узлов' },
+  { name: 'Тестирование', description: 'Проверка работоспособности' },
+  { name: 'Покраска', description: 'Подготовка и покраска' },
+  { name: 'Сдача заказчику', description: 'Проверка качества и сдача' },
+]
 
 // ═══════════════════════════════════════════════════════════════
 // HELPERS
@@ -1027,6 +1108,11 @@ export default function Home() {
   const [stageFormSaving, setStageFormSaving] = useState(false)
   const [fullPhoto, setFullPhoto] = useState<string | null>(null)
   const [photoCategoryFilter, setPhotoCategoryFilter] = useState('all')
+  const [repairComments, setRepairComments] = useState<RepairComment[]>([])
+  const [commentText, setCommentText] = useState('')
+  const [repairSort, setRepairSort] = useState<{ field: string; dir: 'asc' | 'desc' }>({ field: 'startDate', dir: 'desc' })
+  const [selectedRepairs, setSelectedRepairs] = useState<Set<string>>(new Set())
+  const [repairPhotoCategoryFilter, setRepairPhotoCategoryFilter] = useState('all')
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [axentaSettings, setAxentaSettings] = useState<AxentaSettings>({ apiUrl: '', apiKey: '', username: '', password: '', syncInterval: 300, isActive: false })
   const [settingsSaving, setSettingsSaving] = useState(false)
@@ -1908,7 +1994,7 @@ export default function Home() {
 
       <EquipmentDetailSheet open={eqDetailOpen} onOpenChange={setEqDetailOpen} equipment={selectedEq} loading={eqDetailLoading} detailTab={eqDetailTab} setDetailTab={setEqDetailTab} companies={companies} photoCategoryFilter={photoCategoryFilter} setPhotoCategoryFilter={setPhotoCategoryFilter} fullPhoto={fullPhoto} setFullPhoto={setFullPhoto} onEdit={(eq) => { setEqDetailOpen(false); setEqFormEdit(eq); setEqFormStep(0); setEqFormOpen(true) }} onDelete={(eq) => { setEqDetailOpen(false); setDeleteDialog({ open: true, type: 'equipment', id: eq.id, name: eq.name }) }} onAddRepair={(eqId) => { setRepairFormEdit(null); setRepairFormEquipmentId(eqId); setRepairFormOpen(true) }} onUploadPhoto={(eqId) => setPhotoUploadEq(eqId)} onRefresh={() => selectedEq && fetchEquipmentDetail(selectedEq.id)} onOpenRepairDetail={(r) => openRepairDetail(r)} onAddTrip={(eqId) => { setTripFormEdit(null); setTripFormEquipmentId(eqId); setTripFormOpen(true) }} onOpenTripDetail={openTripDetail} allEquipment={equipment} onRefreshAll={fetchEquipment} />
       <EquipmentFormDialog open={eqFormOpen} onOpenChange={setEqFormOpen} editData={eqFormEdit} companies={companies} step={eqFormStep} setStep={setEqFormStep} saving={eqFormSaving} setSaving={setEqFormSaving} onSaved={() => { setEqFormOpen(false); fetchAll() }} />
-      <RepairDetailDialog open={repairDetailOpen} onOpenChange={setRepairDetailOpen} repair={selectedRepair} loading={repairDetailLoading} fullPhoto={fullPhoto} setFullPhoto={setFullPhoto} onEdit={(r) => { setRepairDetailOpen(false); setRepairFormEdit(r); setRepairFormEquipmentId(r.equipmentId); setRepairFormOpen(true) }} onDelete={(r) => { setRepairDetailOpen(false); setDeleteDialog({ open: true, type: 'repair', id: r.id, name: r.description }) }} onComplete={async (r) => { try { const res = await fetch(`/api/repairs/${r.id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...r, status: 'completed', endDate: new Date().toISOString() }) }); if (!res.ok) throw new Error(); toast.success('Ремонт завершён'); fetchRepairDetail(r.id); fetchAll() } catch { toast.error('Ошибка завершения ремонта') } }} onAddStage={(repairId) => { setStageFormRepairId(repairId); setStageFormEdit(null); setStageFormOpen(true) }} onEditStage={(stage, repairId) => { setStageFormRepairId(repairId); setStageFormEdit(stage); setStageFormOpen(true) }} onDeleteStage={async (stageId, repairId) => { try { const res = await fetch(`/api/repairs/${repairId}/stages?stageId=${stageId}`, { method: 'DELETE' }); if (!res.ok) throw new Error(); toast.success('Этап удалён'); fetchRepairDetail(repairId); fetchRepairs(); if (selectedEq) fetchEquipmentDetail(selectedEq.id) } catch { toast.error('Ошибка удаления этапа') } }} onUploadPhoto={(repairId) => setPhotoUploadRepair(repairId)} onRefresh={() => { if (selectedRepair) { fetchRepairDetail(selectedRepair.id); fetchRepairs(); if (selectedEq) fetchEquipmentDetail(selectedEq.id) } }} employees={employees} />
+      <RepairDetailDialog open={repairDetailOpen} onOpenChange={setRepairDetailOpen} repair={selectedRepair} loading={repairDetailLoading} fullPhoto={fullPhoto} setFullPhoto={setFullPhoto} onEdit={(r) => { setRepairDetailOpen(false); setRepairFormEdit(r); setRepairFormEquipmentId(r.equipmentId); setRepairFormOpen(true) }} onDelete={(r) => { setRepairDetailOpen(false); setDeleteDialog({ open: true, type: 'repair', id: r.id, name: r.description }) }} onComplete={async (r) => { try { const res = await fetch(`/api/repairs/${r.id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...r, status: 'completed', endDate: new Date().toISOString() }) }); if (!res.ok) throw new Error(); toast.success('Ремонт завершён'); fetchRepairDetail(r.id); fetchAll() } catch { toast.error('Ошибка завершения ремонта') } }} onAddStage={(repairId) => { setStageFormRepairId(repairId); setStageFormEdit(null); setStageFormOpen(true) }} onEditStage={(stage, repairId) => { setStageFormRepairId(repairId); setStageFormEdit(stage); setStageFormOpen(true) }} onDeleteStage={async (stageId, repairId) => { try { const res = await fetch(`/api/repairs/${repairId}/stages?stageId=${stageId}`, { method: 'DELETE' }); if (!res.ok) throw new Error(); toast.success('Этап удалён'); fetchRepairDetail(repairId); fetchRepairs(); if (selectedEq) fetchEquipmentDetail(selectedEq.id) } catch { toast.error('Ошибка удаления этапа') } }} onUploadPhoto={(repairId) => setPhotoUploadRepair(repairId)} onRefresh={() => { if (selectedRepair) { fetchRepairDetail(selectedRepair.id); fetchRepairs(); if (selectedEq) fetchEquipmentDetail(selectedEq.id) } }} employees={employees} onDuplicate={(r) => { setRepairDetailOpen(false); setRepairFormEdit({ ...r, id: '', status: 'in_progress', startDate: new Date().toISOString(), endDate: null, endDate: undefined } as any); setRepairFormEquipmentId(r.equipmentId); setRepairFormOpen(true) }} onPause={async (r) => { try { const res = await fetch(`/api/repairs/${r.id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status: 'paused' }) }); if (!res.ok) throw new Error(); toast.success('Ремонт приостановлен'); fetchRepairDetail(r.id); fetchAll() } catch { toast.error('Ошибка') } }} onResume={async (r) => { try { const res = await fetch(`/api/repairs/${r.id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status: 'in_progress' }) }); if (!res.ok) throw new Error(); toast.success('Ремонт возобновлён'); fetchRepairDetail(r.id); fetchAll() } catch { toast.error('Ошибка') } }} />
       <RepairFormDialog open={repairFormOpen} onOpenChange={setRepairFormOpen} editData={repairFormEdit} equipmentId={repairFormEquipmentId} equipmentList={equipment} saving={repairFormSaving} setSaving={setRepairFormSaving} onSaved={() => { setRepairFormOpen(false); fetchAll() }} employees={employees} />
       <CompanyFormDialog open={companyFormOpen} onOpenChange={setCompanyFormOpen} editData={companyFormEdit} saving={companyFormSaving} setSaving={setCompanyFormSaving} onSaved={() => { setCompanyFormOpen(false); fetchAll() }} />
       <StageFormDialog open={stageFormOpen} onOpenChange={setStageFormOpen} repairId={stageFormRepairId} editData={stageFormEdit} saving={stageFormSaving} setSaving={setStageFormSaving} onSaved={() => { setStageFormOpen(false); if (selectedRepair) { fetchRepairDetail(selectedRepair.id); fetchRepairs(); if (selectedEq) fetchEquipmentDetail(selectedEq.id) } }} />
@@ -2044,9 +2130,18 @@ const EquipmentTab = React.memo(function EquipmentTab({ equipment, companies, eq
   const containerRef = useRef<HTMLDivElement>(null)
   const [expandedId, setExpandedId] = useState<string | null>(null)
   const [page, setPage] = useState(1)
-  const [viewMode, setViewMode] = useState<'cards' | 'table'>('cards')
+  const [viewMode, setViewMode] = useState<'cards' | 'table' | 'kanban'>('cards')
   const [bulkMode, setBulkMode] = useState(false)
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
+  const [conditionFilter, setConditionFilter] = useState('all')
+  const [ownerFilter, setOwnerFilter] = useState('all')
+  const [renterFilter, setRenterFilter] = useState('all')
+  const [quickFilter, setQuickFilter] = useState<'all' | 'needs_maintenance' | 'insurance_expired' | 'to_expired' | 'poor_condition' | 'no_tracker' | 'rented'>('all')
+  const [sortField, setSortField] = useState<string>('name')
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc')
+  const [batchStatusDialog, setBatchStatusDialog] = useState(false)
+  const [batchNewStatus, setBatchNewStatus] = useState('active')
+  const [confirmDialog, setConfirmDialog] = useState<{ open: boolean; title: string; desc: string; onConfirm: () => void }>({ open: false, title: '', desc: '', onConfirm: () => {} })
   const PAGE_SIZE = 20
 
   const daysUntil = (d?: string | null) => {
@@ -2057,6 +2152,12 @@ const EquipmentTab = React.memo(function EquipmentTab({ equipment, companies, eq
   const fmtDate = (d?: string | null) => {
     if (!d) return null
     return new Date(d).toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit', year: '2-digit' })
+  }
+
+  const fmtKm = (km?: number | null) => {
+    if (km == null) return '—'
+    if (km >= 1000) return `${(km / 1000).toFixed(1)} тыс.км`
+    return `${km.toLocaleString('ru-RU')} км`
   }
 
   const getEngineIcon = (type?: string | null) => {
@@ -2085,36 +2186,162 @@ const EquipmentTab = React.memo(function EquipmentTab({ equipment, companies, eq
     })
   }
 
+  const toggleSort = (field: string) => {
+    if (sortField === field) setSortDir(d => d === 'asc' ? 'desc' : 'asc')
+    else { setSortField(field); setSortDir('asc') }
+  }
+
+  const sortIcon = (field: string) => {
+    if (sortField !== field) return <ArrowDown className="size-3 text-muted-foreground/40" />
+    return sortDir === 'asc' ? <ArrowUp className="size-3 text-primary" /> : <ArrowDown className="size-3 text-primary" />
+  }
+
+  // ── Statistics ──
+  const stats = useMemo(() => {
+    const total = equipment.length
+    const active = equipment.filter(e => e.status === 'active').length
+    const repair = equipment.filter(e => e.status === 'repair').length
+    const rented = equipment.filter(e => e.status === 'rented').length
+    const decommissioned = equipment.filter(e => e.status === 'decommissioned').length
+    const reserved = equipment.filter(e => e.status === 'reserved').length
+    const totalPurchase = equipment.reduce((s, e) => s + (e.purchasePrice || 0), 0)
+    const totalCurrent = equipment.reduce((s, e) => s + (e.currentPrice || 0), 0)
+    const conditions: Record<string, number> = { excellent: 0, good: 0, fair: 0, poor: 0 }
+    for (const eq of equipment) {
+      if (eq.condition && conditions[eq.condition] !== undefined) conditions[eq.condition]++
+    }
+    const activeDays = equipment.filter(e => e.purchaseDate).reduce((s, e) => s + Math.max(1, Math.floor((Date.now() - new Date(e.purchaseDate!).getTime()) / (1000*60*60*24))), 0)
+    const repairDays = equipment.reduce((s, e) => s + (e.repairs || []).filter(r => r.status === 'completed' && r.startDate && r.endDate).reduce((rs, r) => rs + Math.max(1, Math.ceil((new Date(r.endDate!).getTime() - new Date(r.startDate).getTime()) / (1000*60*60*24))), 0), 0)
+    const utilization = activeDays > 0 ? Math.round(((activeDays - repairDays) / activeDays) * 100) : null
+    const eqRepairCount: Record<string, number> = {}
+    for (const eq of equipment) { if (eq._count?.repairs) eqRepairCount[eq.id] = eq._count.repairs }
+    const topRepaired = Object.entries(eqRepairCount).sort((a, b) => b[1] - a[1]).slice(0, 3).map(([id]) => equipment.find(e => e.id === id)).filter(Boolean) as Equipment[]
+    return { total, active, repair, rented, decommissioned, reserved, totalPurchase, totalCurrent, conditions, utilization, topRepaired }
+  }, [equipment])
+
+  // ── Filtering & Sorting ──
+  const filteredEquipment = useMemo(() => {
+    let result = equipment.filter(eq => {
+      if (conditionFilter !== 'all' && eq.condition !== conditionFilter) return false
+      if (ownerFilter !== 'all' && eq.ownerId !== ownerFilter) return false
+      if (renterFilter !== 'all' && eq.renterId !== renterFilter) return false
+      const insDays = daysUntil(eq.insuranceExpiry)
+      const inspDays = daysUntil(eq.inspectionExpiry)
+      const maintDays = daysUntil(eq.nextMaintenanceDate)
+      if (quickFilter === 'needs_maintenance' && !(maintDays != null && maintDays < MAINTENANCE_WARN_DAYS)) return false
+      if (quickFilter === 'insurance_expired' && !(insDays != null && insDays < 0)) return false
+      if (quickFilter === 'to_expired' && !(inspDays != null && inspDays < 0)) return false
+      if (quickFilter === 'poor_condition' && eq.condition !== 'poor' && eq.condition !== 'fair') return false
+      if (quickFilter === 'no_tracker' && eq.trackers && eq.trackers.length > 0) return false
+      if (quickFilter === 'rented' && eq.status !== 'rented') return false
+      return true
+    })
+    result.sort((a, b) => {
+      let aVal: string | number, bVal: string | number
+      switch (sortField) {
+        case 'name': aVal = a.name.toLowerCase(); bVal = b.name.toLowerCase(); break
+        case 'status': { const so: Record<string, number> = { active: 1, repair: 2, rented: 3, reserved: 4, decommissioned: 5 }; aVal = so[a.status] || 0; bVal = so[b.status] || 0; break }
+        case 'year': aVal = a.year || 0; bVal = b.year || 0; break
+        case 'mileage': aVal = a.mileage || 0; bVal = b.mileage || 0; break
+        case 'condition': { const co: Record<string, number> = { excellent: 1, good: 2, fair: 3, poor: 4 }; aVal = co[a.condition || ''] || 5; bVal = co[b.condition || ''] || 5; break }
+        default: aVal = a.name.toLowerCase(); bVal = b.name.toLowerCase()
+      }
+      if (aVal < bVal) return sortDir === 'asc' ? -1 : 1
+      if (aVal > bVal) return sortDir === 'asc' ? 1 : -1
+      return 0
+    })
+    return result
+  }, [equipment, conditionFilter, ownerFilter, renterFilter, quickFilter, sortField, sortDir])
+
   // Группировка по статусу для визуальной организации
-  const statusOrder = ['active', 'repair', 'rented', 'decommissioned']
+  const statusOrder = ['active', 'repair', 'rented', 'reserved', 'decommissioned']
   const groupedByStatus = useMemo(() => {
     const groups: Record<string, Equipment[]> = {}
-    for (const eq of equipment) {
+    for (const eq of filteredEquipment) {
       const s = eq.status || 'active'
       if (!groups[s]) groups[s] = []
       groups[s].push(eq)
     }
     return groups
-  }, [equipment])
+  }, [filteredEquipment])
+
+  const paginatedEquipment = filteredEquipment.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
 
   return (
     <div className="space-y-3" ref={containerRef}>
-      {/* Фильтры */}
+      {/* ── Statistics Dashboard ── */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-2">
+        <Card className="p-3"><div className="flex items-center gap-2"><div className="size-8 rounded-lg bg-emerald-100 dark:bg-emerald-900/40 flex items-center justify-center"><Truck className="size-4 text-emerald-600 dark:text-emerald-400" /></div><div><p className="text-lg font-bold">{stats.total}</p><p className="text-[10px] text-muted-foreground">Всего</p></div></div></Card>
+        <Card className="p-3"><div className="flex items-center gap-2"><div className="size-8 rounded-lg bg-emerald-100 dark:bg-emerald-900/40 flex items-center justify-center"><CheckCircle2 className="size-4 text-emerald-600 dark:text-emerald-400" /></div><div><p className="text-lg font-bold">{stats.active}</p><p className="text-[10px] text-muted-foreground">В эксплуатации</p></div></div></Card>
+        <Card className="p-3"><div className="flex items-center gap-2"><div className="size-8 rounded-lg bg-amber-100 dark:bg-amber-900/40 flex items-center justify-center"><Wrench className="size-4 text-amber-600 dark:text-amber-400" /></div><div><p className="text-lg font-bold">{stats.repair}</p><p className="text-[10px] text-muted-foreground">На ремонте</p></div></div></Card>
+        <Card className="p-3"><div className="flex items-center gap-2"><div className="size-8 rounded-lg bg-sky-100 dark:bg-sky-900/40 flex items-center justify-center"><Users className="size-4 text-sky-600 dark:text-sky-400" /></div><div><p className="text-lg font-bold">{stats.rented}</p><p className="text-[10px] text-muted-foreground">В аренде</p></div></div></Card>
+        <Card className="p-3"><div className="flex items-center gap-2"><div className="size-8 rounded-lg bg-violet-100 dark:bg-violet-900/40 flex items-center justify-center"><BookmarkCheck className="size-4 text-violet-600 dark:text-violet-400" /></div><div><p className="text-lg font-bold">{stats.reserved}</p><p className="text-[10px] text-muted-foreground">Зарезервирована</p></div></div></Card>
+        <Card className="p-3"><div className="flex items-center gap-2"><div className="size-8 rounded-lg bg-red-100 dark:bg-red-900/40 flex items-center justify-center"><XCircle className="size-4 text-red-600 dark:text-red-400" /></div><div><p className="text-lg font-bold">{stats.decommissioned}</p><p className="text-[10px] text-muted-foreground">Списана</p></div></div></Card>
+      </div>
+
+      {/* ── Fleet Value + Condition + Utilization ── */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+        <Card className="p-3">
+          <p className="text-[10px] text-muted-foreground font-medium mb-1">Стоимость парка</p>
+          <div className="flex items-baseline gap-2">
+            <span className="text-sm font-bold">{stats.totalPurchase.toLocaleString('ru-RU')} ₽</span>
+            <span className="text-[10px] text-muted-foreground">покупка</span>
+          </div>
+          <div className="flex items-baseline gap-2 mt-0.5">
+            <span className="text-sm font-medium text-muted-foreground">{stats.totalCurrent.toLocaleString('ru-RU')} ₽</span>
+            <span className="text-[10px] text-muted-foreground">текущая</span>
+            {stats.totalPurchase > 0 && (
+              <span className={`text-[10px] font-medium ${((1 - stats.totalCurrent / stats.totalPurchase) * 100) > 50 ? 'text-red-500' : ((1 - stats.totalCurrent / stats.totalPurchase) * 100) > 20 ? 'text-amber-500' : 'text-emerald-500'}`}>
+                износ {Math.round((1 - stats.totalCurrent / stats.totalPurchase) * 100)}%
+              </span>
+            )}
+          </div>
+        </Card>
+        <Card className="p-3">
+          <p className="text-[10px] text-muted-foreground font-medium mb-1">Состояние парка</p>
+          <div className="flex items-center gap-1.5">
+            {Object.entries(EQUIPMENT_CONDITION_MAP).map(([key, info]) => (
+              <div key={key} className="flex-1 text-center">
+                <div className={`rounded px-1.5 py-1 text-[10px] font-medium ${info.color}`}>{stats.conditions[key] || 0}</div>
+                <p className="text-[8px] text-muted-foreground mt-0.5">{info.label}</p>
+              </div>
+            ))}
+          </div>
+        </Card>
+        <Card className="p-3">
+          <p className="text-[10px] text-muted-foreground font-medium mb-1">Использование парка</p>
+          <div className="flex items-center gap-2">
+            {stats.utilization != null ? (
+              <>
+                <Progress value={Math.min(100, stats.utilization)} className="flex-1 h-2" />
+                <span className={`text-sm font-bold ${stats.utilization > 80 ? 'text-emerald-600 dark:text-emerald-400' : stats.utilization > 60 ? 'text-amber-600 dark:text-amber-400' : 'text-red-600 dark:text-red-400'}`}>{stats.utilization}%</span>
+              </>
+            ) : <span className="text-xs text-muted-foreground">Нет данных</span>}
+          </div>
+          {stats.topRepaired.length > 0 && (
+            <div className="mt-1.5 flex items-center gap-1 text-[10px] text-muted-foreground">
+              <Wrench className="size-3" />Чаще в ремонте: {stats.topRepaired.map(e => e.name).join(', ')}
+            </div>
+          )}
+        </Card>
+      </div>
+
+      {/* ── Filters ── */}
       <div className="flex flex-col sm:flex-row gap-2">
         <div className="relative flex-1">
           <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 size-3.5 text-muted-foreground" />
-          <Input placeholder="Поиск по названию, номеру, VIN..." value={eqSearch} onChange={e => { setEqSearch(e.target.value); setPage(1) }} className="pl-8 h-9 text-sm" />
+          <Input placeholder="Поиск по названию, номеру, VIN, гаражный №, водитель..." value={eqSearch} onChange={e => { setEqSearch(e.target.value); setPage(1) }} className="pl-8 h-9 text-sm" />
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           <Select value={eqStatusFilter} onValueChange={v => { setEqStatusFilter(v); setPage(1) }}>
-            <SelectTrigger className="w-full sm:w-[140px] h-9 text-sm"><SelectValue placeholder="Статус" /></SelectTrigger>
+            <SelectTrigger className="w-full sm:w-[130px] h-9 text-sm"><SelectValue placeholder="Статус" /></SelectTrigger>
             <SelectContent>
               <SelectItem value="all">Все статусы</SelectItem>
               {Object.entries(EQUIPMENT_STATUS_MAP).map(([k, v]) => <SelectItem key={k} value={k}>{v.label}</SelectItem>)}
             </SelectContent>
           </Select>
           <Select value={eqTypeFilter} onValueChange={v => { setEqTypeFilter(v); setPage(1) }}>
-            <SelectTrigger className="w-full sm:w-[160px] h-9 text-sm"><SelectValue placeholder="Тип" /></SelectTrigger>
+            <SelectTrigger className="w-full sm:w-[140px] h-9 text-sm"><SelectValue placeholder="Тип" /></SelectTrigger>
             <SelectContent>
               <SelectItem value="all">Все типы</SelectItem>
               {Object.entries(EQUIPMENT_TYPE_GROUPS).map(([category, types]) => (
@@ -2125,62 +2352,139 @@ const EquipmentTab = React.memo(function EquipmentTab({ equipment, companies, eq
               ))}
             </SelectContent>
           </Select>
-        </div>
-        <div className="flex gap-1">
-          <Button onClick={onAdd} size="sm" className="h-9 gap-1.5 active:scale-95 transition-transform"><Plus className="size-3.5" />Добавить</Button>
-          {/* View toggle */}
-          <Button variant="outline" size="sm" className="h-9 px-2" onClick={() => setViewMode(viewMode === 'cards' ? 'table' : 'cards')} title={viewMode === 'cards' ? 'Таблица' : 'Карточки'} aria-label={viewMode === 'cards' ? 'Переключить на таблицу' : 'Переключить на карточки'}>
-            {viewMode === 'cards' ? <List className="size-3.5" /> : <LayoutGrid className="size-3.5" />}
-          </Button>
-          {/* CSV Export */}
-          <Button variant="outline" size="sm" className="h-9 px-2" onClick={() => downloadCSV(equipment.map(eq => ({ Название: eq.name, Тип: eq.type, Госномер: eq.registrationNum || '', VIN: eq.vin || '', Бренд: eq.brand || '', Модель: eq.model || '', Статус: EQUIPMENT_STATUS_MAP[eq.status]?.label || eq.status, Владелец: eq.owner?.name || '', Арендатор: eq.renter?.name || '' })), 'equipment')} title="Экспорт CSV" aria-label="Экспорт CSV">
-            <FileDown className="size-3.5" />
-          </Button>
-          {/* Bulk select */}
-          {!readOnly && (
-            <Button variant={bulkMode ? 'default' : 'outline'} size="sm" className="h-9 px-2" onClick={() => { setBulkMode(!bulkMode); setSelectedIds(new Set()) }} title="Выделение" aria-label="Выделение">
-              <CheckCheck className="size-3.5" />
-            </Button>
-          )}
+          <Select value={conditionFilter} onValueChange={v => { setConditionFilter(v); setPage(1) }}>
+            <SelectTrigger className="w-full sm:w-[140px] h-9 text-sm"><SelectValue placeholder="Состояние" /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Любое состояние</SelectItem>
+              {Object.entries(EQUIPMENT_CONDITION_MAP).map(([k, v]) => <SelectItem key={k} value={k}>{v.label}</SelectItem>)}
+            </SelectContent>
+          </Select>
+          <Select value={ownerFilter} onValueChange={v => { setOwnerFilter(v); setPage(1) }}>
+            <SelectTrigger className="w-full sm:w-[130px] h-9 text-sm"><SelectValue placeholder="Владелец" /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Все владельцы</SelectItem>
+              {companies.filter(c => c.type === 'owner' || c.type === 'both').map(c => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}
+            </SelectContent>
+          </Select>
+          <Select value={renterFilter} onValueChange={v => { setRenterFilter(v); setPage(1) }}>
+            <SelectTrigger className="w-full sm:w-[130px] h-9 text-sm"><SelectValue placeholder="Арендатор" /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Все арендаторы</SelectItem>
+              {companies.filter(c => c.type === 'renter' || c.type === 'both').map(c => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}
+            </SelectContent>
+          </Select>
         </div>
       </div>
 
-      {/* Bulk actions bar */}
+      {/* ── Quick Filters ── */}
+      <div className="flex flex-wrap gap-1.5">
+        {[
+          { key: 'all' as const, label: 'Все', icon: <List className="size-3" /> },
+          { key: 'needs_maintenance' as const, label: 'Требует ТО', icon: <Wrench className="size-3" /> },
+          { key: 'insurance_expired' as const, label: 'Просрочена страховка', icon: <Shield className="size-3" /> },
+          { key: 'to_expired' as const, label: 'Просрочен ТО', icon: <ClipboardCheck className="size-3" /> },
+          { key: 'poor_condition' as const, label: 'Слабое состояние', icon: <AlertTriangle className="size-3" /> },
+          { key: 'no_tracker' as const, label: 'Без трекера', icon: <WifiOff className="size-3" /> },
+          { key: 'rented' as const, label: 'В аренде', icon: <Users className="size-3" /> },
+        ].map(f => (
+          <Button key={f.key} variant={quickFilter === f.key ? 'default' : 'outline'} size="sm" className="h-7 text-[10px] gap-1" onClick={() => { setQuickFilter(f.key); setPage(1) }}>
+            {f.icon}{f.label}
+          </Button>
+        ))}
+      </div>
+
+      {/* ── Action buttons ── */}
+      <div className="flex flex-wrap items-center gap-1.5">
+        <Button onClick={onAdd} size="sm" className="h-9 gap-1.5 active:scale-95 transition-transform"><Plus className="size-3.5" />Добавить</Button>
+        <div className="flex gap-0.5">
+          <Button variant={viewMode === 'cards' ? 'default' : 'outline'} size="sm" className="h-9 px-2" onClick={() => setViewMode('cards')} title="Карточки"><LayoutGrid className="size-3.5" /></Button>
+          <Button variant={viewMode === 'table' ? 'default' : 'outline'} size="sm" className="h-9 px-2" onClick={() => setViewMode('table')} title="Таблица"><List className="size-3.5" /></Button>
+          <Button variant={viewMode === 'kanban' ? 'default' : 'outline'} size="sm" className="h-9 px-2" onClick={() => setViewMode('kanban')} title="Канбан"><Kanban className="size-3.5" /></Button>
+        </div>
+        <Button variant="outline" size="sm" className="h-9 px-2" onClick={() => downloadCSV(filteredEquipment.map(eq => ({
+          Название: eq.name, Тип: eq.type, Госномер: eq.registrationNum || '', VIN: eq.vin || '', Бренд: eq.brand || '', Модель: eq.model || '',
+          Год: eq.year?.toString() || '', Статус: EQUIPMENT_STATUS_MAP[eq.status]?.label || eq.status, Состояние: EQUIPMENT_CONDITION_MAP[eq.condition || '']?.label || '',
+          Пробег: eq.mileage?.toString() || '', Гаражный_номер: eq.garageNumber || '', Сменный_номер: eq.unitNumber || '',
+          Водитель: eq.assignedDriver || '', Владелец: eq.owner?.name || '', Арендатор: eq.renter?.name || '',
+          Покупка_руб: eq.purchasePrice?.toString() || '', Текущая_руб: eq.currentPrice?.toString() || '',
+          ОСАГО_до: eq.insuranceExpiry ? formatDate(eq.insuranceExpiry) : '', ТО_до: eq.inspectionExpiry ? formatDate(eq.inspectionExpiry) : '',
+          След_ТО: eq.nextMaintenanceDate ? formatDate(eq.nextMaintenanceDate) : '', Расход_топлива: eq.fuelConsumptionNorm?.toString() || '',
+          Аренда_от: eq.rentalStartDate ? formatDate(eq.rentalStartDate) : '', Аренда_до: eq.rentalEndDate ? formatDate(eq.rentalEndDate) : '',
+          Аренда_руб_мес: eq.rentalCost?.toString() || '', Местоположение: eq.location || '', Депо: eq.depot || '',
+        })), 'equipment')} title="Экспорт CSV" aria-label="Экспорт CSV">
+          <FileDown className="size-3.5" />
+        </Button>
+        {!readOnly && (
+          <Button variant={bulkMode ? 'default' : 'outline'} size="sm" className="h-9 px-2" onClick={() => { setBulkMode(!bulkMode); setSelectedIds(new Set()) }} title="Выделение" aria-label="Выделение">
+            <CheckCheck className="size-3.5" />
+          </Button>
+        )}
+        <div className="flex-1" />
+        <p className="text-xs text-muted-foreground">Найдено: {filteredEquipment.length}</p>
+      </div>
+
+      {/* ── Bulk actions bar ── */}
       {bulkMode && selectedIds.size > 0 && (
         <div className="flex items-center gap-2 p-2 rounded-lg bg-muted animate-in fade-in duration-200">
           <span className="text-xs font-medium">Выбрано: {selectedIds.size}</span>
-          <Button variant="destructive" size="sm" className="h-7 text-xs gap-1 active:scale-95 transition-transform" onClick={async () => {
-            for (const id of selectedIds) {
-              try { await fetch(`/api/equipment/${id}`, { method: 'DELETE' }) } catch {}
-            }
+          <Button size="sm" variant="outline" className="h-7 text-xs gap-1" onClick={() => setBatchStatusDialog(true)}>
+            <Activity className="size-3" />Изменить статус
+          </Button>
+          <Button variant="destructive" size="sm" className="h-7 text-xs gap-1 active:scale-95 transition-transform" onClick={() => setConfirmDialog({ open: true, title: 'Удалить выбранное', desc: `Удалить ${selectedIds.size} единиц техники? Это действие необратимо.`, onConfirm: async () => {
+            for (const id of selectedIds) { try { await fetch(`/api/equipment/${id}`, { method: 'DELETE' }) } catch {} }
             toast.success(`Удалено: ${selectedIds.size}`)
-            setSelectedIds(new Set())
-            setBulkMode(false)
-          }}>
-            <Trash2 className="size-3" />Удалить выбранное
+            setSelectedIds(new Set()); setBulkMode(false)
+            setConfirmDialog(prev => ({ ...prev, open: false }))
+          }})}>
+            <Trash2 className="size-3" />Удалить
           </Button>
           <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => { setSelectedIds(new Set()); setBulkMode(false) }}>Отмена</Button>
         </div>
       )}
 
-      <div className="flex items-center justify-between">
-        <p className="text-xs text-muted-foreground">Найдено: {equipment.length}</p>
-        <div className="flex gap-1">
-          {statusOrder.map(s => {
-            const cnt = groupedByStatus[s]?.length || 0
-            if (cnt === 0) return null
-            const info = EQUIPMENT_STATUS_MAP[s]
-            return (
-              <button key={s} onClick={() => setEqStatusFilter(eqStatusFilter === s ? 'all' : s)}
-                className={`inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[10px] font-medium transition-colors ${eqStatusFilter === s ? 'ring-1 ring-primary' : ''} ${info?.color || 'bg-muted'}`}>
-                {cnt} {info?.label || s}
-              </button>
-            )
-          })}
-        </div>
+      {/* Batch status change dialog */}
+      <Dialog open={batchStatusDialog} onOpenChange={setBatchStatusDialog}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader><DialogTitle>Изменить статус</DialogTitle><DialogDescription>Выберите новый статус для {selectedIds.size} единиц техники</DialogDescription></DialogHeader>
+          <Select value={batchNewStatus} onValueChange={setBatchNewStatus}>
+            <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
+            <SelectContent>{Object.entries(EQUIPMENT_STATUS_MAP).map(([k, v]) => <SelectItem key={k} value={k}>{v.label}</SelectItem>)}</SelectContent>
+          </Select>
+          <DialogFooter>
+            <Button variant="outline" size="sm" onClick={() => setBatchStatusDialog(false)}>Отмена</Button>
+            <Button size="sm" onClick={async () => {
+              for (const id of selectedIds) { try { await fetch(`/api/equipment/${id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status: batchNewStatus }) }) } catch {} }
+              toast.success(`Статус изменён для ${selectedIds.size} единиц`)
+              setSelectedIds(new Set()); setBulkMode(false); setBatchStatusDialog(false)
+            }}>Применить</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Confirm dialog */}
+      <AlertDialog open={confirmDialog.open} onOpenChange={(v) => setConfirmDialog(prev => ({ ...prev, open: v }))}>
+        <AlertDialogContent>
+          <AlertDialogHeader><AlertDialogTitle>{confirmDialog.title}</AlertDialogTitle><AlertDialogDescription>{confirmDialog.desc}</AlertDialogDescription></AlertDialogHeader>
+          <AlertDialogFooter><AlertDialogCancel>Отмена</AlertDialogCancel><AlertDialogAction onClick={confirmDialog.onConfirm}>Подтвердить</AlertDialogAction></AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* ── Status quick filter chips ── */}
+      <div className="flex gap-1">
+        {statusOrder.map(s => {
+          const cnt = groupedByStatus[s]?.length || 0
+          if (cnt === 0) return null
+          const info = EQUIPMENT_STATUS_MAP[s]
+          return (
+            <button key={s} onClick={() => setEqStatusFilter(eqStatusFilter === s ? 'all' : s)}
+              className={`inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[10px] font-medium transition-colors ${eqStatusFilter === s ? 'ring-1 ring-primary' : ''} ${info?.color || 'bg-muted'}`}>
+              {cnt} {info?.label || s}
+            </button>
+          )
+        })}
       </div>
 
-      {equipment.length === 0 ? (
+      {filteredEquipment.length === 0 ? (
         <Card className="py-8 animate-in fade-in duration-300">
           <CardContent className="flex flex-col items-center text-center p-4 pt-0">
             <Truck className="size-12 text-muted-foreground/30 mb-3" />
@@ -2189,18 +2493,209 @@ const EquipmentTab = React.memo(function EquipmentTab({ equipment, companies, eq
             {!readOnly && <Button variant="outline" size="sm" className="mt-3 gap-1.5 active:scale-95 transition-transform" onClick={onAdd}><Plus className="size-3.5" />Добавить технику</Button>}
           </CardContent>
         </Card>
+      ) : viewMode === 'kanban' ? (
+        /* ── Kanban View ── */
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-3">
+          {(['active', 'repair', 'rented', 'reserved', 'decommissioned'] as const).map(status => {
+            const info = EQUIPMENT_STATUS_MAP[status]
+            const items = groupedByStatus[status] || []
+            return (
+              <div key={status} className="space-y-2">
+                <div className={`flex items-center gap-2 px-2 py-1.5 rounded-md ${info?.color || 'bg-muted'}`}>
+                  <span className="text-xs font-semibold">{info?.label || status}</span>
+                  <span className="ml-auto text-[10px] font-medium">{items.length}</span>
+                </div>
+                <div className="space-y-1.5 max-h-[60vh] overflow-y-auto">
+                  {items.map(eq => {
+                    const typeInfo = getTypeInfo(eq.type)
+                    const condInfo = EQUIPMENT_CONDITION_MAP[eq.condition || '']
+                    const tracker = eq.trackers?.[0]
+                    const trackerOnline = eq.trackers?.some(t => t.isActive)
+                    return (
+                      <Card key={eq.id} className="cursor-pointer hover:shadow-sm transition-shadow p-2.5" onClick={() => onOpenDetail(eq)}>
+                        <div className="flex items-center gap-1.5 mb-1">
+                          {condInfo && <span className={`size-2 rounded-full shrink-0 ${condInfo.color.includes('emerald') ? 'bg-emerald-500' : condInfo.color.includes('sky') ? 'bg-sky-500' : condInfo.color.includes('amber') ? 'bg-amber-500' : 'bg-red-500'}`} title={condInfo.label} />}
+                          <span className="text-xs font-medium truncate flex-1">{eq.name}</span>
+                          {tracker && <span className={`size-1.5 rounded-full ${trackerOnline ? 'bg-emerald-500' : 'bg-red-400'}`} />}
+                        </div>
+                        <p className="text-[10px] text-muted-foreground">{eq.registrationNum || '—'}{eq.garageNumber ? ` • Г${eq.garageNumber}` : ''}</p>
+                        {(eq.brand || eq.model) && <p className="text-[10px] text-muted-foreground">{[eq.brand, eq.model].filter(Boolean).join(' ')}{eq.year ? ` ${eq.year}` : ''}</p>}
+                        {eq.assignedDriver && <p className="text-[10px] text-muted-foreground">🧑 {eq.assignedDriver}</p>}
+                      </Card>
+                    )
+                  })}
+                  {items.length === 0 && <p className="text-[10px] text-muted-foreground text-center py-3">Пусто</p>}
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      ) : viewMode === 'table' ? (
+        <div className="rounded-lg border overflow-hidden">
+          <div className="overflow-x-auto">
+            <Table>
+              <TableHeader>
+                <TableRow className="bg-muted/50 hover:bg-muted/50">
+                  {bulkMode && <TableHead className="w-10 text-xs"></TableHead>}
+                  <TableHead className="text-xs">Сост.</TableHead>
+                  <TableHead className="text-xs cursor-pointer select-none" onClick={() => toggleSort('status')}>Статус {sortIcon('status')}</TableHead>
+                  <TableHead className="text-xs">Тип</TableHead>
+                  <TableHead className="text-xs cursor-pointer select-none min-w-[140px]" onClick={() => toggleSort('name')}>Название {sortIcon('name')}</TableHead>
+                  <TableHead className="text-xs">Госномер</TableHead>
+                  <TableHead className="text-xs hidden md:table-cell">Бренд / Модель</TableHead>
+                  <TableHead className="text-xs cursor-pointer select-none hidden lg:table-cell" onClick={() => toggleSort('year')}>Год {sortIcon('year')}</TableHead>
+                  <TableHead className="text-xs cursor-pointer select-none hidden lg:table-cell" onClick={() => toggleSort('mileage')}>Пробег {sortIcon('mileage')}</TableHead>
+                  <TableHead className="text-xs cursor-pointer select-none hidden xl:table-cell" onClick={() => toggleSort('condition')}>Сост. {sortIcon('condition')}</TableHead>
+                  <TableHead className="text-xs hidden xl:table-cell">Владелец</TableHead>
+                  <TableHead className="text-xs hidden xl:table-cell">Арендатор</TableHead>
+                  <TableHead className="text-xs hidden md:table-cell">ОСАГО</TableHead>
+                  <TableHead className="text-xs hidden md:table-cell">ТО</TableHead>
+                  <TableHead className="text-xs hidden lg:table-cell">Трекер</TableHead>
+                  <TableHead className="text-xs text-right w-[120px]">Действия</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {paginatedEquipment.map((eq) => {
+                  const typeInfo = getTypeInfo(eq.type)
+                  const statusInfo = EQUIPMENT_STATUS_MAP[eq.status]
+                  const condInfo = EQUIPMENT_CONDITION_MAP[eq.condition || '']
+                  const insDays = daysUntil(eq.insuranceExpiry)
+                  const inspDays = daysUntil(eq.inspectionExpiry)
+                  const maintDays = daysUntil(eq.nextMaintenanceDate)
+                  const tracker = eq.trackers?.[0]
+                  const trackerOnline = eq.trackers?.some(t => t.isActive)
+                  const brandModel = [eq.brand, eq.model].filter(Boolean).join(' ')
+                  const depreciation = eq.purchasePrice && eq.currentPrice ? Math.round((1 - eq.currentPrice / eq.purchasePrice) * 100) : null
+                  const age = eq.year ? new Date().getFullYear() - eq.year : null
+                  return (
+                    <TableRow key={eq.id} className={`cursor-pointer group ${eq.status === 'repair' ? 'bg-red-50/50 dark:bg-red-950/20' : ''}`} onClick={() => onOpenDetail(eq)}>
+                      {bulkMode && (
+                        <TableCell className="w-10" onClick={(e) => e.stopPropagation()}>
+                          <Checkbox checked={selectedIds.has(eq.id)} onCheckedChange={() => {
+                            const next = new Set(selectedIds)
+                            if (next.has(eq.id)) next.delete(eq.id); else next.add(eq.id)
+                            setSelectedIds(next)
+                          }} aria-label={`Выбрать ${eq.name}`} />
+                        </TableCell>
+                      )}
+                      <TableCell>
+                        {condInfo && <span className={`size-2.5 rounded-full inline-block ${condInfo.color.includes('emerald') ? 'bg-emerald-500' : condInfo.color.includes('sky') ? 'bg-sky-500' : condInfo.color.includes('amber') ? 'bg-amber-500' : 'bg-red-500'}`} title={condInfo.label} />}
+                      </TableCell>
+                      <TableCell>
+                        <Badge variant="secondary" className={`text-[10px] px-1.5 py-0 h-4 shrink-0 ${statusInfo?.color || ''} ${eq.status === 'repair' ? 'animate-status-pulse' : ''}`}>
+                          {statusInfo?.label || eq.status}
+                        </Badge>
+                      </TableCell>
+                      <TableCell>
+                        <div className={`flex items-center justify-center size-7 rounded-md shrink-0 ${typeInfo.color} ${typeInfo.darkColor}`}>
+                          {React.cloneElement(typeInfo.icon as React.ReactElement, { className: 'size-3.5' })}
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        <div className="flex items-center gap-1.5 min-w-0">
+                          {tracker && (
+                            <span className={`size-2 rounded-full shrink-0 ${trackerOnline ? 'bg-emerald-500' : 'bg-red-400'}`} title={trackerOnline ? 'Онлайн' : 'Офлайн'} />
+                          )}
+                          <span className="font-medium text-sm truncate">{eq.name}</span>
+                          {(insDays != null && insDays < 0) || (inspDays != null && inspDays < 0) || (maintDays != null && maintDays < MAINTENANCE_WARN_DAYS) ? (
+                            <AlertTriangle className="size-3 text-amber-500 shrink-0" />
+                          ) : null}
+                          {depreciation != null && <span className={`text-[9px] font-medium shrink-0 ${depreciation > 50 ? 'text-red-500' : depreciation > 20 ? 'text-amber-500' : 'text-emerald-500'}`}>{depreciation}%</span>}
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        {eq.registrationNum ? (
+                          <span className="font-mono text-xs text-muted-foreground cursor-pointer hover:text-primary inline-flex items-center gap-0.5"
+                            onClick={(e) => { e.stopPropagation(); copyRegNum(eq.registrationNum!, eq.id) }}
+                            title={copiedId === eq.id ? 'Скопировано!' : 'Копировать госномер'}>
+                            {eq.registrationNum}
+                            <Copy className="size-3" />
+                          </span>
+                        ) : <span className="text-xs text-muted-foreground">—</span>}
+                      </TableCell>
+                      <TableCell className="hidden md:table-cell">
+                        <span className="text-xs text-muted-foreground truncate max-w-[150px] block">{brandModel || '—'}</span>
+                      </TableCell>
+                      <TableCell className="hidden lg:table-cell">
+                        <span className="text-xs text-muted-foreground">{eq.year || '—'}{age != null && age > 0 ? <span className="text-[9px] text-muted-foreground/60 ml-0.5">({age}л)</span> : null}</span>
+                      </TableCell>
+                      <TableCell className="hidden lg:table-cell">
+                        <span className="text-xs text-muted-foreground">{fmtKm(eq.mileage)}</span>
+                      </TableCell>
+                      <TableCell className="hidden xl:table-cell">
+                        {condInfo ? (
+                          <span className={`inline-flex items-center gap-0.5 rounded px-1.5 py-0.5 text-[10px] font-medium ${condInfo.color}`}>{condInfo.icon} {condInfo.label}</span>
+                        ) : <span className="text-xs text-muted-foreground">—</span>}
+                      </TableCell>
+                      <TableCell className="hidden xl:table-cell">
+                        {eq.owner ? (
+                          <span className="text-xs text-muted-foreground truncate max-w-[120px] block" title={eq.owner.name}>{eq.owner.name}</span>
+                        ) : <span className="text-xs text-muted-foreground">—</span>}
+                      </TableCell>
+                      <TableCell className="hidden xl:table-cell">
+                        {eq.renter ? (
+                          <span className="text-xs text-sky-600 dark:text-sky-400 font-medium truncate max-w-[120px] block" title={eq.renter.name}>{eq.renter.name}</span>
+                        ) : <span className="text-xs text-muted-foreground">—</span>}
+                      </TableCell>
+                      <TableCell className="hidden md:table-cell">
+                        {insDays != null ? (
+                          <span className={`text-xs font-medium ${insDays < 0 ? 'text-red-600 dark:text-red-400' : insDays < 30 ? 'text-amber-600 dark:text-amber-400' : 'text-emerald-600 dark:text-emerald-400'}`}>
+                            {insDays < 0 ? `${Math.abs(insDays)}д` : `${insDays}д`}
+                          </span>
+                        ) : <span className="text-xs text-muted-foreground">—</span>}
+                      </TableCell>
+                      <TableCell className="hidden md:table-cell">
+                        {inspDays != null ? (
+                          <span className={`text-xs font-medium ${inspDays < 0 ? 'text-red-600 dark:text-red-400' : inspDays < 30 ? 'text-amber-600 dark:text-amber-400' : 'text-emerald-600 dark:text-emerald-400'}`}>
+                            {inspDays < 0 ? `${Math.abs(inspDays)}д` : `${inspDays}д`}
+                          </span>
+                        ) : <span className="text-xs text-muted-foreground">—</span>}
+                      </TableCell>
+                      <TableCell className="hidden lg:table-cell">
+                        {tracker ? (
+                          <div className="flex items-center gap-1.5">
+                            <span className={`size-2 rounded-full ${trackerOnline ? 'bg-emerald-500' : 'bg-red-400'}`} />
+                            {tracker.lastSpeed != null && tracker.lastSpeed > 0 ? (
+                              <span className="text-xs text-emerald-600 dark:text-emerald-400 font-medium">{tracker.lastSpeed} км/ч</span>
+                            ) : (
+                              <span className="text-xs text-muted-foreground">{trackerOnline ? 'Стоит' : 'Офлайн'}</span>
+                            )}
+                          </div>
+                        ) : <span className="text-xs text-muted-foreground">—</span>}
+                      </TableCell>
+                      <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
+                        <div className="flex items-center justify-end gap-0.5">
+                          <Button size="sm" variant="ghost" className="size-7 p-0" onClick={() => onOpenDetail(eq)} title="Подробнее"><Eye className="size-3.5" /></Button>
+                          <Button size="sm" variant="ghost" className="size-7 p-0" onClick={() => onGoToMap(eq)} title="Карта"><MapPin className="size-3.5" /></Button>
+                          {!readOnly && (<>
+                            <Button size="sm" variant="ghost" className="size-7 p-0" onClick={() => onEdit(eq)} title="Редактировать"><Edit className="size-3.5" /></Button>
+                            <Button size="sm" variant="ghost" className="size-7 p-0 text-destructive hover:text-destructive" onClick={() => onDelete(eq)} title="Удалить"><Trash2 className="size-3.5" /></Button>
+                          </>)}
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  )
+                })}
+              </TableBody>
+            </Table>
+          </div>
+          <PaginationControls page={page} totalPages={Math.ceil(filteredEquipment.length / PAGE_SIZE)} total={filteredEquipment.length} pageSize={PAGE_SIZE} onPageChange={setPage} />
+        </div>
       ) : (
+        /* ── Cards View ── */
         <div className="space-y-1">
-          {equipment.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE).map((eq, idx) => {
+          {paginatedEquipment.map((eq, idx) => {
             const typeInfo = getTypeInfo(eq.type)
             const statusInfo = EQUIPMENT_STATUS_MAP[eq.status]
+            const condInfo = EQUIPMENT_CONDITION_MAP[eq.condition || '']
             const insDays = daysUntil(eq.insuranceExpiry)
             const inspDays = daysUntil(eq.inspectionExpiry)
+            const maintDays = daysUntil(eq.nextMaintenanceDate)
             const tracker = eq.trackers?.[0]
             const trackerOnline = eq.trackers?.some(t => t.isActive)
-            const age = eq.purchaseDate ? Math.floor((Date.now() - new Date(eq.purchaseDate).getTime()) / (365.25 * 24 * 60 * 60 * 1000)) : null
+            const age = eq.year ? new Date().getFullYear() - eq.year : (eq.purchaseDate ? Math.floor((Date.now() - new Date(eq.purchaseDate).getTime()) / (365.25 * 24 * 60 * 60 * 1000)) : null)
             const depreciation = eq.purchasePrice && eq.currentPrice ? Math.round((1 - eq.currentPrice / eq.purchasePrice) * 100) : null
-            const hasWarnings = (insDays != null && insDays < 30) || (inspDays != null && inspDays < 30)
+            const hasWarnings = (insDays != null && insDays < 30) || (inspDays != null && inspDays < 30) || (maintDays != null && maintDays < MAINTENANCE_WARN_DAYS)
             const brandModel = [eq.brand, eq.model].filter(Boolean).join(' ')
             const isExpanded = expandedId === eq.id
 
@@ -2210,7 +2705,6 @@ const EquipmentTab = React.memo(function EquipmentTab({ equipment, companies, eq
                 className={`group relative transition-all duration-200 overflow-hidden border-l-[3px] animate-card-in ${statusInfo?.border || ''} ${isExpanded ? 'shadow-md border-primary/30' : 'hover:shadow-sm hover:border-primary/20'}`}
                 style={{ animationDelay: `${idx * 50}ms` }}
               >
-                {/* Bulk checkbox */}
                 {bulkMode && (
                   <div className="absolute left-0 top-0 bottom-0 w-8 flex items-center justify-center z-10">
                     <Checkbox checked={selectedIds.has(eq.id)} onCheckedChange={() => {
@@ -2220,7 +2714,6 @@ const EquipmentTab = React.memo(function EquipmentTab({ equipment, companies, eq
                     }} aria-label={`Выбрать ${eq.name}`} />
                   </div>
                 )}
-                {/* ── Шапка (всегда видна) — клик раскрывает/сворачивает ── */}
                 <div
                   className={`flex items-center gap-2.5 px-3 pt-2 pb-0.5 cursor-pointer select-none ${bulkMode ? 'pl-10' : ''}`}
                   onClick={() => { if (!bulkMode) setExpandedId(isExpanded ? null : eq.id) }}
@@ -2229,20 +2722,20 @@ const EquipmentTab = React.memo(function EquipmentTab({ equipment, companies, eq
                     {typeInfo.icon}
                   </div>
                   <div className="flex-1 min-w-0">
-                    {/* Строка 1: Онлайн-кнопка + Название + Госномер ... Справа — статус */}
                     <div className="flex items-center gap-1.5">
                       <div className="flex items-center gap-1.5 min-w-0 flex-1">
+                        {condInfo && <span className={`size-2.5 rounded-full shrink-0 ${condInfo.color.includes('emerald') ? 'bg-emerald-500' : condInfo.color.includes('sky') ? 'bg-sky-500' : condInfo.color.includes('amber') ? 'bg-amber-500' : 'bg-red-500'}`} title={condInfo.label} />}
                         {tracker && (
                           <span className={`size-3 rounded-full shrink-0 ${trackerOnline ? 'bg-emerald-500 animate-pulse animate-online-ring' : 'bg-red-400'}`} title={trackerOnline ? 'Онлайн' : 'Офлайн'} />
                         )}
                         <span className="font-semibold text-sm truncate">{eq.name}</span>
                         {hasWarnings && <AlertTriangle className="size-3.5 text-amber-500 shrink-0" />}
+                        {maintDays != null && maintDays < MAINTENANCE_WARN_DAYS && <Wrench className="size-3 text-orange-500 shrink-0" title={`ТО через ${maintDays}д`} />}
                       </div>
                       <Badge variant="secondary" className={`text-[10px] px-1.5 py-0 h-4 shrink-0 ${statusInfo?.color || ''} ${eq.status === 'repair' ? 'animate-status-pulse' : ''}`}>
                         {statusInfo?.label || eq.status}
                       </Badge>
                     </div>
-                    {/* Строка 2: Госномер + скорость справа */}
                     <div className="flex items-center gap-2 mt-0.5">
                       {eq.registrationNum && (
                         <span className="font-mono text-xs text-muted-foreground cursor-pointer hover:text-primary shrink-0 inline-flex items-center gap-0.5"
@@ -2252,111 +2745,64 @@ const EquipmentTab = React.memo(function EquipmentTab({ equipment, companies, eq
                           <Copy className="size-3" />
                         </span>
                       )}
+                      {eq.garageNumber && <span className="text-[10px] text-muted-foreground">Г#{eq.garageNumber}</span>}
+                      {eq.unitNumber && <span className="text-[10px] text-muted-foreground">С#{eq.unitNumber}</span>}
+                      {eq.assignedDriver && <span className="text-[10px] text-muted-foreground">🧑 {eq.assignedDriver}</span>}
                       {tracker?.lastSpeed != null && tracker.lastSpeed > 0 && (
                         <span className="ml-auto inline-flex items-center gap-0.5 text-xs text-emerald-600 dark:text-emerald-400 font-medium shrink-0">
                           <Navigation className="size-3" />{tracker.lastSpeed} км/ч
                         </span>
                       )}
                     </div>
-                    {/* Строка 3: Бренд/модель + год + категория */}
                     <div className="flex items-center gap-2 mt-0.5">
                       {brandModel && <span className="text-xs text-muted-foreground truncate">{brandModel}</span>}
-                      {eq.year && <span className="text-xs text-muted-foreground">{eq.year} г.</span>}
+                      {eq.year && <span className="text-xs text-muted-foreground">{eq.year} г.{age != null ? ` (${age}л)` : ''}</span>}
                       {eq.category && <span className="text-xs text-muted-foreground font-medium">кат. {eq.category}</span>}
                     </div>
-                    {/* Строка 4: Владелец / Арендатор */}
                     <div className="flex items-center gap-2 mt-0.5">
-                      {eq.owner && (
-                        <span className="inline-flex items-center gap-1 text-xs text-muted-foreground" title={`Владелец: ${eq.owner.name}${eq.owner.inn ? ` (ИНН: ${eq.owner.inn})` : ''}`}>
-                          <Building2 className="size-3" />{eq.owner.name}
-                        </span>
-                      )}
-                      {eq.renter && (
-                        <span className="inline-flex items-center gap-1 text-xs text-sky-600 dark:text-sky-400 font-medium" title={`Арендатор: ${eq.renter.name}${eq.renter.inn ? ` (ИНН: ${eq.renter.inn})` : ''}`}>
-                          <Users className="size-3" />{eq.renter.name}
-                        </span>
-                      )}
+                      {eq.owner && <span className="inline-flex items-center gap-1 text-xs text-muted-foreground"><Building2 className="size-3" />{eq.owner.name}</span>}
+                      {eq.renter && <span className="inline-flex items-center gap-1 text-xs text-sky-600 dark:text-sky-400 font-medium"><Users className="size-3" />{eq.renter.name}</span>}
                     </div>
                   </div>
                   <ChevronDown className={`size-5 text-muted-foreground shrink-0 transition-transform duration-200 ${isExpanded ? 'rotate-180' : ''}`} />
                 </div>
 
-                {/* ── Тело (свёрнуто/развёрнуто) ── */}
                 <div className={`overflow-hidden transition-all duration-200 ${isExpanded ? 'max-h-[800px] opacity-100' : 'max-h-0 opacity-0'}`}>
                   <div className="px-4 pb-3 pt-0 border-t border-border/50">
-                    {/* Характеристики: двиг / топливо / пробег / мощность / объём */}
                     <div className="flex flex-wrap items-center gap-2 mt-2 mb-2">
                       {eq.engineType && <span className="inline-flex items-center gap-0.5">{getEngineIcon(eq.engineType)}</span>}
                       {eq.fuelType && <span className={`inline-flex items-center rounded px-2 py-0.5 text-xs font-medium ${getFuelColor(eq.fuelType)}`}>{eq.fuelType}</span>}
+                      {eq.fuelConsumptionNorm && <span className="inline-flex items-center gap-0.5 text-xs text-muted-foreground"><FuelIcon className="size-3" />{eq.fuelConsumptionNorm} л/100км</span>}
                       {eq.engineVolume && <span className="text-xs text-muted-foreground">{eq.engineVolume} л</span>}
                       {eq.enginePower && <span className="text-xs text-muted-foreground">{eq.enginePower} л.с.</span>}
-                      {eq.loadCapacity && (
-                        <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
-                          <Weight className="size-3.5" />{eq.loadCapacity} т
-                        </span>
-                      )}
-                      {eq.passengerSeats && (
-                        <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
-                          <Users className="size-3.5" />{eq.passengerSeats} мест
-                        </span>
-                      )}
+                      {eq.mileage != null && <span className="inline-flex items-center gap-0.5 text-xs text-muted-foreground"><Gauge className="size-3" />{fmtKm(eq.mileage)}</span>}
+                      {eq.loadCapacity && <span className="inline-flex items-center gap-1 text-xs text-muted-foreground"><Weight className="size-3.5" />{eq.loadCapacity} т</span>}
+                      {eq.passengerSeats && <span className="inline-flex items-center gap-1 text-xs text-muted-foreground"><Users className="size-3.5" />{eq.passengerSeats} мест</span>}
                       {eq.color && <span className="text-xs text-muted-foreground">Цвет: {eq.color}</span>}
+                      {eq.location && <span className="inline-flex items-center gap-0.5 text-xs text-muted-foreground"><MapPinned className="size-3" />{eq.location}</span>}
+                      {eq.depot && <span className="text-xs text-muted-foreground">Депо: {eq.depot}</span>}
                     </div>
 
-                    {/* Трекер данные */}
                     {tracker && (
                       <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mb-2 px-3 py-2 rounded bg-muted/50 text-xs">
-                        {tracker.lastSpeed != null && (
-                          <span className="inline-flex items-center gap-1">
-                            <Navigation className="size-3.5" />
-                            <span className={tracker.lastSpeed > 0 ? 'text-emerald-600 dark:text-emerald-400 font-medium' : 'text-muted-foreground'}>
-                              {tracker.lastSpeed} км/ч
-                            </span>
-                          </span>
-                        )}
-                        {tracker.lastFuelLevel != null && (
-                          <span className="inline-flex items-center gap-1">
-                            <Fuel className="size-3.5 text-amber-600 dark:text-amber-400" />
-                            {tracker.lastFuelLevel} л
-                          </span>
-                        )}
-                        {tracker.lastMileage != null && (
-                          <span className="inline-flex items-center gap-1 text-muted-foreground">
-                            <Gauge className="size-3.5" />
-                            {(tracker.lastMileage / 1000).toFixed(1)} тыс.км
-                          </span>
-                        )}
-                        {tracker.lastIgnition != null && (
-                          <span className={`inline-flex items-center gap-1 ${tracker.lastIgnition ? 'text-emerald-600 dark:text-emerald-400' : 'text-muted-foreground'}`}>
-                            <Zap className="size-3.5" />
-                            {tracker.lastIgnition ? 'Зажигание ВКЛ' : 'Зажигание ВЫКЛ'}
-                          </span>
-                        )}
-                        {tracker.lastEngineTemp != null && (
-                          <span className="inline-flex items-center gap-1 text-muted-foreground">
-                            <Thermometer className="size-3.5" />
-                            {tracker.lastEngineTemp}°C
-                          </span>
-                        )}
+                        {tracker.lastSpeed != null && (<span className="inline-flex items-center gap-1"><Navigation className="size-3.5" /><span className={tracker.lastSpeed > 0 ? 'text-emerald-600 dark:text-emerald-400 font-medium' : 'text-muted-foreground'}>{tracker.lastSpeed} км/ч</span></span>)}
+                        {tracker.lastFuelLevel != null && (<span className="inline-flex items-center gap-1"><Fuel className="size-3.5 text-amber-600 dark:text-amber-400" />{tracker.lastFuelLevel} л</span>)}
+                        {tracker.lastMileage != null && (<span className="inline-flex items-center gap-1 text-muted-foreground"><Gauge className="size-3.5" />{(tracker.lastMileage / 1000).toFixed(1)} тыс.км</span>)}
+                        {tracker.lastIgnition != null && (<span className={`inline-flex items-center gap-1 ${tracker.lastIgnition ? 'text-emerald-600 dark:text-emerald-400' : 'text-muted-foreground'}`}><Zap className="size-3.5" />{tracker.lastIgnition ? 'Зажигание ВКЛ' : 'Зажигание ВЫКЛ'}</span>)}
+                        {tracker.lastEngineTemp != null && (<span className="inline-flex items-center gap-1 text-muted-foreground"><Thermometer className="size-3.5" />{tracker.lastEngineTemp}°C</span>)}
                       </div>
                     )}
 
-                    {/* Трекер инфо: название / IMEI / телефон / адрес */}
                     {tracker && (
                       <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mb-2 text-xs text-muted-foreground">
                         {tracker.trackerName && <span className="inline-flex items-center gap-1"><Cpu className="size-3" />{tracker.trackerName}</span>}
                         {tracker.imei && <span className="font-mono" title="IMEI">IMEI: {tracker.imei}</span>}
                         {tracker.phoneNumber && <span className="inline-flex items-center gap-1"><Phone className="size-3" />{tracker.phoneNumber}</span>}
                         {tracker.lastAddress && <span className="inline-flex items-center gap-1 truncate max-w-[300px]" title={tracker.lastAddress}><MapPin className="size-3 shrink-0" />{tracker.lastAddress}</span>}
-                        {tracker.lastSeenAt && (
-                          <span className="inline-flex items-center gap-1" title={`Последняя активность: ${formatDateTime(tracker.lastSeenAt)}`}>
-                            <Clock className="size-3" />{new Date(tracker.lastSeenAt).toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit', year: '2-digit' })} {new Date(tracker.lastSeenAt).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}
-                          </span>
-                        )}
+                        {tracker.lastSeenAt && (<span className="inline-flex items-center gap-1" title={`Последняя активность: ${formatDateTime(tracker.lastSeenAt)}`}><Clock className="size-3" />{new Date(tracker.lastSeenAt).toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit', year: '2-digit' })} {new Date(tracker.lastSeenAt).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}</span>)}
                       </div>
                     )}
 
-                    {/* Документы: VIN / СТС / ПТС / Серийный */}
                     {(eq.vin || eq.stsNumber || eq.ptsNumber || eq.serialNumber) && (
                       <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mb-2 text-xs text-muted-foreground">
                         {eq.vin && <span className="font-mono cursor-pointer hover:text-primary" title={`VIN: ${eq.vin} (нажмите чтобы скопировать)`} onClick={(e) => { e.stopPropagation(); copyToClipboard(eq.vin!) }}><span className="font-medium text-foreground">VIN:</span> {eq.vin}</span>}
@@ -2366,83 +2812,68 @@ const EquipmentTab = React.memo(function EquipmentTab({ equipment, companies, eq
                       </div>
                     )}
 
-                    {/* Страховка / ТО */}
                     {(eq.insuranceNumber || eq.insuranceExpiry || eq.inspectionExpiry) && (
                       <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mb-2 text-xs">
-                        {eq.insuranceNumber && (
-                          <span className="inline-flex items-center gap-1 text-muted-foreground" title={`Полис: ${eq.insuranceNumber}`}>
-                            <Shield className="size-3" />Полис: {eq.insuranceNumber}
-                          </span>
-                        )}
-                        {insDays != null && (
-                          <span className={`inline-flex items-center gap-1 font-medium ${insDays < 0 ? 'text-red-600 dark:text-red-400' : insDays < 30 ? 'text-amber-600 dark:text-amber-400' : 'text-emerald-600 dark:text-emerald-400'}`}>
-                            <Shield className="size-3" />ОСАГО {insDays < 0 ? `истекло ${Math.abs(insDays)}д` : `${insDays}д`}
-                          </span>
-                        )}
-                        {inspDays != null && (
-                          <span className={`inline-flex items-center gap-1 font-medium ${inspDays < 0 ? 'text-red-600 dark:text-red-400' : inspDays < 30 ? 'text-amber-600 dark:text-amber-400' : 'text-emerald-600 dark:text-emerald-400'}`}>
-                            <ClipboardCheck className="size-3" />ТО {inspDays < 0 ? `истекло ${Math.abs(inspDays)}д` : `${inspDays}д`}
-                          </span>
-                        )}
+                        {eq.insuranceNumber && (<span className="inline-flex items-center gap-1 text-muted-foreground" title={`Полис: ${eq.insuranceNumber}`}><Shield className="size-3" />Полис: {eq.insuranceNumber}</span>)}
+                        {insDays != null && (<span className={`inline-flex items-center gap-1 font-medium ${insDays < 0 ? 'text-red-600 dark:text-red-400' : insDays < 30 ? 'text-amber-600 dark:text-amber-400' : 'text-emerald-600 dark:text-emerald-400'}`}><Shield className="size-3" />ОСАГО {insDays < 0 ? `истекло ${Math.abs(insDays)}д` : `${insDays}д`}</span>)}
+                        {inspDays != null && (<span className={`inline-flex items-center gap-1 font-medium ${inspDays < 0 ? 'text-red-600 dark:text-red-400' : inspDays < 30 ? 'text-amber-600 dark:text-amber-400' : 'text-emerald-600 dark:text-emerald-400'}`}><ClipboardCheck className="size-3" />ТО {inspDays < 0 ? `истекло ${Math.abs(inspDays)}д` : `${inspDays}д`}</span>)}
+                        {maintDays != null && (<span className={`inline-flex items-center gap-1 font-medium ${maintDays < 0 ? 'text-red-600 dark:text-red-400' : maintDays < MAINTENANCE_WARN_DAYS ? 'text-amber-600 dark:text-amber-400' : 'text-emerald-600 dark:text-emerald-400'}`}><Wrench className="size-3" />След. ТО {maintDays < 0 ? `просрочено ${Math.abs(maintDays)}д` : `через ${maintDays}д`}</span>)}
                       </div>
                     )}
 
-                    {/* Владелец / Арендатор */}
                     {(eq.owner || eq.renter) && (
                       <div className="flex flex-wrap items-center gap-2 mb-2">
-                        {eq.owner && (
-                          <span className="inline-flex items-center gap-1 rounded px-2.5 py-1 text-xs font-medium bg-muted" title={`Владелец: ${eq.owner.name}${eq.owner.inn ? ` (ИНН: ${eq.owner.inn})` : ''}${eq.owner.phone ? ` • ${eq.owner.phone}` : ''}`}>
-                            <Building2 className="size-3.5 shrink-0" />{eq.owner.name}
-                          </span>
-                        )}
-                        {eq.renter && (
-                          <span className="inline-flex items-center gap-1 rounded px-2.5 py-1 text-xs font-medium bg-sky-100 dark:bg-sky-900/40 text-sky-700 dark:text-sky-400" title={`Арендатор: ${eq.renter.name}${eq.renter.inn ? ` (ИНН: ${eq.renter.inn})` : ''}${eq.renter.phone ? ` • ${eq.renter.phone}` : ''}`}>
-                            <Users className="size-3.5 shrink-0" />{eq.renter.name}
-                          </span>
-                        )}
+                        {eq.owner && (<span className="inline-flex items-center gap-1 rounded px-2.5 py-1 text-xs font-medium bg-muted" title={`Владелец: ${eq.owner.name}${eq.owner.inn ? ` (ИНН: ${eq.owner.inn})` : ''}`}><Building2 className="size-3.5 shrink-0" />{eq.owner.name}</span>)}
+                        {eq.renter && (<span className="inline-flex items-center gap-1 rounded px-2.5 py-1 text-xs font-medium bg-sky-100 dark:bg-sky-900/40 text-sky-700 dark:text-sky-400" title={`Арендатор: ${eq.renter.name}`}><Users className="size-3.5 shrink-0" />{eq.renter.name}</span>)}
                       </div>
                     )}
 
-                    {/* Стоимость / износ / возраст */}
                     {(eq.purchasePrice || eq.currentPrice || age != null || depreciation != null) && (
                       <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mb-2 text-xs">
-                        {eq.purchasePrice != null && (
-                          <span className="text-muted-foreground" title="Цена приобретения">
-                            Покупка: {eq.purchasePrice.toLocaleString('ru-RU')} ₽
-                          </span>
-                        )}
-                        {eq.currentPrice != null && (
-                          <span className="text-muted-foreground" title="Текущая стоимость">
-                            Текущая: {eq.currentPrice.toLocaleString('ru-RU')} ₽
-                          </span>
-                        )}
-                        {depreciation != null && (
-                          <span className={`font-medium ${depreciation > 50 ? 'text-red-500' : depreciation > 20 ? 'text-amber-500' : 'text-emerald-500'}`}>
-                            Износ {depreciation}%
-                          </span>
-                        )}
-                        {age != null && (
-                          <span className="text-muted-foreground">Возраст {age} л.</span>
-                        )}
+                        {eq.purchasePrice != null && (<span className="text-muted-foreground">Покупка: {eq.purchasePrice.toLocaleString('ru-RU')} ₽</span>)}
+                        {eq.currentPrice != null && (<span className="text-muted-foreground">Текущая: {eq.currentPrice.toLocaleString('ru-RU')} ₽</span>)}
+                        {depreciation != null && (<span className={`font-medium ${depreciation > 50 ? 'text-red-500' : depreciation > 20 ? 'text-amber-500' : 'text-emerald-500'}`}>Износ {depreciation}%</span>)}
+                        {age != null && (<span className="text-muted-foreground">Возраст {age} л.</span>)}
                       </div>
                     )}
 
-                    {/* Заметки */}
-                    {eq.notes && (
-                      <div className="mb-2 text-xs text-muted-foreground italic" title={eq.notes}>
-                        <StickyNote className="inline size-3 mr-0.5" />{eq.notes}
+                    {/* Rental info */}
+                    {(eq.rentalStartDate || eq.rentalEndDate || eq.rentalCost) && (
+                      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mb-2 text-xs">
+                        {eq.rentalStartDate && <span className="text-muted-foreground">Аренда с: {formatDate(eq.rentalStartDate)}</span>}
+                        {eq.rentalEndDate && <span className="text-muted-foreground">по: {formatDate(eq.rentalEndDate)}</span>}
+                        {eq.rentalCost != null && <span className="text-muted-foreground">{eq.rentalCost.toLocaleString('ru-RU')} ₽/мес</span>}
+                        {eq.rentalEndDate && (() => { const rd = daysUntil(eq.rentalEndDate); return rd != null ? <span className={`font-medium ${rd < 0 ? 'text-red-500' : rd < 30 ? 'text-amber-500' : 'text-emerald-500'}`}>{rd < 0 ? `Истекла ${Math.abs(rd)}д назад` : `Осталось ${rd}д`}</span> : null })()}
                       </div>
                     )}
 
-                    {/* Подвал: сотрудники / ремонты / фото / документы / действия */}
+                    {/* Maintenance info */}
+                    {(eq.lastMaintenanceDate || eq.nextMaintenanceDate || eq.maintenanceInterval) && (
+                      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mb-2 text-xs">
+                        {eq.lastMaintenanceDate && <span className="text-muted-foreground">Последнее ТО: {formatDate(eq.lastMaintenanceDate)}</span>}
+                        {eq.nextMaintenanceDate && <span className="text-muted-foreground">Следующее ТО: {formatDate(eq.nextMaintenanceDate)}</span>}
+                        {eq.maintenanceInterval && <span className="text-muted-foreground">Интервал: {eq.maintenanceInterval.toLocaleString('ru-RU')} км</span>}
+                      </div>
+                    )}
+
+                    {/* Oil / Tires */}
+                    {(eq.oilChangeDate || eq.oilChangeMileage || eq.oilChangeInterval || eq.tireSize || eq.tireReplacementDate) && (
+                      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mb-2 text-xs">
+                        {eq.oilChangeDate && <span className="inline-flex items-center gap-0.5 text-muted-foreground"><Droplets className="size-3" />Масло: {formatDate(eq.oilChangeDate)}</span>}
+                        {eq.oilChangeMileage && <span className="text-muted-foreground">Замена масла на: {fmtKm(eq.oilChangeMileage)}</span>}
+                        {eq.oilChangeInterval && <span className="text-muted-foreground">Интервал масла: {fmtKm(eq.oilChangeInterval)}</span>}
+                        {eq.tireSize && <span className="text-muted-foreground">Шины: {eq.tireSize}</span>}
+                        {eq.tireReplacementDate && <span className="text-muted-foreground">Замена шин: {formatDate(eq.tireReplacementDate)}</span>}
+                      </div>
+                    )}
+
+                    {eq.notes && (<div className="mb-2 text-xs text-muted-foreground italic" title={eq.notes}><StickyNote className="inline size-3 mr-0.5" />{eq.notes}</div>)}
+
                     <div className="flex items-center gap-2 flex-wrap pt-2 border-t border-border/50">
-                      {/* Сотрудники — одна иконка с попапом */}
                       {eq.employees && eq.employees.length > 0 && (
                         <Popover>
                           <PopoverTrigger asChild>
-                            <button className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-primary transition-colors" title="Водители">
-                              <Users className="size-3.5" />{eq.employees.length}
-                            </button>
+                            <button className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-primary transition-colors" title="Водители"><Users className="size-3.5" />{eq.employees.length}</button>
                           </PopoverTrigger>
                           <PopoverContent className="p-2 w-[280px]" align="start">
                             <div className="space-y-1.5">
@@ -2454,10 +2885,7 @@ const EquipmentTab = React.memo(function EquipmentTab({ equipment, companies, eq
                                   </div>
                                   <div className="flex-1 min-w-0">
                                     <p className="text-xs font-medium truncate">{emp.fullName}</p>
-                                    <p className="text-[10px] text-muted-foreground">
-                                      {EMPLOYEE_POSITION_MAP[emp.position]?.label || emp.position || ''}
-                                      {emp.phone ? ` • ${emp.phone}` : ''}
-                                    </p>
+                                    <p className="text-[10px] text-muted-foreground">{EMPLOYEE_POSITION_MAP[emp.position]?.label || emp.position || ''}{emp.phone ? ` • ${emp.phone}` : ''}</p>
                                   </div>
                                 </div>
                               ))}
@@ -2465,47 +2893,16 @@ const EquipmentTab = React.memo(function EquipmentTab({ equipment, companies, eq
                           </PopoverContent>
                         </Popover>
                       )}
-                      {/* Ремонты */}
-                      {eq._count?.repairs != null && eq._count.repairs > 0 && (
-                        <span className="inline-flex items-center gap-1 text-xs text-muted-foreground" title="Ремонтов">
-                          <Wrench className="size-3.5" />{eq._count.repairs}
-                        </span>
-                      )}
-                      {/* Фото */}
-                      {eq._count?.photos != null && eq._count.photos > 0 && (
-                        <span className="inline-flex items-center gap-1 text-xs text-muted-foreground" title="Фотографий">
-                          <Camera className="size-3.5" />{eq._count.photos}
-                        </span>
-                      )}
-                      {/* Документы */}
-                      {eq.documents && eq.documents.length > 0 && (
-                        <span className="inline-flex items-center gap-1 text-xs text-muted-foreground" title="Документов">
-                          <FileText className="size-3.5" />{eq.documents.length}
-                        </span>
-                      )}
-                      {/* Трекеры кол-во */}
-                      {eq.trackers && eq.trackers.length > 1 && (
-                        <span className="inline-flex items-center gap-1 text-xs text-muted-foreground" title={`Трекеров: ${eq.trackers.length}`}>
-                          <Cpu className="size-3.5" />{eq.trackers.length}
-                        </span>
-                      )}
-                      {/* Действия справа */}
+                      {eq._count?.repairs != null && eq._count.repairs > 0 && (<span className="inline-flex items-center gap-1 text-xs text-muted-foreground" title="Ремонтов"><Wrench className="size-3.5" />{eq._count.repairs}</span>)}
+                      {eq._count?.photos != null && eq._count.photos > 0 && (<span className="inline-flex items-center gap-1 text-xs text-muted-foreground" title="Фотографий"><Camera className="size-3.5" />{eq._count.photos}</span>)}
+                      {eq.documents && eq.documents.length > 0 && (<span className="inline-flex items-center gap-1 text-xs text-muted-foreground" title="Документов"><FileText className="size-3.5" />{eq.documents.length}</span>)}
+                      {eq.trackers && eq.trackers.length > 1 && (<span className="inline-flex items-center gap-1 text-xs text-muted-foreground" title={`Трекеров: ${eq.trackers.length}`}><Cpu className="size-3.5" />{eq.trackers.length}</span>)}
                       <div className="ml-auto flex items-center gap-1">
-                        <Button size="sm" variant="ghost" className="size-7 p-0" onClick={() => onOpenDetail(eq)} title="Подробнее">
-                          <Eye className="size-3.5" />
-                        </Button>
-                        <Button size="sm" variant="ghost" className="size-7 p-0" onClick={() => onGoToMap(eq)} title="Карта">
-                          <MapPin className="size-3.5" />
-                        </Button>
-                        <Button size="sm" variant="ghost" className="size-7 p-0" onClick={() => onCreateTrip(eq)} title="Создать рейс">
-                          <Route className="size-3.5" />
-                        </Button>
-                        <Button size="sm" variant="ghost" className="size-7 p-0" onClick={() => onEdit(eq)} title="Редактировать">
-                          <Edit className="size-3.5" />
-                        </Button>
-                        <Button size="sm" variant="ghost" className="size-7 p-0 text-destructive hover:text-destructive" onClick={() => onDelete(eq)} title="Удалить">
-                          <Trash2 className="size-3.5" />
-                        </Button>
+                        <Button size="sm" variant="ghost" className="size-7 p-0" onClick={() => onOpenDetail(eq)} title="Подробнее"><Eye className="size-3.5" /></Button>
+                        <Button size="sm" variant="ghost" className="size-7 p-0" onClick={() => onGoToMap(eq)} title="Карта"><MapPin className="size-3.5" /></Button>
+                        <Button size="sm" variant="ghost" className="size-7 p-0" onClick={() => onCreateTrip(eq)} title="Создать рейс"><Route className="size-3.5" /></Button>
+                        <Button size="sm" variant="ghost" className="size-7 p-0" onClick={() => onEdit(eq)} title="Редактировать"><Edit className="size-3.5" /></Button>
+                        <Button size="sm" variant="ghost" className="size-7 p-0 text-destructive hover:text-destructive" onClick={() => onDelete(eq)} title="Удалить"><Trash2 className="size-3.5" /></Button>
                       </div>
                     </div>
                   </div>
@@ -2513,6 +2910,7 @@ const EquipmentTab = React.memo(function EquipmentTab({ equipment, companies, eq
               </Card>
             )
           })}
+          <PaginationControls page={page} totalPages={Math.ceil(filteredEquipment.length / PAGE_SIZE)} total={filteredEquipment.length} pageSize={PAGE_SIZE} onPageChange={setPage} />
         </div>
       )}
     </div>
@@ -2616,11 +3014,192 @@ function EquipmentDetailSheet({ open, onOpenChange, equipment, loading, detailTa
   const [showAllTrackersMap, setShowAllTrackersMap] = useState(false)
   const [historyPanelOpen, setHistoryPanelOpen] = useState(false)
 
+  // Axenta live sensor data
+  const [axentaSensors, setAxentaSensors] = useState<{
+    sensors: Array<{ id: number | string; name: string; type: string; category: string; value: number | null; stringValue: string | null; unit: string | null; hasValue: boolean; description?: string }>;
+    grouped: Array<{ key: string; label: string; sensors: Array<{ id: number | string; name: string; type: string; category: string; value: number | null; stringValue: string | null; unit: string | null; hasValue: boolean; description?: string }> }>;
+    totalSensors: number;
+    sensorsWithValues: number;
+    trackerFields: Record<string, unknown>;
+  } | null>(null)
+  const [axentaSensorsLoading, setAxentaSensorsLoading] = useState(false)
+  const [showOnlyWithValues, setShowOnlyWithValues] = useState(true)
+
+  // Axenta tracker commands
+  const [trackerCommands, setTrackerCommands] = useState<{
+    commands: Array<{ id: number | string; name: string; type: string; params: string | null; isVisible: boolean }>;
+    deviceCanSendCommands: boolean;
+    connectedStatus: boolean;
+    lastSeenAt: string | null;
+    trackerName: string;
+    axentaId: string;
+    recentCommands: Array<{ id: string; description: string; date: string; performedBy: string | null }>;
+  } | null>(null)
+  const [commandsLoading, setCommandsLoading] = useState(false)
+  const [commandSending, setCommandSending] = useState<string | null>(null)
+  const [customCommandText, setCustomCommandText] = useState('')
+  const [commandsPanelOpen, setCommandsPanelOpen] = useState(false)
+
+  // Command execution log — tracks status of each sent command
+  const [commandLog, setCommandLog] = useState<Array<{
+    id: string;
+    command: string;
+    status: 'sending' | 'sent' | 'delivered' | 'confirmed' | 'error' | 'timeout';
+    sentAt: Date;
+    trackerOnline?: boolean;
+    statusText: string;
+  }>>([])
+
+  const fetchTrackerCommands = async (trackerId: string) => {
+    setCommandsLoading(true)
+    try {
+      const res = await fetch(`/api/glonass/commands?trackerId=${trackerId}`)
+      if (res.ok) {
+        const data = await res.json()
+        setTrackerCommands(data)
+      }
+    } catch { /* ignore */ }
+    setCommandsLoading(false)
+  }
+
+  const checkCommandStatus = async (trackerId: string, logEntryId: string, sentAt: Date) => {
+    // Poll tracker status to see if it has responded since command was sent
+    try {
+      const res = await fetch(`/api/glonass/commands?trackerId=${trackerId}`)
+      if (res.ok) {
+        const data = await res.json()
+        if (data.lastSeenAt) {
+          const lastSeen = new Date(data.lastSeenAt)
+          if (lastSeen > sentAt || data.connectedStatus) {
+            // Tracker has been seen since command was sent — confirmed delivery
+            setCommandLog(prev => prev.map(l =>
+              l.id === logEntryId && (l.status === 'sent' || l.status === 'delivered')
+                ? { ...l, status: 'confirmed', statusText: 'Трекер подтвердил получение', trackerOnline: true }
+                : l
+            ))
+            return true
+          }
+        }
+        // Tracker hasn't responded yet
+        setCommandLog(prev => prev.map(l =>
+          l.id === logEntryId && l.status === 'sent'
+            ? { ...l, status: 'delivered', statusText: 'Доставлено на сервер, ожидание трекера', trackerOnline: data.connectedStatus }
+            : l
+        ))
+      }
+    } catch { /* ignore */ }
+    return false
+  }
+
+  const sendTrackerCommand = async (trackerId: string, params: string | null, customParams?: string) => {
+    const cmdText = customParams || params || 'custom'
+    const cmdKey = customParams || params || 'custom'
+    const logId = `${Date.now()}-${Math.random().toString(36).slice(2, 6)}`
+
+    // Add to log with "sending" status
+    setCommandLog(prev => [{
+      id: logId,
+      command: cmdText,
+      status: 'sending',
+      sentAt: new Date(),
+      statusText: 'Отправка команды...',
+    }, ...prev])
+
+    setCommandSending(cmdKey)
+    try {
+      const res = await fetch('/api/glonass/commands', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ trackerId, params, customParams }),
+      })
+      const data = await res.json()
+
+      if (data.success) {
+        const apiStatus = data.status as string
+        const trackerOnline = data.trackerOnline as boolean
+
+        let status: 'sent' | 'delivered' | 'confirmed' | 'error'
+        let statusText: string
+
+        if (apiStatus === 'delivered' || trackerOnline) {
+          status = 'confirmed'
+          statusText = 'Трекер подтвердил получение'
+        } else if (apiStatus === 'sent') {
+          status = 'sent'
+          statusText = 'Отправлено на сервер Axenta, ожидание трекера...'
+        } else {
+          status = 'delivered'
+          statusText = 'Доставлено на сервер'
+        }
+
+        setCommandLog(prev => prev.map(l =>
+          l.id === logId ? { ...l, status, statusText, trackerOnline } : l
+        ))
+
+        toast.success(data.message)
+
+        // Start polling for status if not yet confirmed
+        if (status !== 'confirmed') {
+          let pollCount = 0
+          const pollInterval = setInterval(async () => {
+            pollCount++
+            const confirmed = await checkCommandStatus(trackerId, logId, new Date(data.sentAt))
+            if (confirmed || pollCount >= 6) {
+              clearInterval(pollInterval)
+              if (!confirmed && pollCount >= 6) {
+                setCommandLog(prev => prev.map(l =>
+                  l.id === logId && l.status !== 'confirmed' && l.status !== 'error'
+                    ? { ...l, status: 'timeout', statusText: 'Таймаут — трекер не ответил (30с)' }
+                    : l
+                ))
+              }
+            }
+          }, 5000)
+        }
+      } else {
+        setCommandLog(prev => prev.map(l =>
+          l.id === logId ? { ...l, status: 'error', statusText: data.error || 'Ошибка отправки' } : l
+        ))
+        toast.error(data.error || 'Ошибка отправки команды')
+      }
+    } catch {
+      setCommandLog(prev => prev.map(l =>
+        l.id === logId ? { ...l, status: 'error', statusText: 'Сетевая ошибка' } : l
+      ))
+      toast.error('Ошибка отправки команды')
+    }
+    setCommandSending(null)
+  }
+
+  const fetchAxentaSensors = async (trackerId: string) => {
+    setAxentaSensorsLoading(true)
+    try {
+      const res = await fetch(`/api/glonass/sensors?trackerId=${trackerId}`)
+      if (res.ok) {
+        const data = await res.json()
+        setAxentaSensors(data)
+      }
+    } catch { /* ignore */ }
+    setAxentaSensorsLoading(false)
+  }
+
   useEffect(() => {
     if (open && eq && detailTab === 'trips') {
       fetch(`/api/trips?equipmentId=${eq.id}`).then(r => r.json()).then(setLocalTrips).catch(() => {})
     }
   }, [open, eq, detailTab])
+
+  // Reset Axenta sensor data when equipment changes or sheet closes
+  useEffect(() => {
+    if (!open) {
+      setAxentaSensors(null)
+      setShowOnlyWithValues(true)
+      setTrackerCommands(null)
+      setCommandsPanelOpen(false)
+      setCustomCommandText('')
+      setCommandLog([])
+    }
+  }, [open, eq?.id])
 
   if (!equipment) return null
 
@@ -2751,14 +3330,21 @@ function EquipmentDetailSheet({ open, onOpenChange, equipment, loading, detailTa
             <Button variant="ghost" size="icon" className="size-7 sm:hidden shrink-0" onClick={() => onOpenChange(false)} aria-label="Назад"><ArrowLeft className="size-4" /></Button>
             <SheetTitle className="flex items-center gap-2 text-base"><Truck className="size-4" />{eq.name}</SheetTitle>
           </div>
-          <SheetDescription className="text-xs">{[eq.brand, eq.model, eq.year].filter(Boolean).join(' • ')} — {eq.registrationNum || 'без номера'}</SheetDescription>
-          <div className="flex items-center gap-2 pt-1">
+          <SheetDescription className="text-xs">{[eq.brand, eq.model, eq.year].filter(Boolean).join(' • ')} — {eq.registrationNum || 'без номера'}{eq.garageNumber ? ` • Г#${eq.garageNumber}` : ''}{eq.unitNumber ? ` • С#${eq.unitNumber}` : ''}</SheetDescription>
+          <div className="flex items-center gap-2 pt-1 flex-wrap">
             {statusBadge(eq.status, EQUIPMENT_STATUS_MAP)}
+            {eq.condition && EQUIPMENT_CONDITION_MAP[eq.condition] && (
+              <span className={`inline-flex items-center gap-0.5 rounded px-1.5 py-0.5 text-[10px] font-medium ${EQUIPMENT_CONDITION_MAP[eq.condition].color}`}>{EQUIPMENT_CONDITION_MAP[eq.condition].icon} {EQUIPMENT_CONDITION_MAP[eq.condition].label}</span>
+            )}
+            {eq.assignedDriver && <span className="text-[10px] text-muted-foreground">🧑 {eq.assignedDriver}</span>}
             <span className="text-[10px] text-muted-foreground">создано {formatDate(eq.createdAt)}</span>
             {eq.trackers && eq.trackers.length > 0 && (
               <span className={`inline-flex items-center gap-0.5 rounded px-1 py-0 text-[9px] font-medium ${eq.trackers.some(t => t.isActive) ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-400' : 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-400'}`}>
                 {eq.trackers.some(t => t.isActive) ? <><Wifi className="size-2" />Онлайн</> : <><WifiOff className="size-2" />Офлайн</>}
               </span>
+            )}
+            {eq.documents && eq.documents.length > 0 && (
+              <span className="inline-flex items-center gap-0.5 text-[9px] text-muted-foreground"><FileText className="size-2" />{eq.documents.length} док.</span>
             )}
           </div>
           {/* Document expiry warnings */}
@@ -2766,8 +3352,10 @@ function EquipmentDetailSheet({ open, onOpenChange, equipment, loading, detailTa
             const warnings: React.ReactNode[] = []
             const insDays = eq.insuranceExpiry ? Math.ceil((new Date(eq.insuranceExpiry).getTime() - Date.now()) / (1000*60*60*24)) : null
             const inspDays = eq.inspectionExpiry ? Math.ceil((new Date(eq.inspectionExpiry).getTime() - Date.now()) / (1000*60*60*24)) : null
-            if (insDays != null && insDays < 30) warnings.push(<span key="ins" className="text-[9px] text-amber-600 dark:text-amber-400"><Shield className="inline size-2 mr-0.5" />ОСАГО {insDays < 0 ? 'истекло!' : `истекает через ${insDays} дн.`}</span>)
-            if (inspDays != null && inspDays < 30) warnings.push(<span key="insp" className="text-[9px] text-amber-600 dark:text-amber-400"><ClipboardCheck className="inline size-2 mr-0.5" />ТО {inspDays < 0 ? 'истекло!' : `истекает через ${inspDays} дн.`}</span>)
+            const maintDays = eq.nextMaintenanceDate ? Math.ceil((new Date(eq.nextMaintenanceDate).getTime() - Date.now()) / (1000*60*60*24)) : null
+            if (insDays != null && insDays < MAINTENANCE_WARN_DAYS) warnings.push(<span key="ins" className="text-[9px] text-amber-600 dark:text-amber-400"><Shield className="inline size-2 mr-0.5" />ОСАГО {insDays < 0 ? 'истекло!' : `истекает через ${insDays} дн.`}</span>)
+            if (inspDays != null && inspDays < MAINTENANCE_WARN_DAYS) warnings.push(<span key="insp" className="text-[9px] text-amber-600 dark:text-amber-400"><ClipboardCheck className="inline size-2 mr-0.5" />ТО {inspDays < 0 ? 'истекло!' : `истекает через ${inspDays} дн.`}</span>)
+            if (maintDays != null && maintDays < MAINTENANCE_WARN_DAYS) warnings.push(<span key="maint" className="text-[9px] text-amber-600 dark:text-amber-400"><Wrench className="inline size-2 mr-0.5" />ТО оборудования {maintDays < 0 ? 'просрочено!' : `через ${maintDays} дн.`}</span>)
             if (warnings.length > 0) return <div className="flex flex-wrap gap-2 mt-1 rounded bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 p-1.5">{warnings}</div>
             return null
           })()}
@@ -2783,6 +3371,8 @@ function EquipmentDetailSheet({ open, onOpenChange, equipment, loading, detailTa
           <div className="px-3 sm:px-5 border-b shrink-0 overflow-x-auto">
             <TabsList className="w-full min-w-max h-9">
               <TabsTrigger value="info" className="gap-1 text-xs"><Info className="size-3" /><span className="hidden sm:inline">Информация</span></TabsTrigger>
+              <TabsTrigger value="maintenance" className="gap-1 text-xs"><Wrench className="size-3" /><span className="hidden sm:inline">ТО</span></TabsTrigger>
+              <TabsTrigger value="documents" className="gap-1 text-xs"><FileText className="size-3" /><span className="hidden sm:inline">Документы</span></TabsTrigger>
               <TabsTrigger value="photos" className="gap-1 text-xs"><Camera className="size-3" /><span className="hidden sm:inline">Фото</span></TabsTrigger>
               <TabsTrigger value="repairs" className="gap-1 text-xs"><Wrench className="size-3" /><span className="hidden sm:inline">Ремонты</span></TabsTrigger>
               <TabsTrigger value="glonass" className="gap-1 text-xs"><MapPin className="size-3" /><span className="hidden sm:inline">ГЛОНАСС</span></TabsTrigger>
@@ -2805,8 +3395,17 @@ function EquipmentDetailSheet({ open, onOpenChange, equipment, loading, detailTa
                       <DetailRow label="Марка" value={eq.brand} />
                       <DetailRow label="Модель" value={eq.model} />
                       <DetailRow label="Год выпуска" value={eq.year?.toString()} />
+                      <DetailRow label="Возраст" value={eq.year ? (() => { const age = new Date().getFullYear() - eq.year; return age <= 0 ? 'Новый' : `${age} ${age === 1 ? 'год' : age < 5 ? 'года' : 'лет'}` })() : undefined} />
                       <DetailRow label="Категория" value={eq.category} />
                       <DetailRow label="Цвет" value={eq.color} />
+                      <DetailRow label="Гаражный номер" value={eq.garageNumber} />
+                      <DetailRow label="Сменный номер" value={eq.unitNumber} />
+                      <DetailRow label="Назначенный водитель" value={eq.assignedDriver} />
+                    </DetailSection>
+                    <DetailSection title="Состояние" icon={<HeartPulse className="size-3.5" />}>
+                      <DetailRow label="Состояние" value={eq.condition && EQUIPMENT_CONDITION_MAP[eq.condition] ? <span className={`inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-medium ${EQUIPMENT_CONDITION_MAP[eq.condition].color}`}>{EQUIPMENT_CONDITION_MAP[eq.condition].icon} {EQUIPMENT_CONDITION_MAP[eq.condition].label}</span> : undefined} />
+                      <DetailRow label="Местоположение" value={eq.location} />
+                      <DetailRow label="Депо" value={eq.depot} />
                     </DetailSection>
                     <DetailSection title="Регистрация" icon={<FileText className="size-3.5" />}>
                       <DetailRow label="VIN" value={eq.vin} />
@@ -2820,7 +3419,9 @@ function EquipmentDetailSheet({ open, onOpenChange, equipment, loading, detailTa
                       <DetailRow label="Объём" value={eq.engineVolume} />
                       <DetailRow label="Мощность (л.с.)" value={eq.enginePower} />
                       <DetailRow label="Пробег (км)" value={eq.mileage?.toLocaleString('ru-RU')} />
+                      {eq.trackers?.[0]?.lastMileage != null && <DetailRow label="Пробег трекера" value={`${eq.trackers[0].lastMileage?.toLocaleString('ru-RU')} км`} />}
                       <DetailRow label="Топливо" value={eq.fuelType} />
+                      <DetailRow label="Расход топлива" value={eq.fuelConsumptionNorm ? `${eq.fuelConsumptionNorm} л/100км` : undefined} />
                       <DetailRow label="Грузоподъёмность" value={eq.loadCapacity} />
                       <DetailRow label="Мест" value={eq.passengerSeats?.toString()} />
                     </DetailSection>
@@ -2841,25 +3442,57 @@ function EquipmentDetailSheet({ open, onOpenChange, equipment, loading, detailTa
                       <DetailRow label="ТО дата" value={formatDate(eq.inspectionDate)} />
                       <DetailRow label="ТО до" value={(() => { const d = formatDaysUntil(eq.inspectionExpiry); return <span className={d?.className}>{d?.text || formatDate(eq.inspectionExpiry)}</span> })()} />
                     </DetailSection>
+                    {/* Maintenance section */}
+                    {(eq.lastMaintenanceDate || eq.nextMaintenanceDate || eq.maintenanceInterval) && (
+                      <DetailSection title="Обслуживание" icon={<Wrench className="size-3.5" />}>
+                        <DetailRow label="Последнее ТО" value={formatDate(eq.lastMaintenanceDate)} />
+                        <DetailRow label="Следующее ТО" value={(() => { const d = formatDaysUntil(eq.nextMaintenanceDate); return d ? <span className={d.className}>{d.text}</span> : <span>{formatDate(eq.nextMaintenanceDate)}</span> })()} />
+                        <DetailRow label="Интервал ТО" value={eq.maintenanceInterval ? `${eq.maintenanceInterval.toLocaleString('ru-RU')} км` : undefined} />
+                      </DetailSection>
+                    )}
+                    {/* Oil & Tires section */}
+                    {(eq.oilChangeDate || eq.oilChangeMileage || eq.oilChangeInterval || eq.tireSize || eq.tireReplacementDate) && (
+                      <DetailSection title="Масло и шины" icon={<Droplets className="size-3.5" />}>
+                        <DetailRow label="Замена масла" value={formatDate(eq.oilChangeDate)} />
+                        <DetailRow label="Пробег при замене" value={eq.oilChangeMileage ? `${eq.oilChangeMileage.toLocaleString('ru-RU')} км` : undefined} />
+                        <DetailRow label="Интервал замены" value={eq.oilChangeInterval ? `${eq.oilChangeInterval.toLocaleString('ru-RU')} км` : undefined} />
+                        {eq.oilChangeInterval && eq.oilChangeMileage && eq.mileage && (
+                          <DetailRow label="До замены масла" value={<span className={`font-medium ${(eq.mileage - eq.oilChangeMileage) > eq.oilChangeInterval ? 'text-red-500' : (eq.mileage - eq.oilChangeMileage) > eq.oilChangeInterval * 0.8 ? 'text-amber-500' : 'text-emerald-500'}`}>{Math.max(0, eq.oilChangeInterval - (eq.mileage - eq.oilChangeMileage)).toLocaleString('ru-RU')} км</span>} />
+                        )}
+                        <DetailRow label="Размер шин" value={eq.tireSize} />
+                        <DetailRow label="Замена шин" value={formatDate(eq.tireReplacementDate)} />
+                      </DetailSection>
+                    )}
+                    {/* Rental section */}
+                    {(eq.rentalStartDate || eq.rentalEndDate || eq.rentalCost) && (
+                      <DetailSection title="Аренда" icon={<Users className="size-3.5" />}>
+                        <DetailRow label="Начало аренды" value={formatDate(eq.rentalStartDate)} />
+                        <DetailRow label="Конец аренды" value={formatDate(eq.rentalEndDate)} />
+                        <DetailRow label="Стоимость аренды" value={eq.rentalCost ? `${eq.rentalCost.toLocaleString('ru-RU')} ₽/мес` : undefined} />
+                        {eq.rentalEndDate && (() => { const rd = Math.ceil((new Date(eq.rentalEndDate).getTime() - Date.now()) / (1000*60*60*24)); return rd >= 0 ? <DetailRow label="Дней до окончания" value={<span className={`font-medium ${rd < 30 ? 'text-amber-600 dark:text-amber-400' : 'text-emerald-600 dark:text-emerald-400'}`}>{rd} дн.</span>} /> : <DetailRow label="Аренда истекла" value={<span className="text-red-600 dark:text-red-400 font-medium">{Math.abs(rd)} дн. назад</span>} /> })()}
+                      </DetailSection>
+                    )}
+                    {/* Decommission section */}
+                    {eq.status === 'decommissioned' && (eq.decommissionDate || eq.decommissionReason) && (
+                      <DetailSection title="Списание" icon={<XCircle className="size-3.5" />}>
+                        <DetailRow label="Дата списания" value={formatDate(eq.decommissionDate)} />
+                        <DetailRow label="Причина списания" value={eq.decommissionReason} />
+                      </DetailSection>
+                    )}
                     <DetailSection title="Компания" icon={<Building2 className="size-3.5" />}>
                       <DetailRow label="Владелец" value={eq.owner?.name} />
                       <DetailRow label="Арендатор" value={eq.renter?.name} />
                     </DetailSection>
                     {eq.notes && <DetailSection title="Заметки" icon={<ClipboardList className="size-3.5" />}><p className="text-xs whitespace-pre-wrap">{eq.notes}</p></DetailSection>}
 
-                    {/* Utilization & last repair info */}
+                    {/* Utilization & stats */}
                     {(() => {
-                      const totalTrips = eq.repairs ? 0 : 0 // trips fetched separately
                       const lastRepair = eq.repairs && eq.repairs.length > 0
-                        ? eq.repairs.reduce((latest, r) => {
-                            const d = new Date(r.startDate).getTime()
-                            return d > latest ? d : latest
-                          }, 0)
+                        ? eq.repairs.reduce((latest, r) => { const d = new Date(r.startDate).getTime(); return d > latest ? d : latest }, 0)
                         : null
                       const daysSinceRepair = lastRepair ? Math.floor((Date.now() - lastRepair) / (1000*60*60*24)) : null
-                      const avgRepairCost = eq.repairs && eq.repairs.length > 0
-                        ? eq.repairs.reduce((s, r) => s + (r.cost || 0), 0) / eq.repairs.length
-                        : null
+                      const totalRepairCost = eq.repairs ? eq.repairs.reduce((s, r) => s + (r.cost || 0), 0) : null
+                      const avgRepairCost = eq.repairs && eq.repairs.length > 0 ? (totalRepairCost || 0) / eq.repairs.length : null
                       const activeDays = eq.purchaseDate ? Math.max(1, Math.floor((Date.now() - new Date(eq.purchaseDate).getTime()) / (1000*60*60*24))) : null
                       const repairDays = eq.repairs ? eq.repairs.reduce((s, r) => {
                         if (r.status !== 'completed' || !r.startDate || !r.endDate) return s
@@ -2867,15 +3500,84 @@ function EquipmentDetailSheet({ open, onOpenChange, equipment, loading, detailTa
                       }, 0) : 0
                       const utilization = activeDays ? Math.round(((activeDays - repairDays) / activeDays) * 100) : null
 
-                      if (daysSinceRepair == null && avgRepairCost == null && utilization == null) return null
+                      if (daysSinceRepair == null && avgRepairCost == null && utilization == null && totalRepairCost == null) return null
                       return (
                         <DetailSection title="Эксплуатация" icon={<Activity className="size-3.5" />}>
                           {daysSinceRepair != null && <DetailRow label="Дней с последнего ремонта" value={<span className={daysSinceRepair > 90 ? 'text-amber-600 dark:text-amber-400 font-medium' : ''}>{daysSinceRepair} дн.</span>} />}
+                          {totalRepairCost != null && totalRepairCost > 0 && <DetailRow label="Общая стоимость ремонтов" value={formatPrice(totalRepairCost)} />}
                           {avgRepairCost != null && <DetailRow label="Средняя стоимость ремонта" value={formatPrice(avgRepairCost)} />}
+                          <DetailRow label="Ремонтов" value={`${eq.repairs?.length || 0}`} />
+                          <DetailRow label="Фотографий" value={`${eq._count?.photos || 0}`} />
                           {utilization != null && <DetailRow label="Коэффициент использования" value={<span className={`font-medium ${utilization > 80 ? 'text-emerald-600 dark:text-emerald-400' : utilization > 60 ? 'text-amber-600 dark:text-amber-400' : 'text-red-600 dark:text-red-400'}`}>{utilization}%</span>} />}
                         </DetailSection>
                       )
                     })()}
+
+                    {/* Quick ID reference */}
+                    <div className="rounded-md border border-border/50 p-2.5 text-[10px] text-muted-foreground">
+                      <p>ID: <span className="font-mono">{eq.id.slice(0, 8)}</span></p>
+                    </div>
+                  </div>
+                )}
+
+                {detailTab === 'maintenance' && (
+                  <div className="px-4 sm:px-5 py-3 space-y-4">
+                    <DetailSection title="Обслуживание" icon={<Wrench className="size-3.5" />}>
+                      <DetailRow label="Последнее ТО" value={formatDate(eq.lastMaintenanceDate)} />
+                      <DetailRow label="Следующее ТО" value={(() => { const d = formatDaysUntil(eq.nextMaintenanceDate); return d ? <span className={d.className}>{d.text}</span> : <span>{formatDate(eq.nextMaintenanceDate)}</span> })()} />
+                      <DetailRow label="Интервал ТО" value={eq.maintenanceInterval ? `${eq.maintenanceInterval.toLocaleString('ru-RU')} км` : undefined} />
+                      {eq.maintenanceInterval && eq.mileage && eq.lastMaintenanceDate && (() => {
+                        const daysSince = Math.floor((Date.now() - new Date(eq.lastMaintenanceDate).getTime()) / (1000*60*60*24))
+                        return <DetailRow label="Дней с последнего ТО" value={<span className={daysSince > 180 ? 'text-red-600 dark:text-red-400 font-medium' : daysSince > 90 ? 'text-amber-600 dark:text-amber-400 font-medium' : ''}>{daysSince} дн.</span>} />
+                      })()}
+                    </DetailSection>
+                    <DetailSection title="Масло" icon={<Droplets className="size-3.5" />}>
+                      <DetailRow label="Дата замены" value={formatDate(eq.oilChangeDate)} />
+                      <DetailRow label="Пробег при замене" value={eq.oilChangeMileage ? `${eq.oilChangeMileage.toLocaleString('ru-RU')} км` : undefined} />
+                      <DetailRow label="Интервал замены" value={eq.oilChangeInterval ? `${eq.oilChangeInterval.toLocaleString('ru-RU')} км` : undefined} />
+                      {eq.oilChangeInterval && eq.oilChangeMileage && eq.mileage && (
+                        <DetailRow label="До замены масла" value={<span className={`font-medium ${(eq.mileage - eq.oilChangeMileage) > eq.oilChangeInterval ? 'text-red-500' : (eq.mileage - eq.oilChangeMileage) > eq.oilChangeInterval * 0.8 ? 'text-amber-500' : 'text-emerald-500'}`}>{Math.max(0, eq.oilChangeInterval - (eq.mileage - eq.oilChangeMileage)).toLocaleString('ru-RU')} км</span>} />
+                      )}
+                    </DetailSection>
+                    <DetailSection title="Шины" icon={<Cog className="size-3.5" />}>
+                      <DetailRow label="Размер шин" value={eq.tireSize} />
+                      <DetailRow label="Дата замены" value={formatDate(eq.tireReplacementDate)} />
+                    </DetailSection>
+                    <DetailSection title="Расход топлива" icon={<FuelIcon className="size-3.5" />}>
+                      <DetailRow label="Норма расхода" value={eq.fuelConsumptionNorm ? `${eq.fuelConsumptionNorm} л/100км` : undefined} />
+                      <DetailRow label="Тип топлива" value={eq.fuelType} />
+                    </DetailSection>
+                    {(!eq.lastMaintenanceDate && !eq.nextMaintenanceDate && !eq.maintenanceInterval && !eq.oilChangeDate && !eq.tireSize && !eq.fuelConsumptionNorm) && (
+                      <div className="text-center py-8 text-muted-foreground"><Wrench className="size-8 mx-auto mb-2 opacity-40" /><p className="text-xs">Данные об обслуживании не заполнены</p></div>
+                    )}
+                  </div>
+                )}
+
+                {detailTab === 'documents' && (
+                  <div className="px-4 sm:px-5 py-3 space-y-3">
+                    <div className="flex items-center justify-between">
+                      <p className="text-xs font-medium">Документы ({eq.documents?.length || 0})</p>
+                    </div>
+                    {(!eq.documents || eq.documents.length === 0) ? (
+                      <div className="text-center py-8 text-muted-foreground"><FileText className="size-8 mx-auto mb-2 opacity-40" /><p className="text-xs">Нет документов</p></div>
+                    ) : (
+                      <div className="space-y-2">
+                        {eq.documents.map(doc => (
+                          <Card key={doc.id} className="p-3">
+                            <div className="flex items-start justify-between gap-2">
+                              <div className="flex items-center gap-2 min-w-0">
+                                <div className="size-8 rounded-md bg-muted flex items-center justify-center shrink-0"><FileText className="size-4 text-muted-foreground" /></div>
+                                <div className="flex-1 min-w-0">
+                                  <p className="text-xs font-medium truncate">{doc.name}</p>
+                                  <p className="text-[10px] text-muted-foreground">{doc.type}{doc.notes ? ` • ${doc.notes}` : ''}</p>
+                                </div>
+                              </div>
+                              {doc.expiryDate && (() => { const d = formatDaysUntil(doc.expiryDate); return d ? <span className={`text-[10px] font-medium shrink-0 ${d.className}`}>{d.text.split('(')[0].trim()}</span> : null })()}
+                            </div>
+                          </Card>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 )}
 
@@ -3038,57 +3740,374 @@ function EquipmentDetailSheet({ open, onOpenChange, equipment, loading, detailTa
                                 <DetailRow label="Высота" value={tracker.lastAltitude != null ? `${tracker.lastAltitude} м` : undefined} />
                                 {tracker.lastAddress && <DetailRow label="Адрес" value={tracker.lastAddress} />}
                               </DetailSection>
-                              <DetailSection title="Датчики" icon={<Gauge className="size-3.5" />}>
-                                <DetailRow label="Зажигание" value={tracker.lastIgnition != null ? (tracker.lastIgnition ? 'Вкл' : 'Выкл') : undefined} />
-                                <DetailRow label="Топливо" value={tracker.lastFuelLevel != null ? `${tracker.lastFuelLevel} л` : undefined} />
-                                <DetailRow label="Пробег" value={tracker.lastMileage != null ? `${tracker.lastMileage?.toLocaleString('ru-RU')} км` : undefined} />
-                                {tracker.lastEngineTemp != null && <DetailRow label="Темп. двигателя" value={`${tracker.lastEngineTemp}°C`} />}
-                                {tracker.sensorData && (() => {
-                                  // Filter: only sensors with values, exclude types already shown above (fuel, ignition, mileage, temperature)
-                                  const alreadyShownTypes = ['fuel', 'ignition', 'temperature', 'temp', 'odometer', 'mileage']
-                                  const alreadyShownNames = ['топлив', 'зажиган', 'пробег', 'темпер', 'бак']
-                                  const extraSensors = getUniqueSensors(
-                                    tracker.sensorData.filter(s => {
-                                      if (s.value == null && (s.stringValue == null || s.stringValue === '')) return false
-                                      const type = (s.sensorType || '').toLowerCase()
-                                      const name = (s.sensorName || '').toLowerCase()
-                                      if (alreadyShownTypes.some(t => type.includes(t))) return false
-                                      if (alreadyShownNames.some(n => name.includes(n))) return false
-                                      return true
-                                    })
-                                  )
-                                  if (extraSensors.length === 0) return null
-                                  return (
-                                    <>
-                                      <div className="col-span-2 mt-1 pt-1 border-t border-dashed border-border/40">
-                                        <p className="text-[10px] font-medium text-muted-foreground mb-1">Доп. датчики</p>
-                                      </div>
-                                      {extraSensors.map((s, i) => {
-                                        const isIgnition = s.sensorType === 'ignition' || /зажиган/i.test(s.sensorName || '')
-                                        const isFuel = s.sensorType === 'fuel' || /топлив|бак/i.test(s.sensorName || '')
-                                        let displayVal: string
-                                        if (isIgnition && s.value != null) {
-                                          displayVal = s.value > 0 ? 'On' : 'Off'
-                                        } else if (isFuel) {
-                                          displayVal = `${s.value ?? s.stringValue ?? '—'} л`
-                                        } else {
-                                          displayVal = `${(s.value ?? s.stringValue) || '—'}${s.unit ? ` ${s.unit}` : ''}`
-                                        }
+                              {/* ── All sensors from Axenta ── */}
+                              <div className="space-y-2">
+                                <div className="flex items-center justify-between gap-2">
+                                  <div className="flex items-center gap-1.5">
+                                    <Gauge className="size-3.5 text-muted-foreground" />
+                                    <span className="text-xs font-semibold">Датчики</span>
+                                    {axentaSensors && (
+                                      <span className="text-[10px] text-muted-foreground">
+                                        ({axentaSensors.sensorsWithValues}/{axentaSensors.totalSensors})
+                                      </span>
+                                    )}
+                                  </div>
+                                  <div className="flex items-center gap-1.5">
+                                    {axentaSensors && (
+                                      <button
+                                        onClick={() => setShowOnlyWithValues(!showOnlyWithValues)}
+                                        className="text-[10px] px-1.5 py-0.5 rounded border border-border/60 hover:bg-accent/50 transition-colors"
+                                      >
+                                        {showOnlyWithValues ? 'Все' : 'Только с данными'}
+                                      </button>
+                                    )}
+                                    <button
+                                      onClick={() => fetchAxentaSensors(tracker.id)}
+                                      disabled={axentaSensorsLoading}
+                                      className="text-[10px] px-2 py-0.5 rounded bg-primary/10 text-primary hover:bg-primary/20 transition-colors disabled:opacity-50 flex items-center gap-1"
+                                    >
+                                      <RefreshCw className={`size-2.5 ${axentaSensorsLoading ? 'animate-spin' : ''}`} />
+                                      {axentaSensors ? 'Обновить' : 'Загрузить из Axenta'}
+                                    </button>
+                                  </div>
+                                </div>
+
+                                {/* Before loading from Axenta: show basic cached data */}
+                                {!axentaSensors && (
+                                  <div className="grid grid-cols-2 gap-x-3 gap-y-0.5 text-[11px]">
+                                    <DetailRow label="Зажигание" value={tracker.lastIgnition != null ? (tracker.lastIgnition ? 'Вкл' : 'Выкл') : undefined} />
+                                    <DetailRow label="Топливо" value={tracker.lastFuelLevel != null ? `${tracker.lastFuelLevel} л` : undefined} />
+                                    <DetailRow label="Пробег" value={tracker.lastMileage != null ? `${tracker.lastMileage?.toLocaleString('ru-RU')} км` : undefined} />
+                                    {tracker.lastEngineTemp != null && <DetailRow label="Темп. двигателя" value={`${tracker.lastEngineTemp}°C`} />}
+                                    {tracker.sensorData && (() => {
+                                      const cached = getUniqueSensors(
+                                        tracker.sensorData.filter(s => s.value != null || (s.stringValue != null && s.stringValue !== ''))
+                                      )
+                                      const shownTypes = new Set(['ignition', 'fuel', 'mileage', 'temperature'])
+                                      const extra = cached.filter(s => {
+                                        const t = (s.sensorType || '').toLowerCase()
+                                        const n = (s.sensorName || '').toLowerCase()
+                                        if (shownTypes.has('ignition') && (t.includes('ignition') || n.includes('зажиган'))) return false
+                                        if (shownTypes.has('fuel') && (t.includes('fuel') || n.includes('топлив') || n.includes('бак'))) return false
+                                        if (shownTypes.has('mileage') && (t.includes('odometer') || t.includes('mileage') || n.includes('пробег') || n.includes('одометр'))) return false
+                                        if (shownTypes.has('temperature') && (t.includes('temp') || n.includes('темпер'))) return false
+                                        return true
+                                      })
+                                      if (extra.length === 0) return null
+                                      return extra.map((s, i) => {
+                                        const displayVal = `${(s.value ?? s.stringValue) || '—'}${s.unit ? ` ${s.unit}` : ''}`
                                         return <DetailRow key={i} label={s.sensorName || s.sensorType} value={displayVal} />
-                                      })}
-                                    </>
-                                  )
-                                })()}
-                                {(!tracker.sensorData || getUniqueSensors(
-                                  tracker.sensorData.filter(s => s.value != null || (s.stringValue != null && s.stringValue !== ''))
-                                ).length === 0) && tracker.lastEngineTemp == null && (
-                                  <p className="text-[10px] text-muted-foreground col-span-2">Нет данных датчиков</p>
+                                      })
+                                    })()}
+                                    {(!tracker.sensorData || getUniqueSensors(
+                                      tracker.sensorData.filter(s => s.value != null || (s.stringValue != null && s.stringValue !== ''))
+                                    ).length === 0) && tracker.lastEngineTemp == null && tracker.lastFuelLevel == null && tracker.lastMileage == null && (
+                                      <p className="text-[10px] text-muted-foreground col-span-2">Нажмите «Загрузить из Axenta» для просмотра всех датчиков</p>
+                                    )}
+                                  </div>
                                 )}
+
+                                {/* After loading: show grouped sensors from Axenta */}
+                                {axentaSensors && (
+                                  <div className="space-y-2">
+                                    {axentaSensors.grouped.map(group => {
+                                      const filteredSensors = showOnlyWithValues
+                                        ? group.sensors.filter(s => s.hasValue)
+                                        : group.sensors
+                                      if (filteredSensors.length === 0) return null
+
+                                      const categoryIcons: Record<string, string> = {
+                                        position: '📍',
+                                        ignition: '🔑',
+                                        fuel: '⛽',
+                                        temperature: '🌡',
+                                        mileage: '🛣',
+                                        voltage: '⚡',
+                                        digital: '📡',
+                                        custom: '🔧',
+                                      }
+
+                                      return (
+                                        <div key={group.key} className="rounded-md border border-border/40 overflow-hidden">
+                                          <div className="flex items-center gap-1.5 px-2.5 py-1.5 bg-muted/30">
+                                            <span className="text-xs">{categoryIcons[group.key] || '📊'}</span>
+                                            <span className="text-[11px] font-semibold">{group.label}</span>
+                                            <span className="text-[9px] text-muted-foreground ml-auto">
+                                              {group.sensors.filter(s => s.hasValue).length}/{group.sensors.length}
+                                            </span>
+                                          </div>
+                                          <div className="grid grid-cols-2 gap-x-3 gap-y-0.5 px-2.5 py-1.5 text-[11px]">
+                                            {filteredSensors.map(s => {
+                                              const valueColor = s.hasValue
+                                                ? (s.category === 'ignition'
+                                                  ? (s.stringValue === 'Вкл' ? 'text-emerald-600 dark:text-emerald-400 font-medium' : 'text-red-500 dark:text-red-400')
+                                                  : 'text-foreground')
+                                                : 'text-muted-foreground/50'
+
+                                              const valueText = s.hasValue
+                                                ? (s.stringValue || `${s.value}${s.unit ? ` ${s.unit}` : ''}`)
+                                                : '—'
+
+                                              return (
+                                                <div key={s.id} className="contents">
+                                                  <span className="text-muted-foreground truncate" title={s.name + (s.description ? ` — ${s.description}` : '')}>
+                                                    {s.name}
+                                                  </span>
+                                                  <span className={`${valueColor} text-right font-mono truncate`}>
+                                                    {valueText}
+                                                  </span>
+                                                </div>
+                                              )
+                                            })}
+                                          </div>
+                                        </div>
+                                      )
+                                    })}
+
+                                    {/* Summary bar */}
+                                    <div className="flex items-center justify-between text-[10px] text-muted-foreground pt-1 border-t border-border/30">
+                                      <span>
+                                        Датчиков с данными: {axentaSensors.sensorsWithValues} из {axentaSensors.totalSensors}
+                                      </span>
+                                      <span>
+                                        {!showOnlyWithValues
+                                          ? `${axentaSensors.totalSensors - axentaSensors.sensorsWithValues} без данных`
+                                          : `${axentaSensors.totalSensors - axentaSensors.sensorsWithValues} скрыто`
+                                        }
+                                      </span>
+                                    </div>
+                                  </div>
+                                )}
+                              </div>
+                              {/* Tracker identification */}
+                              <DetailSection title="Идентификация" icon={<Cpu className="size-3.5" />}>
+                                {tracker.trackerName && <DetailRow label="Название" value={tracker.trackerName} />}
+                                <DetailRow label="ID трекера" value={tracker.trackerId} />
+                                {tracker.axentaCloudId && <DetailRow label="Axenta ID" value={tracker.axentaCloudId} />}
+                                {tracker.imei && <DetailRow label="IMEI" value={<span className="font-mono cursor-pointer hover:text-primary" onClick={() => copyToClipboard(tracker.imei!)} title="Копировать">{tracker.imei}</span> as any} />}
+                                {tracker.phoneNumber && <DetailRow label="Телефон" value={tracker.phoneNumber} />}
                               </DetailSection>
                               <DetailSection title="Связь" icon={<Clock className="size-3.5" />}>
                                 <DetailRow label="Выход на связь" value={formatDateTime(tracker.lastSeenAt)} />
                                 <DetailRow label="Позиция" value={formatDateTime(tracker.lastPositionAt)} />
+                                {tracker.lastSeenAt && (() => {
+                                  const diffMs = Date.now() - new Date(tracker.lastSeenAt).getTime()
+                                  const diffMin = Math.floor(diffMs / 60000)
+                                  const diffHrs = Math.floor(diffMin / 60)
+                                  const diffDays = Math.floor(diffHrs / 24)
+                                  let ago: string
+                                  if (diffMin < 1) ago = 'только что'
+                                  else if (diffMin < 60) ago = `${diffMin} мин назад`
+                                  else if (diffHrs < 24) ago = `${diffHrs} ч назад`
+                                  else ago = `${diffDays} дн назад`
+                                  return <DetailRow label="Последняя активность" value={<span className={diffMin < 5 ? 'text-emerald-600 dark:text-emerald-400 font-medium' : diffHrs > 24 ? 'text-red-600 dark:text-red-400' : 'text-muted-foreground'}>{ago}</span> as any} />
+                                })()}
                               </DetailSection>
+
+                              {/* ── Tracker Commands ── */}
+                              <div className="space-y-2">
+                                <button className="flex items-center gap-1.5 text-xs font-semibold w-full text-left" onClick={() => {
+                                  if (!commandsPanelOpen && !trackerCommands) {
+                                    fetchTrackerCommands(tracker.id)
+                                  }
+                                  setCommandsPanelOpen(prev => !prev)
+                                }}>
+                                  <Terminal className="size-3.5 text-muted-foreground" />
+                                  <span>Команды трекера</span>
+                                  {trackerCommands && (
+                                    <span className="text-[10px] text-muted-foreground">
+                                      ({trackerCommands.commands.length} команд)
+                                    </span>
+                                  )}
+                                  {commandLog.length > 0 && (
+                                    <span className="text-[9px] px-1 py-0.5 rounded bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400">
+                                      {commandLog.filter(l => l.status === 'sending' || l.status === 'sent' || l.status === 'delivered').length} в процессе
+                                    </span>
+                                  )}
+                                  <ChevronDown className={`size-3 text-muted-foreground transition-transform ml-auto ${commandsPanelOpen ? '' : '-rotate-90'}`} />
+                                </button>
+
+                                {commandsPanelOpen && (
+                                  <div className="space-y-2">
+                                    {/* Device capability indicator */}
+                                    {trackerCommands && (
+                                      <div className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-[11px] ${trackerCommands.deviceCanSendCommands ? 'bg-emerald-50 dark:bg-emerald-900/20 text-emerald-700 dark:text-emerald-400' : 'bg-amber-50 dark:bg-amber-900/20 text-amber-700 dark:text-amber-400'}`}>
+                                        {trackerCommands.deviceCanSendCommands
+                                          ? <><Wifi className="size-3" /> Устройство поддерживает команды</>
+                                          : <><WifiOff className="size-3" /> Устройство может не поддерживать команды</>
+                                        }
+                                      </div>
+                                    )}
+
+                                    {/* ── Command execution log ── */}
+                                    {commandLog.length > 0 && (
+                                      <div className="space-y-1">
+                                        <p className="text-[10px] text-muted-foreground font-medium">Журнал выполнения:</p>
+                                        {commandLog.slice(0, 5).map(log => {
+                                          const statusConfig: Record<string, { icon: React.ReactNode; color: string; label: string }> = {
+                                            sending: {
+                                              icon: <Loader2 className="size-3 animate-spin" />,
+                                              color: 'bg-blue-50 dark:bg-blue-900/20 border-blue-200 dark:border-blue-800/40 text-blue-700 dark:text-blue-300',
+                                              label: 'Отправка...',
+                                            },
+                                            sent: {
+                                              icon: <RefreshCw className="size-3 animate-spin" />,
+                                              color: 'bg-yellow-50 dark:bg-yellow-900/20 border-yellow-200 dark:border-yellow-800/40 text-yellow-700 dark:text-yellow-300',
+                                              label: 'Отправлено',
+                                            },
+                                            delivered: {
+                                              icon: <CheckCircle2 className="size-3" />,
+                                              color: 'bg-sky-50 dark:bg-sky-900/20 border-sky-200 dark:border-sky-800/40 text-sky-700 dark:text-sky-300',
+                                              label: 'На сервере',
+                                            },
+                                            confirmed: {
+                                              icon: <CheckCheck className="size-3" />,
+                                              color: 'bg-emerald-50 dark:bg-emerald-900/20 border-emerald-200 dark:border-emerald-800/40 text-emerald-700 dark:text-emerald-300',
+                                              label: 'Подтверждено',
+                                            },
+                                            timeout: {
+                                              icon: <Clock className="size-3" />,
+                                              color: 'bg-amber-50 dark:bg-amber-900/20 border-amber-200 dark:border-amber-800/40 text-amber-700 dark:text-amber-300',
+                                              label: 'Таймаут',
+                                            },
+                                            error: {
+                                              icon: <XCircle className="size-3" />,
+                                              color: 'bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-800/40 text-red-700 dark:text-red-300',
+                                              label: 'Ошибка',
+                                            },
+                                          }
+                                          const cfg = statusConfig[log.status] || statusConfig.error
+                                          const timeAgo = Math.floor((Date.now() - log.sentAt.getTime()) / 1000)
+                                          const timeStr = timeAgo < 5 ? 'только что' : timeAgo < 60 ? `${timeAgo}с назад` : `${Math.floor(timeAgo / 60)}м назад`
+
+                                          return (
+                                            <div key={log.id} className={`flex items-center gap-2 px-2.5 py-1.5 rounded-md border ${cfg.color} transition-all`}>
+                                              {cfg.icon}
+                                              <div className="flex-1 min-w-0">
+                                                <div className="flex items-center gap-1.5">
+                                                  <span className="text-[11px] font-medium truncate">{log.command}</span>
+                                                  <span className="text-[9px] opacity-70">{timeStr}</span>
+                                                </div>
+                                                <p className="text-[10px] opacity-80 truncate">{log.statusText}</p>
+                                              </div>
+                                              <span className="text-[9px] font-semibold shrink-0">{cfg.label}</span>
+                                            </div>
+                                          )
+                                        })}
+                                      </div>
+                                    )}
+
+                                    {/* Loading state */}
+                                    {commandsLoading && (
+                                      <div className="flex items-center justify-center py-3">
+                                        <Loader2 className="size-4 animate-spin text-muted-foreground" />
+                                        <span className="text-[11px] text-muted-foreground ml-2">Загрузка команд...</span>
+                                      </div>
+                                    )}
+
+                                    {/* Available commands list */}
+                                    {trackerCommands && trackerCommands.commands.length > 0 && (
+                                      <div className="space-y-1.5">
+                                        <p className="text-[10px] text-muted-foreground font-medium">Доступные команды:</p>
+                                        {trackerCommands.commands.map((cmd) => (
+                                          <div key={cmd.id} className="flex items-center gap-2 px-2.5 py-1.5 rounded-md border border-border/40 hover:bg-accent/30 transition-colors">
+                                            <div className="flex-1 min-w-0">
+                                              <p className="text-[11px] font-medium truncate">{cmd.name}</p>
+                                              {cmd.params && (
+                                                <p className="text-[10px] text-muted-foreground truncate">Параметры: {cmd.params}</p>
+                                              )}
+                                            </div>
+                                            <Button
+                                              size="sm"
+                                              variant="outline"
+                                              className="h-6 text-[10px] gap-1 shrink-0"
+                                              disabled={commandSending !== null}
+                                              onClick={() => sendTrackerCommand(tracker.id, cmd.params)}
+                                            >
+                                              {commandSending === (cmd.params || String(cmd.id))
+                                                ? <Loader2 className="size-2.5 animate-spin" />
+                                                : <Send className="size-2.5" />
+                                              }
+                                              Отправить
+                                            </Button>
+                                          </div>
+                                        ))}
+                                      </div>
+                                    )}
+
+                                    {/* No predefined commands */}
+                                    {trackerCommands && trackerCommands.commands.length === 0 && (
+                                      <p className="text-[10px] text-muted-foreground">Нет предустановленных команд для этого трекера</p>
+                                    )}
+
+                                    {/* Custom command input */}
+                                    <div className="space-y-1.5 pt-1 border-t border-border/30">
+                                      <p className="text-[10px] text-muted-foreground font-medium">Произвольная команда:</p>
+                                      <div className="flex gap-1.5">
+                                        <Input
+                                          className="h-7 text-[11px] flex-1"
+                                          placeholder="Например: restart, position, output1:on"
+                                          value={customCommandText}
+                                          onChange={e => setCustomCommandText(e.target.value)}
+                                          onKeyDown={e => {
+                                            if (e.key === 'Enter' && customCommandText.trim()) {
+                                              sendTrackerCommand(tracker.id, null, customCommandText.trim())
+                                              setCustomCommandText('')
+                                            }
+                                          }}
+                                        />
+                                        <Button
+                                          size="sm"
+                                          variant="default"
+                                          className="h-7 text-[10px] gap-1 shrink-0"
+                                          disabled={!customCommandText.trim() || commandSending !== null}
+                                          onClick={() => {
+                                            sendTrackerCommand(tracker.id, null, customCommandText.trim())
+                                            setCustomCommandText('')
+                                          }}
+                                        >
+                                          {commandSending === customCommandText.trim()
+                                            ? <Loader2 className="size-2.5 animate-spin" />
+                                            : <Send className="size-2.5" />
+                                          }
+                                          Отправить
+                                        </Button>
+                                      </div>
+                                      <div className="flex flex-wrap gap-1 mt-1">
+                                        {[
+                                          { label: 'Перезагрузка', cmd: 'restart' },
+                                          { label: 'Запрос позиции', cmd: 'position' },
+                                          { label: 'Запрос статуса', cmd: 'status' },
+                                          { label: 'Блокировка', cmd: 'block_engine' },
+                                          { label: 'Разблокировка', cmd: 'unblock_engine' },
+                                        ].map(preset => (
+                                          <button
+                                            key={preset.cmd}
+                                            className="text-[9px] px-1.5 py-0.5 rounded border border-border/60 hover:bg-accent/50 transition-colors"
+                                            onClick={() => setCustomCommandText(preset.cmd)}
+                                          >
+                                            {preset.label}
+                                          </button>
+                                        ))}
+                                      </div>
+                                    </div>
+
+                                    {/* Refresh commands button */}
+                                    {trackerCommands && (
+                                      <Button
+                                        size="sm"
+                                        variant="ghost"
+                                        className="h-6 text-[10px] w-full gap-1"
+                                        disabled={commandsLoading}
+                                        onClick={() => fetchTrackerCommands(tracker.id)}
+                                      >
+                                        <RefreshCw className={`size-2.5 ${commandsLoading ? 'animate-spin' : ''}`} />
+                                        Обновить список команд
+                                      </Button>
+                                    )}
+                                  </div>
+                                )}
+                              </div>
 
                               {/* Date range for historical data — collapsible */}
                               <div>
@@ -3333,12 +4352,13 @@ function EquipmentDetailSheet({ open, onOpenChange, equipment, loading, detailTa
   )
 }
 
-function DetailSection({ title, icon, children }: { title: string; icon: React.ReactNode; children: React.ReactNode }) {
+function DetailSection({ title, icon, children, extra }: { title: string; icon: React.ReactNode; children: React.ReactNode; extra?: React.ReactNode }) {
   return (
     <div>
       <div className="flex items-center gap-1.5 mb-1.5">
         <span className="text-muted-foreground">{icon}</span>
         <h3 className="text-xs font-semibold">{title}</h3>
+        {extra && <div className="ml-auto">{extra}</div>}
       </div>
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-0.5 pl-5">{children}</div>
     </div>
@@ -3370,6 +4390,9 @@ function EquipmentFormDialog({ open, onOpenChange, editData, companies, step, se
   const [axentaObjects, setAxentaObjects] = useState<Array<{ id: number; name: string; uniqueId: string; connectedStatus: boolean; isLinked: boolean; lastMessage: { time: string; posTime: string; position: { x: number; y: number; s: number; c: number } } | null }>>([])
   const [axentaLoading, setAxentaLoading] = useState(false)
   const [selectedAxentaId, setSelectedAxentaId] = useState<string>('')
+  const [axentaSearch, setAxentaSearch] = useState('')
+  const [validationAttempted, setValidationAttempted] = useState(false)
+  const [stepDirection, setStepDirection] = useState<1 | -1>(1)
 
   useEffect(() => {
     if (editData) {
@@ -3393,6 +4416,22 @@ function EquipmentFormDialog({ open, onOpenChange, editData, companies, step, se
         inspectionExpiry: editData.inspectionExpiry ? toLocalDate(editData.inspectionExpiry) : '',
         status: editData.status || 'active', notes: editData.notes || '',
         ownerId: editData.ownerId || '', renterId: editData.renterId || '',
+        condition: editData.condition || 'good', location: editData.location || '', depot: editData.depot || '',
+        garageNumber: editData.garageNumber || '', unitNumber: editData.unitNumber || '', assignedDriver: editData.assignedDriver || '',
+        lastMaintenanceDate: editData.lastMaintenanceDate ? toLocalDate(editData.lastMaintenanceDate) : '',
+        nextMaintenanceDate: editData.nextMaintenanceDate ? toLocalDate(editData.nextMaintenanceDate) : '',
+        maintenanceInterval: editData.maintenanceInterval?.toString() || '',
+        fuelConsumptionNorm: editData.fuelConsumptionNorm?.toString() || '',
+        tireSize: editData.tireSize || '',
+        tireReplacementDate: editData.tireReplacementDate ? toLocalDate(editData.tireReplacementDate) : '',
+        oilChangeDate: editData.oilChangeDate ? toLocalDate(editData.oilChangeDate) : '',
+        oilChangeMileage: editData.oilChangeMileage?.toString() || '',
+        oilChangeInterval: editData.oilChangeInterval?.toString() || '',
+        rentalStartDate: editData.rentalStartDate ? toLocalDate(editData.rentalStartDate) : '',
+        rentalEndDate: editData.rentalEndDate ? toLocalDate(editData.rentalEndDate) : '',
+        rentalCost: editData.rentalCost?.toString() || '',
+        decommissionDate: editData.decommissionDate ? toLocalDate(editData.decommissionDate) : '',
+        decommissionReason: editData.decommissionReason || '',
       })
     } else {
       setCreateMode('manual')
@@ -3400,6 +4439,7 @@ function EquipmentFormDialog({ open, onOpenChange, editData, companies, step, se
       setForm({ type: 'автомобиль', status: 'active' })
     }
     setStep(0)
+    setValidationAttempted(false)
   }, [editData, open, setStep])
 
   // Load Axenta objects when switching to axenta mode
@@ -3442,14 +4482,83 @@ function EquipmentFormDialog({ open, onOpenChange, editData, companies, step, se
   const setF = (key: string, value: string) => setForm(prev => ({ ...prev, [key]: value }))
 
   const steps = [
-    { title: 'Основные', icon: <Settings2 className="size-3.5" /> },
-    { title: 'Регистрация', icon: <FileText className="size-3.5" /> },
-    { title: 'Тех. характеристики', icon: <Gauge className="size-3.5" /> },
-    { title: 'Финансы', icon: <DollarSign className="size-3.5" /> },
-    { title: 'Назначение', icon: <Building2 className="size-3.5" /> },
+    { title: 'Основные', icon: <Settings2 className="size-3.5" />, desc: 'Название, тип, статус' },
+    { title: 'Регистрация', icon: <FileText className="size-3.5" />, desc: 'VIN, номера, документы' },
+    { title: 'Тех. характеристики', icon: <Gauge className="size-3.5" />, desc: 'Двигатель, пробег, топливо' },
+    { title: 'Финансы', icon: <DollarSign className="size-3.5" />, desc: 'Стоимость, страховка, ТО' },
+    { title: 'Назначение', icon: <Building2 className="size-3.5" />, desc: 'Владелец, арендатор, заметки' },
   ]
 
+  // #11 Vehicle age auto-calc
+  const vehicleAge = useMemo(() => {
+    const yr = parseInt(f('year'))
+    if (!yr || yr < 1900 || yr > new Date().getFullYear() + 1) return null
+    const age = new Date().getFullYear() - yr
+    return age
+  }, [form.year])
+
+  // #12 Depreciation preview
+  const depreciation = useMemo(() => {
+    const purchase = parseFloat(f('purchasePrice'))
+    const current = parseFloat(f('currentPrice'))
+    if (!purchase || purchase <= 0 || !current || current < 0) return null
+    const dep = ((purchase - current) / purchase) * 100
+    return Math.max(0, Math.min(100, dep))
+  }, [form.purchasePrice, form.currentPrice])
+
+  // #10 Insurance/TO warning
+  const getExpiryWarning = (dateStr: string) => {
+    if (!dateStr) return null
+    const expiry = new Date(dateStr)
+    const now = new Date()
+    const daysLeft = Math.ceil((expiry.getTime() - now.getTime()) / (1000 * 60 * 60 * 24))
+    if (daysLeft < 0) return { type: 'expired' as const, days: Math.abs(daysLeft) }
+    if (daysLeft <= 30) return { type: 'warning' as const, days: daysLeft }
+    return null
+  }
+
+  // #16 & #21 Count filled fields
+  const filledCount = useMemo(() => {
+    return Object.values(form).filter(v => v && v.trim()).length
+  }, [form])
+
+  const totalFields = 27
+
+  // #21 Validation
+  const requiredFields = ['name']
+  const missingRequired = validationAttempted
+    ? requiredFields.filter(k => !f(k).trim())
+    : []
+
+  // #4 Step completion check — a step is "completed" if it has at least one non-empty field
+  const isStepCompleted = (idx: number) => {
+    const stepFields: Record<number, string[]> = {
+      0: ['name', 'type', 'brand', 'model', 'year', 'category', 'color', 'status'],
+      1: ['vin', 'serialNumber', 'registrationNum', 'stsNumber', 'ptsNumber'],
+      2: ['engineType', 'engineVolume', 'enginePower', 'mileage', 'fuelType', 'loadCapacity', 'passengerSeats'],
+      3: ['purchaseDate', 'purchasePrice', 'currentPrice', 'insuranceNumber', 'insuranceExpiry', 'inspectionDate', 'inspectionExpiry'],
+      4: ['ownerId', 'renterId', 'notes'],
+    }
+    return (stepFields[idx] || []).some(k => f(k).trim())
+  }
+
+  // #20 Keyboard shortcuts
+  const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      const target = e.target as HTMLElement
+      if (target.tagName === 'TEXTAREA') return
+      if (target.tagName === 'INPUT' || target.tagName === 'SELECT') {
+        e.preventDefault()
+        if (step < steps.length - 1) {
+          setStepDirection(1)
+          setStep(step + 1)
+        }
+      }
+    }
+  }, [step, steps.length, setStep])
+
   const handleSave = async () => {
+    setValidationAttempted(true)
     if (!f('name').trim()) { toast.error('Укажите наименование техники'); return }
     setSaving(true)
     try {
@@ -3486,22 +4595,113 @@ function EquipmentFormDialog({ open, onOpenChange, editData, companies, step, se
     setSaving(false)
   }
 
+  const goToStep = (idx: number) => {
+    setStepDirection(idx > step ? 1 : -1)
+    setStep(idx)
+  }
+
   const unlinkedAxentaObjects = axentaObjects.filter(o => !o.isLinked)
+  // #18 Search/filter for Axenta
+  const filteredAxentaObjects = useMemo(() => {
+    if (!axentaSearch.trim()) return unlinkedAxentaObjects
+    const q = axentaSearch.toLowerCase()
+    return unlinkedAxentaObjects.filter(o =>
+      o.name.toLowerCase().includes(q) ||
+      o.uniqueId.toLowerCase().includes(q)
+    )
+  }, [unlinkedAxentaObjects, axentaSearch])
+
+  // #7 Status preview badge
+  const currentStatusInfo = EQUIPMENT_STATUS_MAP[f('status')] || EQUIPMENT_STATUS_MAP.active
+
+  // #8 Type category icons mapping
+  const categoryIcons: Record<string, React.ReactNode> = {
+    'Легковой транспорт': <Car className="size-3" />,
+    'Грузовой транспорт': <Truck className="size-3" />,
+    'Пассажирский транспорт': <Bus className="size-3" />,
+    'Спецтехника': <Wrench className="size-3" />,
+    'Сельхозтехника': <Tractor className="size-3" />,
+    'Строительная техника': <Wrench className="size-3" />,
+    'Водный транспорт': <Ship className="size-3" />,
+    'Другое': <Package className="size-3" />,
+  }
+
+  // #13 Required field indicator component
+  const ReqStar = () => <span className="text-red-500 ml-0.5">*</span>
+
+  // #6 Field hint component
+  const FieldHint = ({ text }: { text: string }) => (
+    <span className="text-[10px] text-muted-foreground/70 ml-1">— {text}</span>
+  )
+
+  // #14 Field group header component
+  const GroupHeader = ({ icon, title }: { icon: React.ReactNode; title: string }) => (
+    <div className="sm:col-span-2 flex items-center gap-1.5 pt-2 pb-1">
+      <span className="text-muted-foreground/60">{icon}</span>
+      <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">{title}</span>
+      <div className="flex-1 h-px bg-border/50 ml-2" />
+    </div>
+  )
+
+  // #24 Company badge helper
+  const companyTypeBadge = (type: string) => {
+    if (type === 'owner') return <span className="ml-1.5 inline-flex items-center rounded px-1 py-0 text-[8px] font-medium bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-400">Вл</span>
+    if (type === 'renter') return <span className="ml-1.5 inline-flex items-center rounded px-1 py-0 text-[8px] font-medium bg-sky-100 text-sky-700 dark:bg-sky-900/40 dark:text-sky-400">Ар</span>
+    if (type === 'both') return <span className="ml-1.5 inline-flex items-center rounded px-1 py-0 text-[8px] font-medium bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-400">В+А</span>
+    return null
+  }
+
+  // #15 Slide animation variants
+  const slideVariants = {
+    enter: (direction: number) => ({ x: direction > 0 ? 40 : -40, opacity: 0 }),
+    center: { x: 0, opacity: 1 },
+    exit: (direction: number) => ({ x: direction > 0 ? -40 : 40, opacity: 0 }),
+  }
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-2xl">
-        <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            {editData ? <Edit className="size-4" /> : <Plus className="size-4" />}
-            {editData ? 'Редактирование техники' : 'Добавление техники'}
+      <DialogContent className="sm:max-w-2xl p-0 gap-0 overflow-hidden" onKeyDown={handleKeyDown}>
+        {/* #1 Gradient header */}
+        <DialogHeader className="px-6 pt-5 pb-3 border-b bg-gradient-to-r from-emerald-50 to-teal-50 dark:from-emerald-950/30 dark:to-teal-950/30">
+          <DialogTitle className="flex items-center gap-2.5 text-base">
+            <div className="size-8 rounded-lg bg-emerald-100 dark:bg-emerald-900/50 flex items-center justify-center shrink-0">
+              {editData ? <Edit className="size-4 text-emerald-600 dark:text-emerald-400" /> : <Plus className="size-4 text-emerald-600 dark:text-emerald-400" />}
+            </div>
+            <div>
+              <span>{editData ? 'Редактирование техники' : 'Добавление техники'}</span>
+              {!editData && createMode !== 'axenta' && (
+                <p className="text-xs font-normal text-muted-foreground mt-0.5">
+                  Шаг {step + 1} из {steps.length}: {steps[step].title}
+                </p>
+              )}
+              {!editData && createMode === 'axenta' && (
+                <p className="text-xs font-normal text-muted-foreground mt-0.5">
+                  Выберите объект из Axenta для автоматического добавления
+                </p>
+              )}
+              {editData && (
+                <p className="text-xs font-normal text-muted-foreground mt-0.5">
+                  Шаг {step + 1} из {steps.length}: {steps[step].title}
+                </p>
+              )}
+            </div>
           </DialogTitle>
-          <DialogDescription>{editData ? `Шаг ${step + 1} из ${steps.length}: ${steps[step].title}` : createMode === 'axenta' ? 'Выберите объект из Axenta для автоматического добавления' : `Шаг ${step + 1} из ${steps.length}: ${steps[step].title}`}</DialogDescription>
         </DialogHeader>
+
+        {/* #2 Progress bar */}
+        {!editData && createMode !== 'axenta' && (
+          <div className="px-6 pt-3 pb-1">
+            <div className="flex items-center justify-between mb-1.5">
+              <span className="text-[10px] text-muted-foreground">Прогресс заполнения</span>
+              <span className="text-[10px] font-medium text-muted-foreground">{Math.round((filledCount / totalFields) * 100)}%</span>
+            </div>
+            <Progress value={(filledCount / totalFields) * 100} className="h-1.5" />
+          </div>
+        )}
 
         {/* Mode selector — only when creating new */}
         {!editData && (
-          <div className="flex gap-2 px-4 sm:px-5">
+          <div className="flex gap-2 px-6 pt-2">
             <Button size="sm" variant={createMode === 'manual' ? 'default' : 'outline'} className="h-7 text-[11px] gap-1.5" onClick={() => setCreateMode('manual')}>
               <Plus className="size-3" />Создать новую
             </Button>
@@ -3511,48 +4711,138 @@ function EquipmentFormDialog({ open, onOpenChange, editData, companies, step, se
           </div>
         )}
 
-        {/* Step indicator — compact */}
-        <div className="flex items-center gap-0.5 px-4 sm:px-5 overflow-x-auto shrink-0">
-          {steps.map((s, i) => (
-            <button key={i} onClick={() => setStep(i)} className={`flex items-center gap-1 px-2 py-1 rounded text-[11px] transition-colors whitespace-nowrap ${i === step ? 'bg-primary text-primary-foreground' : i < step ? 'bg-primary/20 text-primary' : 'bg-muted text-muted-foreground'}`}>
-              {s.icon}<span className="hidden sm:inline">{s.title}</span>
-            </button>
-          ))}
-        </div>
+        {/* #3 Step indicator — stepped timeline with connecting lines & #4 completion indicators */}
+        {createMode !== 'axenta' && (
+          <div className="px-6 pt-3 pb-1">
+            <div className="flex items-center">
+              {steps.map((s, i) => (
+                <React.Fragment key={i}>
+                  <button
+                    onClick={() => goToStep(i)}
+                    className={`flex items-center gap-1.5 px-2 py-1.5 rounded-md text-[11px] transition-all whitespace-nowrap ${
+                      i === step
+                        ? 'bg-primary text-primary-foreground shadow-sm'
+                        : i < step
+                          ? 'bg-primary/15 text-primary dark:bg-primary/20'
+                          : 'bg-muted/60 text-muted-foreground hover:bg-muted'
+                    }`}
+                  >
+                    {/* #4 Show checkmark on completed steps, or step icon */}
+                    {i < step && isStepCompleted(i) ? (
+                      <CheckCircle2 className="size-3.5" />
+                    ) : (
+                      s.icon
+                    )}
+                    <span className="hidden sm:inline">{s.title}</span>
+                  </button>
+                  {/* #3 Connecting line between steps */}
+                  {i < steps.length - 1 && (
+                    <div className={`flex-1 h-0.5 mx-1 rounded-full transition-colors ${
+                      i < step ? 'bg-primary/40' : 'bg-border'
+                    }`} />
+                  )}
+                </React.Fragment>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* #21 Validation summary */}
+        {validationAttempted && missingRequired.length > 0 && (
+          <div className="mx-6 mt-2 p-2 rounded-md bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-800/50 flex items-center gap-2">
+            <AlertTriangle className="size-3.5 text-red-500 shrink-0" />
+            <span className="text-[11px] text-red-700 dark:text-red-400">Заполните обязательные поля: {missingRequired.map(k => {
+              const labels: Record<string, string> = { name: 'Наименование' }
+              return labels[k] || k
+            }).join(', ')}</span>
+          </div>
+        )}
 
         {/* Axenta object selection */}
         {!editData && createMode === 'axenta' ? (
-          <div className="space-y-3 px-4 sm:px-5 overflow-y-auto flex-1 min-h-0 py-2">
+          <div className="space-y-3 px-6 overflow-y-auto flex-1 min-h-0 py-3 max-h-[60vh]">
+            {/* #18 Search/filter for Axenta */}
+            {unlinkedAxentaObjects.length > 0 && (
+              <div className="relative">
+                <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 size-3.5 text-muted-foreground" />
+                <Input
+                  value={axentaSearch}
+                  onChange={e => setAxentaSearch(e.target.value)}
+                  placeholder="Поиск по названию или IMEI..."
+                  className="h-8 text-xs pl-8"
+                />
+              </div>
+            )}
+
             {axentaLoading ? (
-              <div className="flex items-center justify-center py-12"><Loader2 className="size-6 animate-spin text-muted-foreground" /><span className="ml-2 text-sm text-muted-foreground">Загрузка объектов...</span></div>
-            ) : unlinkedAxentaObjects.length === 0 ? (
+              <div className="flex items-center justify-center py-12">
+                <Loader2 className="size-6 animate-spin text-muted-foreground" />
+                <span className="ml-2 text-sm text-muted-foreground">Загрузка объектов...</span>
+              </div>
+            ) : filteredAxentaObjects.length === 0 ? (
               <div className="text-center py-12">
                 <Satellite className="size-10 mx-auto mb-2 text-muted-foreground/40" />
-                <p className="text-sm text-muted-foreground">{axentaObjects.length === 0 ? 'Нет объектов в Axenta. Проверьте настройки интеграции.' : 'Все объекты Axenta уже привязаны к технике'}</p>
+                <p className="text-sm text-muted-foreground">
+                  {axentaSearch.trim()
+                    ? 'Ничего не найдено по запросу'
+                    : axentaObjects.length === 0
+                      ? 'Нет объектов в Axenta. Проверьте настройки интеграции.'
+                      : 'Все объекты Axenta уже привязаны к технике'
+                  }
+                </p>
               </div>
             ) : (
               <div className="space-y-2">
+                {/* #17 Better card design for Axenta objects with status indicators */}
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                  {unlinkedAxentaObjects.map(obj => {
+                  {filteredAxentaObjects.map(obj => {
                     const isSelected = String(obj.id) === selectedAxentaId
                     const lastTime = obj.lastMessage?.posTime || obj.lastMessage?.time
+                    const speed = obj.lastMessage?.position?.s || 0
                     return (
-                      <Card key={obj.id} className={`cursor-pointer transition-all ${isSelected ? 'ring-2 ring-primary border-primary' : 'hover:shadow-sm'}`} onClick={() => handleSelectAxentaObject(String(obj.id))}>
-                        <CardContent className="p-3">
-                          <div className="flex items-center gap-2 mb-1">
-                            <div className={`size-6 rounded flex items-center justify-center ${obj.connectedStatus ? 'bg-emerald-100 dark:bg-emerald-900/40' : 'bg-gray-100 dark:bg-gray-800'}`}>
-                              <Satellite className={`size-3 ${obj.connectedStatus ? 'text-emerald-600 dark:text-emerald-400' : 'text-gray-400'}`} />
+                      <Card
+                        key={obj.id}
+                        className={`cursor-pointer transition-all relative overflow-hidden ${
+                          isSelected
+                            ? 'ring-2 ring-primary border-primary shadow-md'
+                            : 'hover:shadow-sm hover:border-muted-foreground/30'
+                        }`}
+                        onClick={() => handleSelectAxentaObject(String(obj.id))}
+                      >
+                        {/* Status indicator strip */}
+                        <div className={`absolute left-0 top-0 bottom-0 w-1 ${obj.connectedStatus ? 'bg-emerald-500' : 'bg-gray-300 dark:bg-gray-600'}`} />
+                        <CardContent className="p-3 pl-4">
+                          <div className="flex items-center gap-2 mb-1.5">
+                            <div className={`size-7 rounded-md flex items-center justify-center ${obj.connectedStatus ? 'bg-emerald-100 dark:bg-emerald-900/40' : 'bg-gray-100 dark:bg-gray-800'}`}>
+                              <Satellite className={`size-3.5 ${obj.connectedStatus ? 'text-emerald-600 dark:text-emerald-400' : 'text-gray-400'}`} />
                             </div>
                             <p className="text-xs font-medium truncate flex-1">{obj.name}</p>
                             {isSelected && <CheckCircle2 className="size-4 text-primary shrink-0" />}
                           </div>
+                          {/* #19 Tracker preview info — more details */}
                           <div className="text-[10px] text-muted-foreground space-y-0.5">
-                            <p>IMEI: {obj.uniqueId}</p>
+                            <div className="flex items-center gap-1">
+                              <Hash className="size-2.5" />
+                              <span>IMEI: {obj.uniqueId}</span>
+                            </div>
                             {obj.lastMessage?.position && (
-                              <p>Скорость: {obj.lastMessage.position.s || 0} км/ч</p>
+                              <div className="flex items-center gap-1">
+                                <Navigation className="size-2.5" />
+                                <span>Скорость: {speed} км/ч</span>
+                                {speed > 0 && <span className="text-emerald-600 dark:text-emerald-400 ml-1">● в движении</span>}
+                              </div>
+                            )}
+                            {obj.lastMessage?.position && (obj.lastMessage.position.x !== 0 || obj.lastMessage.position.y !== 0) && (
+                              <div className="flex items-center gap-1">
+                                <MapPin className="size-2.5" />
+                                <span>{obj.lastMessage.position.y.toFixed(4)}, {obj.lastMessage.position.x.toFixed(4)}</span>
+                              </div>
                             )}
                             {lastTime && (
-                              <p>Последняя связь: {formatDateTime(lastTime)}</p>
+                              <div className="flex items-center gap-1">
+                                <Clock className="size-2.5" />
+                                <span>Связь: {formatDateTime(lastTime)}</span>
+                              </div>
                             )}
                           </div>
                         </CardContent>
@@ -3562,17 +4852,91 @@ function EquipmentFormDialog({ open, onOpenChange, editData, companies, step, se
                 </div>
 
                 {selectedAxentaId && (
-                  <div className="space-y-3 pt-2 border-t">
-                    <p className="text-[11px] font-medium text-muted-foreground">Данные техники (можно отредактировать)</p>
+                  <div className="space-y-3 pt-3 border-t">
+                    <p className="text-[11px] font-medium text-muted-foreground flex items-center gap-1.5">
+                      <Edit className="size-3" />Данные техники (можно отредактировать)
+                    </p>
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                      <div className="sm:col-span-2"><Label className="text-xs">Наименование *</Label><Input value={f('name')} onChange={e => setF('name', e.target.value)} /></div>
-                      <div><Label className="text-xs">Тип</Label><Select value={f('type')} onValueChange={v => setF('type', v)}><SelectTrigger className="h-9 text-sm"><SelectValue /></SelectTrigger><SelectContent>{Object.entries(EQUIPMENT_TYPE_GROUPS).map(([category, types]) => (<React.Fragment key={category}><div className="px-2 py-1.5 text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">{category}</div>{types.map(t => <SelectItem key={t.value} value={t.value}>{t.label}</SelectItem>)}</React.Fragment>))}</SelectContent></Select></div>
-                      <div><Label className="text-xs">Гос. номер</Label><Input value={f('registrationNum')} onChange={e => setF('registrationNum', e.target.value)} placeholder="А000АА 00" /></div>
-                      <div><Label className="text-xs">Марка</Label><Input value={f('brand')} onChange={e => setF('brand', e.target.value)} /></div>
-                      <div><Label className="text-xs">Модель</Label><Input value={f('model')} onChange={e => setF('model', e.target.value)} /></div>
-                      <div className="sm:col-span-2"><Label className="text-xs">VIN номер</Label><Input value={f('vin')} onChange={e => setF('vin', e.target.value)} placeholder="17 символов" /></div>
-                      <div><Label className="text-xs">Статус</Label><Select value={f('status')} onValueChange={v => setF('status', v)}><SelectTrigger className="h-9 text-sm"><SelectValue /></SelectTrigger><SelectContent>{Object.entries(EQUIPMENT_STATUS_MAP).map(([k, v]) => <SelectItem key={k} value={k}>{v.label}</SelectItem>)}</SelectContent></Select></div>
-                      <div><Label className="text-xs">Компания-владелец</Label><Select value={f('ownerId') || '_none'} onValueChange={v => setF('ownerId', v === '_none' ? '' : v)}><SelectTrigger className="h-9 text-sm"><SelectValue placeholder="Не указан" /></SelectTrigger><SelectContent><SelectItem value="_none">Не указан</SelectItem>{companies.filter(c => c.type === 'owner' || c.type === 'both').map(c => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}</SelectContent></Select></div>
+                      <div className="sm:col-span-2">
+                        <Label className="text-xs flex items-center gap-1"><FileText className="size-3 text-muted-foreground" />Наименование <ReqStar /></Label>
+                        <Input value={f('name')} onChange={e => setF('name', e.target.value)} className={`h-9 ${validationAttempted && !f('name').trim() ? 'border-red-400 focus-visible:ring-red-400' : ''}`} />
+                      </div>
+                      <div>
+                        <Label className="text-xs flex items-center gap-1"><Settings2 className="size-3 text-muted-foreground" />Тип</Label>
+                        <Select value={f('type')} onValueChange={v => setF('type', v)}>
+                          <SelectTrigger className="h-9 text-sm"><SelectValue /></SelectTrigger>
+                          <SelectContent>
+                            {Object.entries(EQUIPMENT_TYPE_GROUPS).map(([category, types]) => (
+                              <React.Fragment key={category}>
+                                {/* #8 Type category icons */}
+                                <div className="px-2 py-1.5 text-[10px] font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-1.5">
+                                  {categoryIcons[category]}{category}
+                                </div>
+                                {types.map(t => (
+                                  <SelectItem key={t.value} value={t.value}>
+                                    <span className="flex items-center gap-1.5">{EQUIPMENT_TYPE_MAP[t.value]?.icon}{t.label}</span>
+                                  </SelectItem>
+                                ))}
+                              </React.Fragment>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div>
+                        <Label className="text-xs flex items-center gap-1"><IdCard className="size-3 text-muted-foreground" />Гос. номер</Label>
+                        {/* #9 Registration field formatting hint */}
+                        <Input value={f('registrationNum')} onChange={e => setF('registrationNum', e.target.value)} placeholder="А000АА 00" className="h-9" />
+                        <span className="text-[9px] text-muted-foreground/60 mt-0.5 block">Формат: А000АА 00 (регион)</span>
+                      </div>
+                      <div>
+                        <Label className="text-xs">Марка</Label>
+                        <Input value={f('brand')} onChange={e => setF('brand', e.target.value)} className="h-9" />
+                      </div>
+                      <div>
+                        <Label className="text-xs">Модель</Label>
+                        <Input value={f('model')} onChange={e => setF('model', e.target.value)} className="h-9" />
+                      </div>
+                      <div className="sm:col-span-2">
+                        <Label className="text-xs flex items-center gap-1"><ScanLine className="size-3 text-muted-foreground" />VIN номер</Label>
+                        {/* #9 VIN formatting hint */}
+                        <Input value={f('vin')} onChange={e => setF('vin', e.target.value)} placeholder="17 символов" maxLength={17} className={`h-9 font-mono text-sm ${f('vin') && f('vin').length !== 17 ? 'border-amber-400' : ''}`} />
+                        {f('vin') && (
+                          <span className={`text-[9px] mt-0.5 block ${f('vin').length === 17 ? 'text-emerald-600 dark:text-emerald-400' : 'text-amber-600 dark:text-amber-400'}`}>
+                            {f('vin').length}/17 символов {f('vin').length === 17 ? '✓' : '— VIN должен содержать 17 символов'}
+                          </span>
+                        )}
+                      </div>
+                      <div>
+                        <Label className="text-xs flex items-center gap-1">Статус</Label>
+                        {/* #7 Status preview badge */}
+                        <div className="flex items-center gap-2">
+                          <Select value={f('status')} onValueChange={v => setF('status', v)}>
+                            <SelectTrigger className="h-9 text-sm flex-1"><SelectValue /></SelectTrigger>
+                            <SelectContent>
+                              {Object.entries(EQUIPMENT_STATUS_MAP).map(([k, v]) => (
+                                <SelectItem key={k} value={k}>{v.label}</SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                          <Badge variant="outline" className={`text-[9px] h-6 whitespace-nowrap ${currentStatusInfo.color}`}>
+                            {currentStatusInfo.label}
+                          </Badge>
+                        </div>
+                      </div>
+                      <div>
+                        <Label className="text-xs flex items-center gap-1"><Building2 className="size-3 text-muted-foreground" />Компания-владелец</Label>
+                        <Select value={f('ownerId') || '_none'} onValueChange={v => setF('ownerId', v === '_none' ? '' : v)}>
+                          <SelectTrigger className="h-9 text-sm"><SelectValue placeholder="Не указан" /></SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="_none">Не указан</SelectItem>
+                            {companies.filter(c => c.type === 'owner' || c.type === 'both').map(c => (
+                              <SelectItem key={c.id} value={c.id}>
+                                <span className="flex items-center">{c.name}{companyTypeBadge(c.type)}</span>
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
                     </div>
                   </div>
                 )}
@@ -3580,76 +4944,459 @@ function EquipmentFormDialog({ open, onOpenChange, editData, companies, step, se
             )}
           </div>
         ) : (
-        <div className="space-y-3 px-4 sm:px-5 overflow-y-auto flex-1 min-h-0 py-2">
-          {step === 0 && (
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <div className="sm:col-span-2"><Label className="text-xs">Наименование *</Label><Input value={f('name')} onChange={e => setF('name', e.target.value)} placeholder="Грузовой автомобиль ГАЗель" autoFocus /></div>
-              <div><Label className="text-xs">Тип</Label><Select value={f('type')} onValueChange={v => setF('type', v)}><SelectTrigger className="h-9 text-sm"><SelectValue /></SelectTrigger><SelectContent>{Object.entries(EQUIPMENT_TYPE_GROUPS).map(([category, types]) => (<React.Fragment key={category}><div className="px-2 py-1.5 text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">{category}</div>{types.map(t => <SelectItem key={t.value} value={t.value}>{t.label}</SelectItem>)}</React.Fragment>))}</SelectContent></Select></div>
-              <div><Label className="text-xs">Марка</Label><Input value={f('brand')} onChange={e => setF('brand', e.target.value)} /></div>
-              <div><Label className="text-xs">Модель</Label><Input value={f('model')} onChange={e => setF('model', e.target.value)} /></div>
-              <div><Label className="text-xs">Год выпуска</Label><Input type="number" value={f('year')} onChange={e => setF('year', e.target.value)} /></div>
-              <div><Label className="text-xs">Категория</Label><Input value={f('category')} onChange={e => setF('category', e.target.value)} placeholder="B, C, D..." /></div>
-              <div><Label className="text-xs">Цвет</Label><Input value={f('color')} onChange={e => setF('color', e.target.value)} /></div>
-              <div><Label className="text-xs">Статус</Label><Select value={f('status')} onValueChange={v => setF('status', v)}><SelectTrigger className="h-9 text-sm"><SelectValue /></SelectTrigger><SelectContent>{Object.entries(EQUIPMENT_STATUS_MAP).map(([k, v]) => <SelectItem key={k} value={k}>{v.label}</SelectItem>)}</SelectContent></Select></div>
-            </div>
-          )}
-          {step === 1 && (
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <div className="sm:col-span-2"><Label className="text-xs">VIN номер</Label><Input value={f('vin')} onChange={e => setF('vin', e.target.value)} placeholder="17 символов" /></div>
-              <div><Label className="text-xs">Серийный номер</Label><Input value={f('serialNumber')} onChange={e => setF('serialNumber', e.target.value)} /></div>
-              <div><Label className="text-xs">Гос. номер</Label><Input value={f('registrationNum')} onChange={e => setF('registrationNum', e.target.value)} placeholder="А000АА 00" /></div>
-              <div><Label className="text-xs">Номер СТС</Label><Input value={f('stsNumber')} onChange={e => setF('stsNumber', e.target.value)} /></div>
-              <div><Label className="text-xs">Номер ПТС</Label><Input value={f('ptsNumber')} onChange={e => setF('ptsNumber', e.target.value)} /></div>
-            </div>
-          )}
-          {step === 2 && (
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <div><Label className="text-xs">Тип двигателя</Label><Input value={f('engineType')} onChange={e => setF('engineType', e.target.value)} placeholder="Бензин, Дизель..." /></div>
-              <div><Label className="text-xs">Объём двигателя</Label><Input value={f('engineVolume')} onChange={e => setF('engineVolume', e.target.value)} placeholder="2.0 л" /></div>
-              <div><Label className="text-xs">Мощность (л.с.)</Label><Input value={f('enginePower')} onChange={e => setF('enginePower', e.target.value)} /></div>
-              <div><Label className="text-xs">Пробег (км)</Label><Input type="number" value={f('mileage')} onChange={e => setF('mileage', e.target.value)} /></div>
-              <div><Label className="text-xs">Тип топлива</Label><Input value={f('fuelType')} onChange={e => setF('fuelType', e.target.value)} /></div>
-              <div><Label className="text-xs">Грузоподъёмность</Label><Input value={f('loadCapacity')} onChange={e => setF('loadCapacity', e.target.value)} /></div>
-              <div><Label className="text-xs">Пассажирских мест</Label><Input type="number" value={f('passengerSeats')} onChange={e => setF('passengerSeats', e.target.value)} /></div>
-            </div>
-          )}
-          {step === 3 && (
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <div><Label className="text-xs">Дата приобретения</Label><Input type="date" value={f('purchaseDate')} onChange={e => setF('purchaseDate', e.target.value)} /></div>
-              <div><Label className="text-xs">Цена приобретения (₽)</Label><Input type="number" value={f('purchasePrice')} onChange={e => setF('purchasePrice', e.target.value)} /></div>
-              <div><Label className="text-xs">Текущая стоимость (₽)</Label><Input type="number" value={f('currentPrice')} onChange={e => setF('currentPrice', e.target.value)} /></div>
-              <div><Label className="text-xs">Номер полиса</Label><Input value={f('insuranceNumber')} onChange={e => setF('insuranceNumber', e.target.value)} /></div>
-              <div><Label className="text-xs">Страховка до</Label><Input type="date" value={f('insuranceExpiry')} onChange={e => setF('insuranceExpiry', e.target.value)} /></div>
-              <div><Label className="text-xs">Дата ТО</Label><Input type="date" value={f('inspectionDate')} onChange={e => setF('inspectionDate', e.target.value)} /></div>
-              <div><Label className="text-xs">ТО до</Label><Input type="date" value={f('inspectionExpiry')} onChange={e => setF('inspectionExpiry', e.target.value)} /></div>
-            </div>
-          )}
-          {step === 4 && (
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <div><Label className="text-xs">Компания-владелец</Label><Select value={f('ownerId') || '_none'} onValueChange={v => setF('ownerId', v === '_none' ? '' : v)}><SelectTrigger className="h-9 text-sm"><SelectValue placeholder="Не указан" /></SelectTrigger><SelectContent><SelectItem value="_none">Не указан</SelectItem>{companies.filter(c => c.type === 'owner' || c.type === 'both').map(c => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}</SelectContent></Select></div>
-              <div><Label className="text-xs">Компания-арендатор</Label><Select value={f('renterId') || '_none'} onValueChange={v => setF('renterId', v === '_none' ? '' : v)}><SelectTrigger className="h-9 text-sm"><SelectValue placeholder="Не указан" /></SelectTrigger><SelectContent><SelectItem value="_none">Не указан</SelectItem>{companies.filter(c => c.type === 'renter' || c.type === 'both').map(c => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}</SelectContent></Select></div>
-              <div className="sm:col-span-2"><Label className="text-xs">Заметки</Label><Textarea value={f('notes')} onChange={e => setF('notes', e.target.value)} rows={3} /></div>
-            </div>
-          )}
+        <div className="px-6 overflow-y-auto flex-1 min-h-0 py-3 max-h-[55vh]" key={step}>
+          {/* #15 Animate step transitions */}
+          <AnimatePresence mode="wait" custom={stepDirection}>
+            <motion.div
+              key={step}
+              custom={stepDirection}
+              variants={slideVariants}
+              initial="enter"
+              animate="center"
+              exit="exit"
+              transition={{ duration: 0.2, ease: 'easeInOut' }}
+              className="grid grid-cols-1 sm:grid-cols-2 gap-3"
+            >
+              {step === 0 && (
+                <>
+                  {/* #14 Group header */}
+                  <GroupHeader icon={<Settings2 className="size-3" />} title="Общая информация" />
+
+                  <div className="sm:col-span-2">
+                    <Label className="text-xs flex items-center gap-1">
+                      <FileText className="size-3 text-muted-foreground" />Наименование <ReqStar />
+                    </Label>
+                    {/* #6 Field description */}
+                    <Input value={f('name')} onChange={e => setF('name', e.target.value)} placeholder="Грузовой автомобиль ГАЗель" autoFocus className={`h-9 w-full ${validationAttempted && !f('name').trim() ? 'border-red-400 focus-visible:ring-red-400' : ''}`} />
+                    <FieldHint text="Обязательное поле" />
+                  </div>
+                  <div>
+                    <Label className="text-xs flex items-center gap-1"><Settings2 className="size-3 text-muted-foreground" />Тип</Label>
+                    <Select value={f('type')} onValueChange={v => setF('type', v)}>
+                      <SelectTrigger className="h-9 text-sm w-full"><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        {Object.entries(EQUIPMENT_TYPE_GROUPS).map(([category, types]) => (
+                          <React.Fragment key={category}>
+                            {/* #8 Type category icons */}
+                            <div className="px-2 py-1.5 text-[10px] font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-1.5">
+                              {categoryIcons[category]}{category}
+                            </div>
+                            {types.map(t => (
+                              <SelectItem key={t.value} value={t.value}>
+                                <span className="flex items-center gap-1.5">{EQUIPMENT_TYPE_MAP[t.value]?.icon}{t.label}</span>
+                              </SelectItem>
+                            ))}
+                          </React.Fragment>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div>
+                    <Label className="text-xs">Марка</Label>
+                    <Input value={f('brand')} onChange={e => setF('brand', e.target.value)} placeholder="ГАЗ, КАМАЗ, УАЗ..." className="h-9 w-full" />
+                  </div>
+                  <div>
+                    <Label className="text-xs">Модель</Label>
+                    <Input value={f('model')} onChange={e => setF('model', e.target.value)} placeholder="ГАЗель NEXT, 4326..." className="h-9 w-full" />
+                  </div>
+                  <div>
+                    <Label className="text-xs flex items-center gap-1"><Calendar className="size-3 text-muted-foreground" />Год выпуска</Label>
+                    <Input type="number" value={f('year')} onChange={e => setF('year', e.target.value)} placeholder="2024" min={1900} max={new Date().getFullYear() + 1} className="h-9 w-full" />
+                    {/* #11 Vehicle age auto-calc */}
+                    {vehicleAge !== null && (
+                      <span className="text-[10px] text-muted-foreground mt-0.5 block">
+                        {vehicleAge === 0 ? 'Новый транспорт' : `${vehicleAge} ${vehicleAge === 1 ? 'год' : vehicleAge < 5 ? 'года' : 'лет'} в эксплуатации`}
+                      </span>
+                    )}
+                  </div>
+                  <div>
+                    <Label className="text-xs">Категория</Label>
+                    <Input value={f('category')} onChange={e => setF('category', e.target.value)} placeholder="B, C, D, CE..." className="h-9 w-full" />
+                    <FieldHint text="Категория водительских прав" />
+                  </div>
+                  <div>
+                    <Label className="text-xs flex items-center gap-1"><Palette className="size-3 text-muted-foreground" />Цвет</Label>
+                    <Input value={f('color')} onChange={e => setF('color', e.target.value)} placeholder="Белый, Серебристый..." className="h-9 w-full" />
+                  </div>
+
+                  {/* #14 Group header */}
+                  <GroupHeader icon={<Activity className="size-3" />} title="Статус" />
+
+                  <div>
+                    <Label className="text-xs flex items-center gap-1">Статус</Label>
+                    <div className="flex items-center gap-2">
+                      <Select value={f('status')} onValueChange={v => setF('status', v)}>
+                        <SelectTrigger className="h-9 text-sm flex-1 w-full"><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          {Object.entries(EQUIPMENT_STATUS_MAP).map(([k, v]) => (
+                            <SelectItem key={k} value={k}>{v.label}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      {/* #7 Status preview badge */}
+                      <Badge variant="outline" className={`text-[9px] h-6 whitespace-nowrap ${currentStatusInfo.color}`}>
+                        {currentStatusInfo.label}
+                      </Badge>
+                    </div>
+                  </div>
+                  <div>
+                    <Label className="text-xs flex items-center gap-1"><HeartPulse className="size-3 text-muted-foreground" />Состояние</Label>
+                    <Select value={f('condition')} onValueChange={v => setF('condition', v)}>
+                      <SelectTrigger className="h-9 text-sm w-full"><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        {Object.entries(EQUIPMENT_CONDITION_MAP).map(([k, v]) => (
+                          <SelectItem key={k} value={k}>{v.icon} {v.label}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  <GroupHeader icon={<MapPin className="size-3" />} title="Размещение и водитель" />
+
+                  <div>
+                    <Label className="text-xs">Местоположение</Label>
+                    <Input value={f('location')} onChange={e => setF('location', e.target.value)} placeholder="Цех, площадка..." className="h-9 w-full" />
+                  </div>
+                  <div>
+                    <Label className="text-xs">Депо / Гараж</Label>
+                    <Input value={f('depot')} onChange={e => setF('depot', e.target.value)} placeholder="Гараж №3..." className="h-9 w-full" />
+                  </div>
+                  <div>
+                    <Label className="text-xs">Гаражный номер</Label>
+                    <Input value={f('garageNumber')} onChange={e => setF('garageNumber', e.target.value)} placeholder="Г-001" className="h-9 w-full" />
+                  </div>
+                  <div>
+                    <Label className="text-xs">Сменный номер</Label>
+                    <Input value={f('unitNumber')} onChange={e => setF('unitNumber', e.target.value)} placeholder="Б-05" className="h-9 w-full" />
+                  </div>
+                  <div className="sm:col-span-2">
+                    <Label className="text-xs flex items-center gap-1"><User className="size-3 text-muted-foreground" />Назначенный водитель</Label>
+                    <Input value={f('assignedDriver')} onChange={e => setF('assignedDriver', e.target.value)} placeholder="Иванов И.И." className="h-9 w-full" />
+                  </div>
+                </>
+              )}
+
+              {step === 1 && (
+                <>
+                  {/* #14 Group header */}
+                  <GroupHeader icon={<FileText className="size-3" />} title="Документы" />
+
+                  <div className="sm:col-span-2">
+                    <Label className="text-xs flex items-center gap-1"><ScanLine className="size-3 text-muted-foreground" />VIN номер</Label>
+                    {/* #9 VIN formatting hint */}
+                    <Input value={f('vin')} onChange={e => setF('vin', e.target.value)} placeholder="17 символов" maxLength={17} className={`h-9 w-full font-mono text-sm ${f('vin') && f('vin').length !== 17 ? 'border-amber-400' : ''}`} />
+                    {f('vin') && (
+                      <span className={`text-[9px] mt-0.5 block ${f('vin').length === 17 ? 'text-emerald-600 dark:text-emerald-400' : 'text-amber-600 dark:text-amber-400'}`}>
+                        {f('vin').length}/17 символов {f('vin').length === 17 ? '✓' : '— VIN должен содержать 17 символов'}
+                      </span>
+                    )}
+                    <FieldHint text="Уникальный идентификационный номер кузова" />
+                  </div>
+                  <div>
+                    <Label className="text-xs flex items-center gap-1"><Hash className="size-3 text-muted-foreground" />Серийный номер</Label>
+                    <Input value={f('serialNumber')} onChange={e => setF('serialNumber', e.target.value)} className="h-9 w-full" />
+                  </div>
+                  <div>
+                    <Label className="text-xs flex items-center gap-1"><IdCard className="size-3 text-muted-foreground" />Гос. номер</Label>
+                    {/* #9 Registration field formatting */}
+                    <Input value={f('registrationNum')} onChange={e => setF('registrationNum', e.target.value)} placeholder="А000АА 00" className="h-9 w-full" />
+                    <span className="text-[9px] text-muted-foreground/60 mt-0.5 block">Формат: А000АА 00 (регион)</span>
+                  </div>
+
+                  {/* #14 Group header */}
+                  <GroupHeader icon={<ClipboardCheck className="size-3" />} title="Документы ТС" />
+
+                  <div>
+                    <Label className="text-xs flex items-center gap-1"><FileBadge className="size-3 text-muted-foreground" />Номер СТС</Label>
+                    <Input value={f('stsNumber')} onChange={e => setF('stsNumber', e.target.value)} placeholder="00 АА 000000" className="h-9 w-full" />
+                    <FieldHint text="Свидетельство о регистрации ТС" />
+                  </div>
+                  <div>
+                    <Label className="text-xs flex items-center gap-1"><FileText className="size-3 text-muted-foreground" />Номер ПТС</Label>
+                    <Input value={f('ptsNumber')} onChange={e => setF('ptsNumber', e.target.value)} placeholder="00 АА 000000" className="h-9 w-full" />
+                    <FieldHint text="Паспорт транспортного средства" />
+                  </div>
+                </>
+              )}
+
+              {step === 2 && (
+                <>
+                  {/* #14 Group header */}
+                  <GroupHeader icon={<Cog className="size-3" />} title="Двигатель" />
+
+                  <div>
+                    <Label className="text-xs flex items-center gap-1"><Cog className="size-3 text-muted-foreground" />Тип двигателя</Label>
+                    <Input value={f('engineType')} onChange={e => setF('engineType', e.target.value)} placeholder="Бензин, Дизель, Гибрид..." className="h-9 w-full" />
+                  </div>
+                  <div>
+                    <Label className="text-xs flex items-center gap-1"><Gauge className="size-3 text-muted-foreground" />Объём двигателя</Label>
+                    <Input value={f('engineVolume')} onChange={e => setF('engineVolume', e.target.value)} placeholder="2.0 л" className="h-9 w-full" />
+                  </div>
+                  <div>
+                    <Label className="text-xs flex items-center gap-1"><Zap className="size-3 text-muted-foreground" />Мощность (л.с.)</Label>
+                    <Input value={f('enginePower')} onChange={e => setF('enginePower', e.target.value)} placeholder="150" className="h-9 w-full" />
+                  </div>
+
+                  {/* #14 Group header */}
+                  <GroupHeader icon={<Navigation className="size-3" />} title="Эксплуатация" />
+
+                  <div>
+                    <Label className="text-xs flex items-center gap-1"><Route className="size-3 text-muted-foreground" />Пробег (км)</Label>
+                    <Input type="number" value={f('mileage')} onChange={e => setF('mileage', e.target.value)} placeholder="50000" className="h-9 w-full" />
+                  </div>
+                  <div>
+                    <Label className="text-xs flex items-center gap-1"><FuelIcon className="size-3 text-muted-foreground" />Тип топлива</Label>
+                    <Input value={f('fuelType')} onChange={e => setF('fuelType', e.target.value)} placeholder="АИ-95, ДТ, Газ..." className="h-9 w-full" />
+                  </div>
+                  <div>
+                    <Label className="text-xs flex items-center gap-1"><Weight className="size-3 text-muted-foreground" />Грузоподъёмность</Label>
+                    <Input value={f('loadCapacity')} onChange={e => setF('loadCapacity', e.target.value)} placeholder="1500 кг" className="h-9 w-full" />
+                  </div>
+                  <div>
+                    <Label className="text-xs flex items-center gap-1"><Users className="size-3 text-muted-foreground" />Пассажирских мест</Label>
+                    <Input type="number" value={f('passengerSeats')} onChange={e => setF('passengerSeats', e.target.value)} placeholder="5" className="h-9 w-full" />
+                  </div>
+
+                  <GroupHeader icon={<FuelIcon className="size-3" />} title="Расход топлива и обслуживание" />
+
+                  <div>
+                    <Label className="text-xs flex items-center gap-1"><FuelIcon className="size-3 text-muted-foreground" />Норма расхода (л/100км)</Label>
+                    <Input type="number" step="0.1" value={f('fuelConsumptionNorm')} onChange={e => setF('fuelConsumptionNorm', e.target.value)} placeholder="12.5" className="h-9 w-full" />
+                  </div>
+                  <div>
+                    <Label className="text-xs flex items-center gap-1"><Wrench className="size-3 text-muted-foreground" />Интервал ТО (км)</Label>
+                    <Input type="number" value={f('maintenanceInterval')} onChange={e => setF('maintenanceInterval', e.target.value)} placeholder="15000" className="h-9 w-full" />
+                  </div>
+                  <div>
+                    <Label className="text-xs">Дата последнего ТО</Label>
+                    <Input type="date" value={f('lastMaintenanceDate')} onChange={e => setF('lastMaintenanceDate', e.target.value)} className="h-9 w-full" />
+                  </div>
+                  <div>
+                    <Label className="text-xs">Дата следующего ТО</Label>
+                    <Input type="date" value={f('nextMaintenanceDate')} onChange={e => setF('nextMaintenanceDate', e.target.value)} className="h-9 w-full" />
+                  </div>
+
+                  <GroupHeader icon={<Droplets className="size-3" />} title="Масло и шины" />
+
+                  <div>
+                    <Label className="text-xs flex items-center gap-1"><Droplets className="size-3 text-muted-foreground" />Дата замены масла</Label>
+                    <Input type="date" value={f('oilChangeDate')} onChange={e => setF('oilChangeDate', e.target.value)} className="h-9 w-full" />
+                  </div>
+                  <div>
+                    <Label className="text-xs">Пробег при замене масла (км)</Label>
+                    <Input type="number" value={f('oilChangeMileage')} onChange={e => setF('oilChangeMileage', e.target.value)} placeholder="40000" className="h-9 w-full" />
+                  </div>
+                  <div>
+                    <Label className="text-xs">Интервал замены масла (км)</Label>
+                    <Input type="number" value={f('oilChangeInterval')} onChange={e => setF('oilChangeInterval', e.target.value)} placeholder="10000" className="h-9 w-full" />
+                  </div>
+                  <div>
+                    <Label className="text-xs">Размер шин</Label>
+                    <Input value={f('tireSize')} onChange={e => setF('tireSize', e.target.value)} placeholder="205/55 R16" className="h-9 w-full" />
+                  </div>
+                  <div>
+                    <Label className="text-xs">Дата замены шин</Label>
+                    <Input type="date" value={f('tireReplacementDate')} onChange={e => setF('tireReplacementDate', e.target.value)} className="h-9 w-full" />
+                  </div>
+                </>
+              )}
+
+              {step === 3 && (
+                <>
+                  {/* #14 Group header */}
+                  <GroupHeader icon={<DollarSign className="size-3" />} title="Стоимость" />
+
+                  <div>
+                    <Label className="text-xs flex items-center gap-1"><Calendar className="size-3 text-muted-foreground" />Дата приобретения</Label>
+                    <Input type="date" value={f('purchaseDate')} onChange={e => setF('purchaseDate', e.target.value)} className="h-9 w-full" />
+                  </div>
+                  <div>
+                    <Label className="text-xs flex items-center gap-1"><DollarSign className="size-3 text-muted-foreground" />Цена приобретения (₽)</Label>
+                    <Input type="number" value={f('purchasePrice')} onChange={e => setF('purchasePrice', e.target.value)} placeholder="1 500 000" className="h-9 w-full" />
+                  </div>
+                  <div>
+                    <Label className="text-xs flex items-center gap-1"><TrendingDown className="size-3 text-muted-foreground" />Текущая стоимость (₽)</Label>
+                    <Input type="number" value={f('currentPrice')} onChange={e => setF('currentPrice', e.target.value)} placeholder="1 200 000" className="h-9 w-full" />
+                    {/* #12 Depreciation preview */}
+                    {depreciation !== null && (
+                      <div className={`flex items-center gap-1 mt-0.5 text-[10px] ${depreciation > 50 ? 'text-red-600 dark:text-red-400' : depreciation > 20 ? 'text-amber-600 dark:text-amber-400' : 'text-emerald-600 dark:text-emerald-400'}`}>
+                        <TrendingDown className="size-2.5" />
+                        Износ: {depreciation.toFixed(1)}%
+                        {depreciation > 50 && ' — высокая амортизация'}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* #14 Group header */}
+                  <GroupHeader icon={<Shield className="size-3" />} title="Страхование и ТО" />
+
+                  <div>
+                    <Label className="text-xs flex items-center gap-1"><Shield className="size-3 text-muted-foreground" />Номер полиса</Label>
+                    <Input value={f('insuranceNumber')} onChange={e => setF('insuranceNumber', e.target.value)} placeholder="ССС 0000000000" className="h-9 w-full" />
+                  </div>
+                  <div>
+                    <Label className="text-xs flex items-center gap-1">Страховка до</Label>
+                    <Input type="date" value={f('insuranceExpiry')} onChange={e => setF('insuranceExpiry', e.target.value)} className="h-9 w-full" />
+                    {/* #10 Insurance/TO warning */}
+                    {getExpiryWarning(f('insuranceExpiry')) && (
+                      <div className={`flex items-center gap-1 mt-0.5 text-[10px] ${getExpiryWarning(f('insuranceExpiry'))!.type === 'expired' ? 'text-red-600 dark:text-red-400' : 'text-amber-600 dark:text-amber-400'}`}>
+                        <AlertTriangle className="size-2.5" />
+                        {getExpiryWarning(f('insuranceExpiry'))!.type === 'expired'
+                          ? `Просрочена на ${getExpiryWarning(f('insuranceExpiry'))!.days} дн.`
+                          : `Истекает через ${getExpiryWarning(f('insuranceExpiry'))!.days} дн.`}
+                      </div>
+                    )}
+                  </div>
+                  <div>
+                    <Label className="text-xs flex items-center gap-1"><ClipboardCheck className="size-3 text-muted-foreground" />Дата ТО</Label>
+                    <Input type="date" value={f('inspectionDate')} onChange={e => setF('inspectionDate', e.target.value)} className="h-9 w-full" />
+                  </div>
+                  <div>
+                    <Label className="text-xs flex items-center gap-1">ТО до</Label>
+                    <Input type="date" value={f('inspectionExpiry')} onChange={e => setF('inspectionExpiry', e.target.value)} className="h-9 w-full" />
+                    {/* #10 Insurance/TO warning */}
+                    {getExpiryWarning(f('inspectionExpiry')) && (
+                      <div className={`flex items-center gap-1 mt-0.5 text-[10px] ${getExpiryWarning(f('inspectionExpiry'))!.type === 'expired' ? 'text-red-600 dark:text-red-400' : 'text-amber-600 dark:text-amber-400'}`}>
+                        <AlertTriangle className="size-2.5" />
+                        {getExpiryWarning(f('inspectionExpiry'))!.type === 'expired'
+                          ? `Просрочено на ${getExpiryWarning(f('inspectionExpiry'))!.days} дн.`
+                          : `Истекает через ${getExpiryWarning(f('inspectionExpiry'))!.days} дн.`}
+                      </div>
+                    )}
+                  </div>
+
+                  <GroupHeader icon={<Users className="size-3" />} title="Аренда" />
+
+                  <div>
+                    <Label className="text-xs">Начало аренды</Label>
+                    <Input type="date" value={f('rentalStartDate')} onChange={e => setF('rentalStartDate', e.target.value)} className="h-9 w-full" />
+                  </div>
+                  <div>
+                    <Label className="text-xs">Конец аренды</Label>
+                    <Input type="date" value={f('rentalEndDate')} onChange={e => setF('rentalEndDate', e.target.value)} className="h-9 w-full" />
+                  </div>
+                  <div>
+                    <Label className="text-xs">Стоимость аренды (₽/мес)</Label>
+                    <Input type="number" value={f('rentalCost')} onChange={e => setF('rentalCost', e.target.value)} placeholder="50000" className="h-9 w-full" />
+                  </div>
+
+                  {f('status') === 'decommissioned' && (
+                    <>
+                      <GroupHeader icon={<XCircle className="size-3" />} title="Списание" />
+                      <div>
+                        <Label className="text-xs">Дата списания</Label>
+                        <Input type="date" value={f('decommissionDate')} onChange={e => setF('decommissionDate', e.target.value)} className="h-9 w-full" />
+                      </div>
+                      <div className="sm:col-span-2">
+                        <Label className="text-xs">Причина списания</Label>
+                        <Textarea value={f('decommissionReason')} onChange={e => setF('decommissionReason', e.target.value)} rows={2} />
+                      </div>
+                    </>
+                  )}
+                </>
+              )}
+
+              {step === 4 && (
+                <>
+                  {/* #14 Group header */}
+                  <GroupHeader icon={<Building2 className="size-3" />} title="Компании" />
+
+                  <div>
+                    <Label className="text-xs flex items-center gap-1"><Building2 className="size-3 text-muted-foreground" />Компания-владелец</Label>
+                    {/* #24 Owner/Renter inline info */}
+                    <Select value={f('ownerId') || '_none'} onValueChange={v => setF('ownerId', v === '_none' ? '' : v)}>
+                      <SelectTrigger className="h-9 text-sm w-full"><SelectValue placeholder="Не указан" /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="_none">Не указан</SelectItem>
+                        {companies.filter(c => c.type === 'owner' || c.type === 'both').map(c => (
+                          <SelectItem key={c.id} value={c.id}>
+                            <span className="flex items-center">{c.name}{companyTypeBadge(c.type)}</span>
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div>
+                    <Label className="text-xs flex items-center gap-1"><Building2 className="size-3 text-muted-foreground" />Компания-арендатор</Label>
+                    {/* #24 Owner/Renter inline info */}
+                    <Select value={f('renterId') || '_none'} onValueChange={v => setF('renterId', v === '_none' ? '' : v)}>
+                      <SelectTrigger className="h-9 text-sm w-full"><SelectValue placeholder="Не указан" /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="_none">Не указан</SelectItem>
+                        {companies.filter(c => c.type === 'renter' || c.type === 'both').map(c => (
+                          <SelectItem key={c.id} value={c.id}>
+                            <span className="flex items-center">{c.name}{companyTypeBadge(c.type)}</span>
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  {/* #14 Group header */}
+                  <GroupHeader icon={<StickyNote className="size-3" />} title="Заметки" />
+
+                  {/* #23 Notes field richer — larger with character count */}
+                  <div className="sm:col-span-2">
+                    <Label className="text-xs flex items-center gap-1"><StickyNote className="size-3 text-muted-foreground" />Заметки</Label>
+                    <Textarea
+                      value={f('notes')}
+                      onChange={e => setF('notes', e.target.value)}
+                      rows={4}
+                      placeholder="Дополнительная информация о технике, особенности эксплуатации..."
+                      className="w-full resize-y min-h-[80px]"
+                    />
+                    <div className="flex justify-between mt-0.5">
+                      <span className="text-[9px] text-muted-foreground/60">Shift+Enter для новой строки</span>
+                      <span className="text-[9px] text-muted-foreground/60">{f('notes').length} символов</span>
+                    </div>
+                  </div>
+                </>
+              )}
+            </motion.div>
+          </AnimatePresence>
         </div>
         )}
 
-        <DialogFooter className="gap-2 sm:gap-0">
+        {/* #16 Better footer with summary */}
+        <DialogFooter className="gap-2 sm:gap-0 px-6 py-3 border-t bg-muted/20">
+          {/* Filled fields count */}
+          <div className="flex-1 flex items-center gap-2 text-[10px] text-muted-foreground">
+            <span>Заполнено: {filledCount} из {totalFields}</span>
+            <div className="w-20 h-1 rounded-full bg-muted overflow-hidden">
+              <div className="h-full rounded-full bg-emerald-500 transition-all" style={{ width: `${(filledCount / totalFields) * 100}%` }} />
+            </div>
+          </div>
+
           {!editData && createMode === 'axenta' ? (
             <>
               <Button variant="outline" size="sm" onClick={() => { setCreateMode('manual'); setSelectedAxentaId('') }}><ChevronLeft className="size-3.5" />Назад</Button>
-              <Button size="sm" onClick={handleSave} disabled={saving || !selectedAxentaId || !f('name').trim()}>{saving ? <Loader2 className="size-3.5 animate-spin" /> : <CheckCircle2 className="size-3.5" />}Добавить с трекером</Button>
+              {/* #22 Save button states — different for axenta mode */}
+              <Button size="sm" className="bg-emerald-600 hover:bg-emerald-700 text-white" onClick={handleSave} disabled={saving || !selectedAxentaId || !f('name').trim()}>
+                {saving ? <Loader2 className="size-3.5 animate-spin" /> : <Satellite className="size-3.5" />}Добавить с трекером
+              </Button>
             </>
           ) : (
             <>
-              <Button variant="outline" size="sm" onClick={() => setStep(Math.max(0, step - 1))} disabled={step === 0}><ChevronLeft className="size-3.5" />Назад</Button>
+              <Button variant="outline" size="sm" onClick={() => { setStepDirection(-1); setStep(Math.max(0, step - 1)) }} disabled={step === 0}><ChevronLeft className="size-3.5" />Назад</Button>
               {step < steps.length - 1 ? (
                 <div className="flex gap-2">
-                  <Button size="sm" variant="outline" onClick={handleSave} disabled={saving || !f('name').trim()}>{saving ? <Loader2 className="size-3.5 animate-spin" /> : <CheckCircle2 className="size-3.5" />}{editData ? 'Сохранить' : 'Добавить'}</Button>
-                  <Button size="sm" onClick={() => setStep(step + 1)}>Далее<ChevronRight className="size-3.5" /></Button>
+                  {/* #22 Save button states — outline for quick save during steps */}
+                  <Button size="sm" variant="outline" onClick={handleSave} disabled={saving || !f('name').trim()}>
+                    {saving ? <Loader2 className="size-3.5 animate-spin" /> : <CheckCircle2 className="size-3.5" />}{editData ? 'Сохранить' : 'Добавить'}
+                  </Button>
+                  <Button size="sm" onClick={() => { setStepDirection(1); setStep(step + 1) }}>Далее<ChevronRight className="size-3.5" /></Button>
                 </div>
               ) : (
-                <Button size="sm" onClick={handleSave} disabled={saving || !f('name').trim()}>{saving ? <Loader2 className="size-3.5 animate-spin" /> : <CheckCircle2 className="size-3.5" />}{editData ? 'Сохранить' : 'Добавить'}</Button>
+                /* #22 Save button states — primary green for create, default for edit */
+                <Button
+                  size="sm"
+                  className={editData ? '' : 'bg-emerald-600 hover:bg-emerald-700 text-white'}
+                  onClick={handleSave}
+                  disabled={saving || !f('name').trim()}
+                >
+                  {saving ? <Loader2 className="size-3.5 animate-spin" /> : <CheckCircle2 className="size-3.5" />}
+                  {editData ? 'Сохранить' : 'Добавить технику'}
+                </Button>
               )}
             </>
           )}
@@ -3672,23 +5419,63 @@ const RepairsTab = React.memo(function RepairsTab({ repairs, equipment, onOpenDe
   const [statusFilter, setStatusFilter] = useState('all')
   const [eqFilter, setEqFilter] = useState('all')
   const [search, setSearch] = useState('')
-  const [quickFilter, setQuickFilter] = useState<'all' | 'overdue' | 'expensive'>('all')
+  const [quickFilter, setQuickFilter] = useState<'all' | 'overdue' | 'expensive' | 'critical' | 'warranty' | 'noContractor' | 'paused'>('all')
+  const [priorityFilter, setPriorityFilter] = useState('all')
+  const [typeFilter, setTypeFilter] = useState('all')
+  const [sortField, setSortField] = useState<string>('startDate')
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc')
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
+  const [viewMode, setViewMode] = useState<'table' | 'kanban'>('table')
+  const [batchAction, setBatchAction] = useState<string>('')
   const debouncedSearch = useDebounce(search, 300)
   const [page, setPage] = useState(1)
   const PAGE_SIZE = 20
 
-  const filtered = useMemo(() => repairs.filter(r => {
-    if (statusFilter !== 'all' && r.status !== statusFilter) return false
-    if (eqFilter !== 'all' && r.equipmentId !== eqFilter) return false
-    if (debouncedSearch && !r.description.toLowerCase().includes(debouncedSearch.toLowerCase()) && !(r.equipment?.name?.toLowerCase().includes(debouncedSearch.toLowerCase()))) return false
-    if (quickFilter === 'overdue' && r.status !== 'in_progress') return false
-    if (quickFilter === 'expensive' && (r.cost || 0) < 50000) return false
-    return true
-  }), [repairs, statusFilter, eqFilter, debouncedSearch, quickFilter])
+  const filtered = useMemo(() => {
+    let result = repairs.filter(r => {
+      if (statusFilter !== 'all' && r.status !== statusFilter) return false
+      if (eqFilter !== 'all' && r.equipmentId !== eqFilter) return false
+      if (debouncedSearch && !r.description.toLowerCase().includes(debouncedSearch.toLowerCase()) && !(r.equipment?.name?.toLowerCase().includes(debouncedSearch.toLowerCase()))) return false
+      if (quickFilter === 'overdue') { if (r.status !== 'in_progress' || !r.estimatedEndDate || new Date(r.estimatedEndDate) >= new Date()) return false }
+      else if (quickFilter === 'expensive' && (r.cost || 0) < 50000) return false
+      else if (quickFilter === 'critical') { if (r.priority !== 'critical') return false }
+      else if (quickFilter === 'warranty') { if (!r.warrantyRepair) return false }
+      else if (quickFilter === 'noContractor') { if (r.contractor) return false }
+      else if (quickFilter === 'paused') { if (r.status !== 'paused') return false }
+      if (priorityFilter !== 'all' && r.priority !== priorityFilter) return false
+      if (typeFilter !== 'all' && r.repairType !== typeFilter) return false
+      return true
+    })
+    // Sort
+    result.sort((a, b) => {
+      let aVal: any, bVal: any
+      switch (sortField) {
+        case 'startDate': aVal = new Date(a.startDate).getTime(); bVal = new Date(b.startDate).getTime(); break
+        case 'cost': aVal = a.cost || 0; bVal = b.cost || 0; break
+        case 'description': aVal = a.description.toLowerCase(); bVal = b.description.toLowerCase(); break
+        case 'priority': { const po: Record<string, number> = { critical: 4, high: 3, medium: 2, low: 1 }; aVal = po[a.priority] || 0; bVal = po[b.priority] || 0; break }
+        case 'status': { const so: Record<string, number> = { in_progress: 4, paused: 3, completed: 2, cancelled: 1 }; aVal = so[a.status] || 0; bVal = so[b.status] || 0; break }
+        default: aVal = new Date(a.startDate).getTime(); bVal = new Date(b.startDate).getTime()
+      }
+      if (aVal < bVal) return sortDir === 'asc' ? -1 : 1
+      if (aVal > bVal) return sortDir === 'asc' ? 1 : -1
+      return 0
+    })
+    return result
+  }, [repairs, statusFilter, eqFilter, debouncedSearch, quickFilter, priorityFilter, typeFilter, sortField, sortDir])
 
   const totalCost = filtered.reduce((s, r) => s + (r.cost || 0), 0)
   const avgCost = filtered.length > 0 ? totalCost / filtered.length : 0
-  const maxCost = filtered.reduce((m, r) => Math.max(m, r.cost || 0), 0)
+  const inProgress = filtered.filter(r => r.status === 'in_progress').length
+  const completedThisMonth = filtered.filter(r => r.status === 'completed' && r.endDate && new Date(r.endDate).getMonth() === new Date().getMonth()).length
+  const avgDuration = filtered.filter(r => r.status === 'completed' && r.endDate).reduce((sum, r) => {
+    return sum + Math.ceil((new Date(r.endDate!).getTime() - new Date(r.startDate).getTime()) / (1000*60*60*24))
+  }, 0) / Math.max(1, filtered.filter(r => r.status === 'completed' && r.endDate).length)
+
+  // Most repaired equipment top-3
+  const eqRepairCount: Record<string, number> = {}
+  for (const r of filtered) { if (r.equipmentId) eqRepairCount[r.equipmentId] = (eqRepairCount[r.equipmentId] || 0) + 1 }
+  const topRepaired = Object.entries(eqRepairCount).sort((a, b) => b[1] - a[1]).slice(0, 3)
 
   const getRepairDays = (startDate: string, endDate?: string | null) => {
     const end = endDate ? new Date(endDate) : new Date()
@@ -3701,30 +5488,104 @@ const RepairsTab = React.memo(function RepairsTab({ repairs, equipment, onOpenDe
     return 'text-red-600 dark:text-red-400'
   }
 
+  const toggleSort = (field: string) => {
+    if (sortField === field) setSortDir(d => d === 'asc' ? 'desc' : 'asc')
+    else { setSortField(field); setSortDir('asc') }
+  }
+
+  const toggleSelect = (id: string) => {
+    setSelectedIds(prev => { const n = new Set(prev); if (n.has(id)) n.delete(id); else n.add(id); return n })
+  }
+  const toggleSelectAll = () => {
+    if (selectedIds.size === filtered.length) setSelectedIds(new Set())
+    else setSelectedIds(new Set(filtered.map(r => r.id)))
+  }
+
+  const handleBatchAction = async () => {
+    if (selectedIds.size === 0 || !batchAction) return
+    try {
+      if (batchAction === 'delete') {
+        for (const id of selectedIds) { await fetch(`/api/repairs/${id}`, { method: 'DELETE' }) }
+        toast.success(`Удалено ${selectedIds.size} ремонтов`)
+      } else {
+        for (const id of selectedIds) { await fetch(`/api/repairs/${id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status: batchAction }) }) }
+        toast.success(`Статус изменён для ${selectedIds.size} ремонтов`)
+      }
+      setSelectedIds(new Set())
+      setBatchAction('')
+      // Refresh
+      window.location.reload()
+    } catch { toast.error('Ошибка пакетной операции') }
+  }
+
+  const priorityDotColor: Record<string, string> = { low: 'bg-gray-400', medium: 'bg-sky-500', high: 'bg-amber-500', critical: 'bg-red-500' }
+
+  const SortHeader = ({ field, children }: { field: string; children: React.ReactNode }) => (
+    <th className="text-left py-1.5 px-2 font-medium cursor-pointer hover:bg-muted/80 transition-colors select-none" onClick={() => toggleSort(field)}>
+      <span className="inline-flex items-center gap-1">{children}{sortField === field && (sortDir === 'asc' ? <ArrowUp className="size-2.5" /> : <ArrowDown className="size-2.5" />)}</span>
+    </th>
+  )
+
   return (
     <div className="space-y-3">
+      {/* Statistics dashboard */}
+      {filtered.length > 0 && (
+        <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
+          <Card className="border-0 shadow-none bg-muted/30 py-2"><CardContent className="p-2 text-center"><p className="text-[10px] text-muted-foreground">Всего</p><p className="text-sm font-bold">{filtered.length}</p></CardContent></Card>
+          <Card className="border-0 shadow-none bg-amber-50 dark:bg-amber-900/20 py-2"><CardContent className="p-2 text-center"><p className="text-[10px] text-muted-foreground">В процессе</p><p className="text-sm font-bold text-amber-600 dark:text-amber-400">{inProgress}</p></CardContent></Card>
+          <Card className="border-0 shadow-none bg-emerald-50 dark:bg-emerald-900/20 py-2"><CardContent className="p-2 text-center"><p className="text-[10px] text-muted-foreground">Завершено (мес.)</p><p className="text-sm font-bold text-emerald-600 dark:text-emerald-400">{completedThisMonth}</p></CardContent></Card>
+          <Card className="border-0 shadow-none bg-muted/30 py-2"><CardContent className="p-2 text-center"><p className="text-[10px] text-muted-foreground">Общая стоимость</p><p className="text-xs font-bold">{formatPrice(totalCost)}</p></CardContent></Card>
+          <Card className="border-0 shadow-none bg-muted/30 py-2"><CardContent className="p-2 text-center"><p className="text-[10px] text-muted-foreground">Ср. стоимость</p><p className="text-xs font-bold">{formatPrice(avgCost)}</p></CardContent></Card>
+          <Card className="border-0 shadow-none bg-muted/30 py-2"><CardContent className="p-2 text-center"><p className="text-[10px] text-muted-foreground">Ср. длит. (дн.)</p><p className="text-sm font-bold">{avgDuration > 0 ? avgDuration.toFixed(1) : '—'}</p></CardContent></Card>
+        </div>
+      )}
+
+      {/* Top repaired equipment */}
+      {topRepaired.length > 0 && (
+        <div className="flex items-center gap-2 text-[10px] text-muted-foreground">
+          <span>Чаще в ремонте:</span>
+          {topRepaired.map(([eqId, count], i) => {
+            const eq = equipment.find(e => e.id === eqId)
+            return eq ? <span key={eqId} className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 bg-muted">{i + 1}. {eq.name} ({count})</span> : null
+          })}
+        </div>
+      )}
+
       <div className="flex flex-col sm:flex-row gap-2">
         <div className="relative flex-1">
           <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 size-3.5 text-muted-foreground" />
           <Input placeholder="Поиск по описанию..." value={search} onChange={e => { setSearch(e.target.value); setPage(1) }} className="pl-8 h-9 text-sm" />
         </div>
         <Select value={statusFilter} onValueChange={setStatusFilter}>
-          <SelectTrigger className="w-full sm:w-[140px] h-9 text-sm"><SelectValue placeholder="Статус" /></SelectTrigger>
+          <SelectTrigger className="w-full sm:w-[130px] h-9 text-sm"><SelectValue placeholder="Статус" /></SelectTrigger>
           <SelectContent>
             <SelectItem value="all">Все статусы</SelectItem>
             {Object.entries(REPAIR_STATUS_MAP).map(([k, v]) => <SelectItem key={k} value={k}>{v.label}</SelectItem>)}
           </SelectContent>
         </Select>
         <Select value={eqFilter} onValueChange={setEqFilter}>
-          <SelectTrigger className="w-full sm:w-[160px] h-9 text-sm"><SelectValue placeholder="Техника" /></SelectTrigger>
+          <SelectTrigger className="w-full sm:w-[150px] h-9 text-sm"><SelectValue placeholder="Техника" /></SelectTrigger>
           <SelectContent>
             <SelectItem value="all">Вся техника</SelectItem>
             {equipment.map(e => <SelectItem key={e.id} value={e.id}>{e.name}</SelectItem>)}
           </SelectContent>
         </Select>
+        <Select value={priorityFilter} onValueChange={setPriorityFilter}>
+          <SelectTrigger className="w-full sm:w-[120px] h-9 text-sm"><SelectValue placeholder="Приоритет" /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">Все</SelectItem>
+            {Object.entries(REPAIR_PRIORITY_MAP).map(([k, v]) => <SelectItem key={k} value={k}>{v.label}</SelectItem>)}
+          </SelectContent>
+        </Select>
+        <Select value={typeFilter} onValueChange={setTypeFilter}>
+          <SelectTrigger className="w-full sm:w-[130px] h-9 text-sm"><SelectValue placeholder="Тип" /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">Все типы</SelectItem>
+            {Object.entries(REPAIR_TYPE_MAP).map(([k, v]) => <SelectItem key={k} value={k}>{v.label}</SelectItem>)}
+          </SelectContent>
+        </Select>
         <Button onClick={() => onAdd()} size="sm" className="h-9 gap-1.5 active:scale-95 transition-transform"><Plus className="size-3.5" />Добавить</Button>
-        {/* CSV Export */}
-        <Button variant="outline" size="sm" className="h-9 px-2 active:scale-95 transition-transform" onClick={() => downloadCSV(filtered.map(r => ({ Описание: r.description, Причина: r.reason || '', Техника: r.equipment?.name || '', Статус: REPAIR_STATUS_MAP[r.status]?.label || r.status, 'Дата начала': formatDate(r.startDate), 'Дата окончания': formatDate(r.endDate), Стоимость: r.cost || 0, Подрядчик: r.contractor || '' })), 'repairs')} title="Экспорт CSV" aria-label="Экспорт CSV">
+        <Button variant="outline" size="sm" className="h-9 px-2 active:scale-95 transition-transform" onClick={() => downloadCSV(filtered.map(r => ({ Описание: r.description, Причина: r.reason || '', Техника: r.equipment?.name || '', Статус: REPAIR_STATUS_MAP[r.status]?.label || r.status, Приоритет: REPAIR_PRIORITY_MAP[r.priority]?.label || '', Тип: REPAIR_TYPE_MAP[r.repairType]?.label || '', 'Дата начала': formatDate(r.startDate), 'Дата окончания': formatDate(r.endDate), Стоимость: r.cost || 0, Подрядчик: r.contractor || '' })), 'repairs')} title="Экспорт CSV" aria-label="Экспорт CSV">
           <FileDown className="size-3.5" />
         </Button>
       </div>
@@ -3732,36 +5593,75 @@ const RepairsTab = React.memo(function RepairsTab({ repairs, equipment, onOpenDe
       {/* Quick filters */}
       <div className="flex flex-wrap gap-1.5">
         <button onClick={() => setQuickFilter('all')} className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium transition-colors ${quickFilter === 'all' ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground hover:bg-muted/80'}`}>Все</button>
-        <button onClick={() => setQuickFilter('overdue')} className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium transition-colors ${quickFilter === 'overdue' ? 'bg-amber-600 text-white' : 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-400 hover:bg-amber-200 dark:hover:bg-amber-900/60'}`}><Clock className="size-2.5" />В процессе</button>
-        <button onClick={() => setQuickFilter('expensive')} className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium transition-colors ${quickFilter === 'expensive' ? 'bg-red-600 text-white' : 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-400 hover:bg-red-200 dark:hover:bg-red-900/60'}`}><DollarSign className="size-2.5" />&gt;50к ₽</button>
+        <button onClick={() => setQuickFilter('overdue')} className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium transition-colors ${quickFilter === 'overdue' ? 'bg-red-600 text-white' : 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-400 hover:bg-red-200'}`}><AlertTriangle className="size-2.5" />Просроченные</button>
+        <button onClick={() => setQuickFilter('critical')} className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium transition-colors ${quickFilter === 'critical' ? 'bg-red-600 text-white' : 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-400'}`}><Flag className="size-2.5" />Срочные</button>
+        <button onClick={() => setQuickFilter('warranty')} className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium transition-colors ${quickFilter === 'warranty' ? 'bg-violet-600 text-white' : 'bg-violet-100 text-violet-700 dark:bg-violet-900/40 dark:text-violet-400'}`}><ShieldCheck className="size-2.5" />Гарантийные</button>
+        <button onClick={() => setQuickFilter('paused')} className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium transition-colors ${quickFilter === 'paused' ? 'bg-blue-600 text-white' : 'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-400'}`}><Pause className="size-2.5" />Приостановленные</button>
+        <button onClick={() => setQuickFilter('noContractor')} className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium transition-colors ${quickFilter === 'noContractor' ? 'bg-gray-600 text-white' : 'bg-gray-100 text-gray-700 dark:bg-gray-900/40 dark:text-gray-400'}`}>Без подрядчика</button>
+        <button onClick={() => setQuickFilter('expensive')} className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium transition-colors ${quickFilter === 'expensive' ? 'bg-amber-600 text-white' : 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-400'}`}><DollarSign className="size-2.5" />&gt;50к ₽</button>
+        {/* View mode toggle */}
+        <div className="ml-auto flex gap-1">
+          <button onClick={() => setViewMode('table')} className={`inline-flex items-center rounded px-1.5 py-0.5 text-[10px] transition-colors ${viewMode === 'table' ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground'}`}><List className="size-3" /></button>
+          <button onClick={() => setViewMode('kanban')} className={`inline-flex items-center rounded px-1.5 py-0.5 text-[10px] transition-colors ${viewMode === 'kanban' ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground'}`}><LayoutGrid className="size-3" /></button>
+        </div>
       </div>
 
-      {/* Cost summary */}
-      {filtered.length > 0 && (
-        <div className="grid grid-cols-3 gap-2">
-          <Card className="border-0 shadow-none bg-muted/30 py-2">
-            <CardContent className="p-2 text-center">
-              <p className="text-[10px] text-muted-foreground">Общая стоимость</p>
-              <p className="text-xs font-bold">{formatPrice(totalCost)}</p>
-            </CardContent>
-          </Card>
-          <Card className="border-0 shadow-none bg-muted/30 py-2">
-            <CardContent className="p-2 text-center">
-              <p className="text-[10px] text-muted-foreground">Средняя стоимость</p>
-              <p className="text-xs font-bold">{formatPrice(avgCost)}</p>
-            </CardContent>
-          </Card>
-          <Card className="border-0 shadow-none bg-muted/30 py-2">
-            <CardContent className="p-2 text-center">
-              <p className="text-[10px] text-muted-foreground">Максимальная</p>
-              <p className="text-xs font-bold">{formatPrice(maxCost)}</p>
-            </CardContent>
-          </Card>
+      {/* Batch actions */}
+      {selectedIds.size > 0 && (
+        <div className="flex items-center gap-2 p-2 rounded-md border bg-muted/50">
+          <span className="text-xs font-medium">Выбрано: {selectedIds.size}</span>
+          <Select value={batchAction} onValueChange={setBatchAction}>
+            <SelectTrigger className="h-7 w-[150px] text-[11px]"><SelectValue placeholder="Действие..." /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="completed">Завершить</SelectItem>
+              <SelectItem value="paused">Приостановить</SelectItem>
+              <SelectItem value="cancelled">Отменить</SelectItem>
+              <SelectItem value="delete">Удалить</SelectItem>
+            </SelectContent>
+          </Select>
+          <Button size="sm" className="h-7 text-[11px] gap-1" onClick={handleBatchAction} disabled={!batchAction}><CheckCircle2 className="size-3" />Применить</Button>
+          <Button size="sm" variant="ghost" className="h-7 text-[11px]" onClick={() => setSelectedIds(new Set())}>Снять</Button>
         </div>
       )}
 
       <p className="text-xs text-muted-foreground">Найдено: {filtered.length}</p>
 
+      {/* Kanban view */}
+      {viewMode === 'kanban' ? (
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+          {(['in_progress', 'paused', 'completed', 'cancelled'] as const).map(status => {
+            const items = filtered.filter(r => r.status === status)
+            const info = REPAIR_STATUS_MAP[status]
+            return (
+              <div key={status} className="space-y-2">
+                <div className="flex items-center gap-2">
+                  <span className={`inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-medium ${info?.color || ''}`}>{info?.label || status}</span>
+                  <span className="text-[10px] text-muted-foreground">{items.length}</span>
+                </div>
+                <div className="space-y-1.5 max-h-[60vh] overflow-y-auto">
+                  {items.map(r => (
+                    <div key={r.id} className="rounded-lg border p-2.5 cursor-pointer hover:bg-accent/50 transition-colors" onClick={() => onOpenDetail(r)}>
+                      <div className="flex items-start gap-1.5 mb-1">
+                        {r.priority && priorityDotColor[r.priority] && <span className={`mt-1 size-2 rounded-full shrink-0 ${priorityDotColor[r.priority]}`} />}
+                        <p className="text-xs font-medium line-clamp-2">{r.description}</p>
+                      </div>
+                      {r.equipment?.name && <p className="text-[10px] text-muted-foreground truncate">{r.equipment.name}</p>}
+                      <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 mt-1 text-[10px] text-muted-foreground">
+                        <span>{formatDate(r.startDate)}</span>
+                        {r.cost != null && <span className="font-medium text-foreground">₽{new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 0 }).format(r.cost)}</span>}
+                        {r.repairType && REPAIR_TYPE_MAP[r.repairType] && <span className={`inline-flex items-center rounded px-1 py-0.5 text-[8px] font-medium ${REPAIR_TYPE_MAP[r.repairType].color}`}>{REPAIR_TYPE_MAP[r.repairType].label}</span>}
+                      </div>
+                      {r.estimatedEndDate && r.status === 'in_progress' && new Date(r.estimatedEndDate) < new Date() && <span className="flex items-center gap-0.5 text-[9px] text-red-600 dark:text-red-400 font-medium mt-0.5"><AlertTriangle className="size-2" />Просрочен</span>}
+                    </div>
+                  ))}
+                  {items.length === 0 && <p className="text-[10px] text-muted-foreground text-center py-4">Пусто</p>}
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      ) : (
+      <>
       {filtered.length === 0 ? (
         <Card className="py-8 animate-in fade-in duration-300">
           <CardContent className="flex flex-col items-center text-center p-4 pt-0">
@@ -3776,25 +5676,35 @@ const RepairsTab = React.memo(function RepairsTab({ repairs, equipment, onOpenDe
           <div className="sm:hidden space-y-2">
             {filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE).map(r => {
               const repairDays = getRepairDays(r.startDate, r.endDate)
-              const statusInfo = REPAIR_STATUS_MAP[r.status]
+              const isOverdue = r.status === 'in_progress' && r.estimatedEndDate && new Date(r.estimatedEndDate) < new Date()
               return (
                 <div key={r.id} className="rounded-xl border p-3 cursor-pointer hover:bg-accent/50 transition-colors border-l-[3px]"
-                  style={{ borderLeftColor: r.status === 'in_progress' ? '#f59e0b' : r.status === 'completed' ? '#10b981' : '#ef4444' }}
+                  style={{ borderLeftColor: r.status === 'in_progress' ? '#f59e0b' : r.status === 'completed' ? '#10b981' : r.status === 'paused' ? '#3b82f6' : '#ef4444' }}
                   onClick={() => onOpenDetail(r)}>
                   <div className="flex items-start gap-2.5">
-                    <div className="size-9 rounded-lg bg-amber-100 dark:bg-amber-900/30 flex items-center justify-center shrink-0">
-                      <Wrench className="size-4 text-amber-600 dark:text-amber-400" />
+                    <div className="flex items-center gap-1.5">
+                      <Checkbox checked={selectedIds.has(r.id)} onCheckedChange={() => toggleSelect(r.id)} onClick={e => e.stopPropagation()} className="size-4" />
+                      <div className="size-9 rounded-lg bg-amber-100 dark:bg-amber-900/30 flex items-center justify-center shrink-0">
+                        <Wrench className="size-4 text-amber-600 dark:text-amber-400" />
+                      </div>
                     </div>
                     <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium truncate">{r.description}</p>
+                      <div className="flex items-center gap-1">
+                        {r.priority && priorityDotColor[r.priority] && <span className={`size-2 rounded-full ${priorityDotColor[r.priority]}`} />}
+                        <p className="text-sm font-medium truncate">{r.description}</p>
+                      </div>
                       {r.equipment?.name && <p className="text-xs text-muted-foreground truncate mt-0.5 flex items-center gap-1"><Truck className="size-3" />{r.equipment.name}</p>}
                     </div>
-                    {statusBadge(r.status, REPAIR_STATUS_MAP)}
+                    <div className="flex flex-col items-end gap-1">
+                      {statusBadge(r.status, REPAIR_STATUS_MAP)}
+                      {r.repairType && REPAIR_TYPE_MAP[r.repairType] && <span className="mt-0.5">{statusBadge(r.repairType, REPAIR_TYPE_MAP)}</span>}
+                    </div>
                   </div>
                   <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-2 pl-[44px] text-[10px] text-muted-foreground">
                     <span className="flex items-center gap-1"><Calendar className="size-3" />{formatDate(r.startDate)}</span>
                     {r.cost != null && <span className="flex items-center gap-0.5 font-medium text-foreground"><span className="text-[9px]">₽</span>{new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 0 }).format(r.cost)}</span>}
                     <span className={`flex items-center gap-1 font-medium ${r.status === 'in_progress' ? getDaysColor(repairDays) : ''}`}><Clock className="size-3" />{repairDays} дн.</span>
+                    {isOverdue && <span className="flex items-center gap-0.5 text-red-600 dark:text-red-400 font-medium"><AlertTriangle className="size-3" />Просрочен</span>}
                     {r.stages && r.stages.length > 0 && (
                       <span className="flex items-center gap-1">
                         <span>{r.stages.filter(s => s.status === 'completed').length}/{r.stages.length}</span>
@@ -3813,12 +5723,14 @@ const RepairsTab = React.memo(function RepairsTab({ repairs, equipment, onOpenDe
               <table className="w-full text-[11px]">
                 <thead>
                   <tr className="border-b bg-muted/50 text-muted-foreground">
-                    <th className="text-left py-1.5 px-2 font-medium w-8"></th>
-                    <th className="text-left py-1.5 px-2 font-medium">Описание</th>
+                    <th className="py-1.5 px-2 w-8"><Checkbox checked={selectedIds.size === filtered.length && filtered.length > 0} onCheckedChange={toggleSelectAll} /></th>
+                    <SortHeader field="description">Описание</SortHeader>
                     <th className="text-left py-1.5 px-2 font-medium hidden sm:table-cell">Техника</th>
-                    <th className="text-left py-1.5 px-2 font-medium">Статус</th>
-                    <th className="text-left py-1.5 px-2 font-medium hidden md:table-cell">Начало</th>
-                    <th className="text-left py-1.5 px-2 font-medium hidden md:table-cell">Стоимость</th>
+                    <SortHeader field="status">Статус</SortHeader>
+                    <SortHeader field="priority">Приоритет</SortHeader>
+                    <th className="text-left py-1.5 px-2 font-medium hidden md:table-cell">Тип</th>
+                    <SortHeader field="startDate">Начало</SortHeader>
+                    <SortHeader field="cost">Стоимость</SortHeader>
                     <th className="text-left py-1.5 px-2 font-medium hidden lg:table-cell">Дней</th>
                     <th className="text-left py-1.5 px-2 font-medium hidden lg:table-cell">Подрядчик</th>
                     <th className="text-left py-1.5 px-2 font-medium hidden sm:table-cell">Этапы</th>
@@ -3827,28 +5739,37 @@ const RepairsTab = React.memo(function RepairsTab({ repairs, equipment, onOpenDe
                 </thead>
                 <tbody>
                   {filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE).map((r, idx) => {
-                    const borderColor = r.status === 'in_progress' ? 'border-l-amber-500' : r.status === 'completed' ? 'border-l-emerald-500' : 'border-l-red-500'
+                    const borderColor = r.status === 'in_progress' ? 'border-l-amber-500' : r.status === 'completed' ? 'border-l-emerald-500' : r.status === 'paused' ? 'border-l-blue-500' : 'border-l-red-500'
                     const repairDays = getRepairDays(r.startDate, r.endDate)
+                    const isOverdue = r.status === 'in_progress' && r.estimatedEndDate && new Date(r.estimatedEndDate) < new Date()
+                    const costDeviation = r.estimatedCost && r.cost ? Math.round(((r.cost - r.estimatedCost) / r.estimatedCost) * 100) : null
                     return (
                       <tr key={r.id} className={`border-b last:border-0 cursor-pointer hover:bg-accent/50 transition-colors border-l-2 ${borderColor} ${idx % 2 === 1 ? 'bg-muted/20' : ''}`} onClick={() => onOpenDetail(r)}>
-                        <td className="py-1.5 px-2">
-                          <div className="flex items-center justify-center size-6 rounded bg-amber-100 dark:bg-amber-900/30">
-                            <Wrench className="size-3 text-amber-600 dark:text-amber-400" />
-                          </div>
+                        <td className="py-1.5 px-2" onClick={e => e.stopPropagation()}>
+                          <Checkbox checked={selectedIds.has(r.id)} onCheckedChange={() => toggleSelect(r.id)} className="size-4" />
                         </td>
                         <td className="py-1.5 px-2">
-                          <div className="font-medium truncate max-w-[200px]">{r.description}</div>
+                          <div className="flex items-center gap-1.5">
+                            {r.priority && priorityDotColor[r.priority] && <span className={`size-2 rounded-full shrink-0 ${priorityDotColor[r.priority]}`} title={REPAIR_PRIORITY_MAP[r.priority]?.label} />}
+                            <div className="font-medium truncate max-w-[200px]">{r.description}</div>
+                          </div>
                           <div className="flex flex-wrap items-center gap-1 mt-0.5">
                             {r.reason && <span className="text-[9px] text-muted-foreground truncate max-w-[200px]">{r.reason}</span>}
                             {r.masters && r.masters.length > 0 && <span className="inline-flex items-center gap-0.5 text-[9px] text-muted-foreground"><Users className="size-2" />{r.masters.length}</span>}
                             {r.photos && r.photos.length > 0 && <span className="inline-flex items-center gap-0.5 text-[9px] text-muted-foreground"><Camera className="size-2" />{r.photos.length}</span>}
+                            {isOverdue && <span className="inline-flex items-center gap-0.5 text-[9px] text-red-600 dark:text-red-400 font-medium"><AlertTriangle className="size-2" />Просрочен</span>}
                           </div>
                         </td>
                         <td className="py-1.5 px-2 hidden sm:table-cell text-muted-foreground truncate max-w-[120px]">{r.equipment?.name || '—'}</td>
                         <td className="py-1.5 px-2">{statusBadge(r.status, REPAIR_STATUS_MAP)}</td>
+                        <td className="py-1.5 px-2">{r.priority && REPAIR_PRIORITY_MAP[r.priority] ? statusBadge(r.priority, REPAIR_PRIORITY_MAP as any) : '—'}</td>
+                        <td className="py-1.5 px-2 hidden md:table-cell">{r.repairType && REPAIR_TYPE_MAP[r.repairType] ? statusBadge(r.repairType, REPAIR_TYPE_MAP) : '—'}</td>
                         <td className="py-1.5 px-2 hidden md:table-cell">{formatDate(r.startDate)}</td>
                         <td className="py-1.5 px-2 hidden md:table-cell">
-                          {r.cost != null ? <span className="inline-flex items-center gap-0.5 font-medium"><span className="text-[9px]">₽</span>{new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 0 }).format(r.cost)}</span> : '—'}
+                          <div>
+                            {r.cost != null ? <span className="inline-flex items-center gap-0.5 font-medium"><span className="text-[9px]">₽</span>{new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 0 }).format(r.cost)}</span> : '—'}
+                            {costDeviation != null && costDeviation !== 0 && <span className={`block text-[9px] ${costDeviation > 0 ? 'text-red-600 dark:text-red-400' : 'text-emerald-600 dark:text-emerald-400'}`}>{costDeviation > 0 ? '+' : ''}{costDeviation}%</span>}
+                          </div>
                         </td>
                         <td className="py-1.5 px-2 hidden lg:table-cell">
                           <span className={`font-medium ${r.status === 'in_progress' ? getDaysColor(repairDays) : ''}`}>{repairDays} дн.</span>
@@ -3859,7 +5780,7 @@ const RepairsTab = React.memo(function RepairsTab({ repairs, equipment, onOpenDe
                               <span className="text-muted-foreground">{r.contractor}</span>
                               {r.contractorPhone && <span className="block text-[9px] text-muted-foreground"><Phone className="inline size-2 mr-0.5" />{r.contractorPhone}</span>}
                             </div>
-                          ) : '—'}
+                          ) : <span className="text-muted-foreground">—</span>}
                         </td>
                         <td className="py-1.5 px-2 hidden sm:table-cell">
                           {r.stages && r.stages.length > 0 ? (
@@ -3870,9 +5791,7 @@ const RepairsTab = React.memo(function RepairsTab({ repairs, equipment, onOpenDe
                               </div>
                               <Progress value={getStageProgress(r.stages)} className="h-1" />
                             </div>
-                          ) : (
-                            <span className="text-muted-foreground">—</span>
-                          )}
+                          ) : <span className="text-muted-foreground">—</span>}
                         </td>
                         <td className="py-1.5 px-2 text-right" onClick={e => e.stopPropagation()}>
                           <div className="flex items-center justify-end gap-0.5">
@@ -3887,6 +5806,8 @@ const RepairsTab = React.memo(function RepairsTab({ repairs, equipment, onOpenDe
             </div>
           </div>
         </>
+      )}
+      </>
       )}
       {filtered.length > PAGE_SIZE && (
         <PaginationControls page={page} totalPages={Math.ceil(filtered.length / PAGE_SIZE)} total={filtered.length} pageSize={PAGE_SIZE} onPageChange={setPage} />
@@ -3959,16 +5880,29 @@ function RepairMastersSection({ repair, employees, onRefresh }: {
                     <p className="text-xs font-medium truncate">{m.employee.fullName}</p>
                     {statusBadge(m.role, REPAIR_MASTER_ROLE_MAP)}
                   </div>
-                  <div className="flex gap-2 mt-0.5 text-[10px] text-muted-foreground">
-                    {m.employee.phone && <span>{m.employee.phone}</span>}
+                  <div className="flex flex-wrap gap-2 mt-0.5 text-[10px] text-muted-foreground">
+                    {m.employee.phone && <a href={`tel:${m.employee.phone}`} className="hover:text-primary transition-colors flex items-center gap-0.5"><Phone className="size-2.5" />{m.employee.phone}</a>}
                     {m.employee.position && <span>{EMPLOYEE_POSITION_MAP[m.employee.position]?.label || m.employee.position}</span>}
                   </div>
                 </div>
-                {repair.status === 'in_progress' && (
-                  <Button size="sm" variant="ghost" className="size-6 p-0 text-destructive hover:text-destructive shrink-0" onClick={() => handleRemove(m.employeeId)} aria-label="Снять с ремонта">
-                    <X className="size-3" />
-                  </Button>
-                )}
+                {/* Quick action buttons */}
+                <div className="flex items-center gap-0.5 shrink-0">
+                  {m.employee.phone && (
+                    <Button size="sm" variant="ghost" className="size-6 p-0" asChild>
+                      <a href={`tel:${m.employee.phone}`} aria-label="Позвонить"><Phone className="size-3 text-emerald-600 dark:text-emerald-400" /></a>
+                    </Button>
+                  )}
+                  {(m.employee as any).email && (
+                    <Button size="sm" variant="ghost" className="size-6 p-0" asChild>
+                      <a href={`mailto:${(m.employee as any).email}`} aria-label="Написать"><Mail className="size-3 text-sky-600 dark:text-sky-400" /></a>
+                    </Button>
+                  )}
+                  {(repair.status === 'in_progress' || repair.status === 'paused') && (
+                    <Button size="sm" variant="ghost" className="size-6 p-0 text-destructive hover:text-destructive" onClick={() => handleRemove(m.employeeId)} aria-label="Снять с ремонта">
+                      <X className="size-3" />
+                    </Button>
+                  )}
+                </div>
               </div>
             ))}
           </div>
@@ -4025,7 +5959,7 @@ function RepairMastersSection({ repair, employees, onRefresh }: {
 // REPAIR DETAIL DIALOG — С ПРОКРУТКОЙ!
 // ═══════════════════════════════════════════════════════════════
 
-function RepairDetailDialog({ open, onOpenChange, repair, loading, fullPhoto, setFullPhoto, onEdit, onDelete, onComplete, onAddStage, onEditStage, onDeleteStage, onUploadPhoto, onRefresh, employees }: {
+function RepairDetailDialog({ open, onOpenChange, repair, loading, fullPhoto, setFullPhoto, onEdit, onDelete, onComplete, onAddStage, onEditStage, onDeleteStage, onUploadPhoto, onRefresh, employees, onDuplicate, onPause, onResume }: {
   open: boolean; onOpenChange: (v: boolean) => void;
   repair: Repair | null; loading: boolean;
   fullPhoto: string | null; setFullPhoto: (v: string | null) => void;
@@ -4037,20 +5971,145 @@ function RepairDetailDialog({ open, onOpenChange, repair, loading, fullPhoto, se
   onUploadPhoto: (repairId: string) => void;
   onRefresh: () => void;
   employees: Employee[];
+  onDuplicate?: (r: Repair) => void;
+  onPause?: (r: Repair) => void;
+  onResume?: (r: Repair) => void;
 }) {
+  const [photoCatFilter, setPhotoCatFilter] = useState('all')
+  const [lightboxIdx, setLightboxIdx] = useState(-1)
+  const [comments, setComments] = useState<RepairComment[]>([])
+  const [commentText, setCommentText] = useState('')
+  const [commentsLoading, setCommentsLoading] = useState(false)
+  const [confirmDialog, setConfirmDialog] = useState<{ open: boolean; action: () => void; title: string; desc: string }>({ open: false, action: () => {}, title: '', desc: '' })
+  const commentsEndRef = useRef<HTMLDivElement>(null)
+
+  // Load comments when repair changes
+  useEffect(() => {
+    if (repair && open) {
+      setCommentsLoading(true)
+      fetch(`/api/repairs/${repair.id}/comments`)
+        .then(res => res.ok ? res.json() : [])
+        .then(data => { setComments(Array.isArray(data) ? data : []); setCommentsLoading(false) })
+        .catch(() => { setComments([]); setCommentsLoading(false) })
+    }
+  }, [repair?.id, open])
+
+  // Scroll to bottom on new comment
+  useEffect(() => {
+    if (comments.length > 0) commentsEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+  }, [comments.length])
+
+  // Auto-close lightbox
+  useEffect(() => {
+    if (lightboxIdx < 0) return
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setLightboxIdx(-1)
+      if (e.key === 'ArrowRight') setLightboxIdx(i => Math.min(i + 1, (repair?.photos?.length || 1) - 1))
+      if (e.key === 'ArrowLeft') setLightboxIdx(i => Math.max(i - 1, 0))
+    }
+    window.addEventListener('keydown', handler)
+    return () => window.removeEventListener('keydown', handler)
+  }, [lightboxIdx, repair?.photos?.length])
+
+  const handleAddComment = async () => {
+    if (!commentText.trim() || !repair) return
+    try {
+      const res = await fetch(`/api/repairs/${repair.id}/comments`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text: commentText.trim() })
+      })
+      if (!res.ok) throw new Error()
+      const newComment = await res.json()
+      setComments(prev => [...prev, newComment])
+      setCommentText('')
+      toast.success('Комментарий добавлен')
+    } catch { toast.error('Ошибка добавления комментария') }
+  }
+
+  const handleDeleteComment = async (commentId: string) => {
+    try {
+      const res = await fetch(`/api/repairs/${repair!.id}/comments?commentId=${commentId}`, { method: 'DELETE' })
+      if (!res.ok) throw new Error()
+      setComments(prev => prev.filter(c => c.id !== commentId))
+      toast.success('Комментарий удалён')
+    } catch { toast.error('Ошибка удаления комментария') }
+  }
+
+  const handleDeletePhoto = async (photoId: string) => {
+    try {
+      const res = await fetch(`/api/repairs/${repair!.id}/photos?photoId=${photoId}`, { method: 'DELETE' })
+      if (!res.ok) throw new Error()
+      toast.success('Фото удалено')
+      onRefresh()
+    } catch { toast.error('Ошибка удаления фото') }
+  }
+
   if (!repair) return null
   const r = repair
   const stagesCost = r.stages?.reduce((sum, s) => sum + (s.cost || 0), 0) || 0
+  const completedStages = r.stages?.filter(s => s.status === 'completed').length || 0
+  const totalStages = r.stages?.length || 0
+  const progressPct = getStageProgress(r.stages || [])
+
+  // Duration calculation
+  const startMs = new Date(r.startDate).getTime()
+  const endMs = r.endDate ? new Date(r.endDate).getTime() : Date.now()
+  const durationMs = endMs - startMs
+  const durationDays = Math.floor(durationMs / (1000 * 60 * 60 * 24))
+  const durationHours = Math.floor((durationMs % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60))
+
+  // Overdue check
+  const isOverdue = r.status === 'in_progress' && r.estimatedEndDate && new Date(r.estimatedEndDate) < new Date()
+
+  // Cost deviation
+  const costDeviation = r.estimatedCost && r.cost ? Math.round(((r.cost - r.estimatedCost) / r.estimatedCost) * 100) : null
+
+  // Time comparison (estimated days)
+  const estimatedDays = r.estimatedEndDate ? Math.ceil((new Date(r.estimatedEndDate).getTime() - startMs) / (1000*60*60*24)) : null
+  const timeDeviation = estimatedDays != null ? durationDays - estimatedDays : null
+
+  // Filter photos by category
+  const filteredPhotos = photoCatFilter === 'all' ? (r.photos || []) : (r.photos || []).filter(p => p.category === photoCatFilter)
+
+  // Photo counts by category
+  const photoCounts: Record<string, number> = { all: (r.photos || []).length }
+  for (const p of (r.photos || [])) {
+    photoCounts[p.category] = (photoCounts[p.category] || 0) + 1
+  }
+
+  // Status color for border
+  const statusBorderColor = r.status === 'in_progress' ? 'border-l-amber-500' : r.status === 'completed' ? 'border-l-emerald-500' : r.status === 'paused' ? 'border-l-blue-500' : 'border-l-red-500'
+
+  // Priority dot color
+  const priorityDotColor: Record<string, string> = { low: 'bg-gray-400', medium: 'bg-sky-500', high: 'bg-amber-500', critical: 'bg-red-500' }
+
+  // Equipment type icon
+  const eqTypeInfo = r.equipment?.type ? getTypeInfo(r.equipment.type) : null
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-3xl">
-        <DialogHeader>
-          <DialogTitle className="flex items-center gap-2"><Wrench className="size-4" />{r.description}</DialogTitle>
+      <DialogContent className="sm:max-w-3xl max-h-[90vh] flex flex-col">
+        {/* Header with status bar */}
+        <DialogHeader className={`border-l-4 ${statusBorderColor} pl-3`}>
+          <DialogTitle className="flex items-center gap-2 flex-wrap">
+            <Wrench className="size-4 shrink-0" />
+            <span className="truncate">{r.description}</span>
+            <span className="text-[10px] font-mono text-muted-foreground shrink-0">#{r.id.slice(0, 6)}</span>
+          </DialogTitle>
           <DialogDescription className="flex items-center gap-2 flex-wrap">
-            {r.equipment?.name}
+            {eqTypeInfo && <span className="inline-flex items-center gap-1">{eqTypeInfo.icon}<span className="font-medium">{r.equipment?.name}</span></span>}
+            {!eqTypeInfo && r.equipment?.name && <span className="font-medium">{r.equipment.name}</span>}
             <span className="ml-1">{statusBadge(r.status, REPAIR_STATUS_MAP)}</span>
+            {r.priority && REPAIR_PRIORITY_MAP[r.priority] && <span className="inline-flex items-center gap-1">{statusBadge(r.priority, REPAIR_PRIORITY_MAP as any)}</span>}
+            {r.repairType && REPAIR_TYPE_MAP[r.repairType] && <span className="inline-flex items-center gap-1">{statusBadge(r.repairType, REPAIR_TYPE_MAP)}</span>}
+            {r.warrantyRepair && <span className="inline-flex items-center gap-0.5 rounded px-1.5 py-0.5 text-[10px] font-medium bg-violet-100 text-violet-800 dark:bg-violet-900/40 dark:text-violet-400"><ShieldCheck className="size-2.5" />Гарантия</span>}
+            {r.insuranceClaim && <span className="inline-flex items-center gap-0.5 rounded px-1.5 py-0.5 text-[10px] font-medium bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-400"><Shield className="size-2.5" />Страховка</span>}
           </DialogDescription>
+          {/* Duration + Overdue */}
+          <div className="flex items-center gap-3 mt-1 text-xs">
+            <span className="flex items-center gap-1 text-muted-foreground"><Clock className="size-3" />{durationDays} дн. {durationHours} ч.</span>
+            {isOverdue && <span className="flex items-center gap-1 text-red-600 dark:text-red-400 font-medium"><AlertTriangle className="size-3" />Просрочен на {Math.ceil((Date.now() - new Date(r.estimatedEndDate!).getTime()) / (1000*60*60*24))} дн.</span>}
+          </div>
         </DialogHeader>
 
         {/* SCROLLABLE CONTENT */}
@@ -4059,30 +6118,164 @@ function RepairDetailDialog({ open, onOpenChange, repair, loading, fullPhoto, se
             <div className="flex items-center justify-center h-24"><Loader2 className="size-5 animate-spin text-muted-foreground" /></div>
           ) : (
             <div className="space-y-4 py-2">
-              {/* Progress bar */}
-              {r.stages && r.stages.length > 0 && (
-                <div className="space-y-1">
+              {/* Progress section */}
+              {totalStages > 0 && (
+                <div className="space-y-1.5">
                   <div className="flex items-center justify-between text-xs">
                     <span className="text-muted-foreground">Прогресс ремонта</span>
-                    <span className="font-medium">{getStageProgress(r.stages)}%</span>
+                    <span className="font-medium">{completedStages}/{totalStages} этапов • {progressPct}%</span>
                   </div>
-                  <Progress value={getStageProgress(r.stages)} className="h-2" />
+                  <Progress value={progressPct} className="h-2" />
+                  {/* Estimated vs actual time */}
+                  {(estimatedDays != null || timeDeviation != null) && (
+                    <div className="flex items-center gap-3 text-[10px] text-muted-foreground">
+                      {estimatedDays != null && <span>План: {estimatedDays} дн.</span>}
+                      <span>Факт: {durationDays} дн.</span>
+                      {timeDeviation != null && timeDeviation !== 0 && (
+                        <span className={timeDeviation > 0 ? 'text-red-600 dark:text-red-400 font-medium' : 'text-emerald-600 dark:text-emerald-400 font-medium'}>
+                          ({timeDeviation > 0 ? '+' : ''}{timeDeviation} дн.)
+                        </span>
+                      )}
+                    </div>
+                  )}
+                  {/* Estimated vs actual cost */}
+                  {r.estimatedCost != null && (
+                    <div className="flex items-center gap-3 text-[10px] text-muted-foreground">
+                      <span>План: {formatPrice(r.estimatedCost)}</span>
+                      <span>Факт: {formatPrice(r.cost)}</span>
+                      {costDeviation != null && costDeviation !== 0 && (
+                        <span className={costDeviation > 0 ? 'text-red-600 dark:text-red-400 font-medium' : 'text-emerald-600 dark:text-emerald-400 font-medium'}>
+                          ({costDeviation > 0 ? '+' : ''}{costDeviation}%)
+                        </span>
+                      )}
+                    </div>
+                  )}
                 </div>
               )}
 
-              <DetailSection title="Информация о ремонте" icon={<ClipboardList className="size-3.5" />}>
-                <DetailRow label="Описание" value={r.description} />
-                <DetailRow label="Причина" value={r.reason} />
-                <DetailRow label="Дата начала" value={formatDate(r.startDate)} />
-                <DetailRow label="Дата окончания" value={formatDate(r.endDate)} />
-                <DetailRow label="Стоимость" value={formatPrice(r.cost)} />
-                <DetailRow label="Подрядчик" value={r.contractor} />
-                <DetailRow label="Телефон" value={r.contractorPhone} />
-                <DetailRow label="Выполненные работы" value={r.workPerformed} />
-                <DetailRow label="Запчасти" value={r.spareParts} />
-                <DetailRow label="Следующий ТО" value={formatDate(r.nextInspection)} />
-                <DetailRow label="Заметки" value={r.notes} />
-              </DetailSection>
+              {/* Основная информация */}
+              <Collapsible defaultOpen>
+                <CollapsibleTrigger className="flex items-center gap-1.5 mb-1.5 w-full text-left hover:text-foreground transition-colors">
+                  <span className="text-muted-foreground"><ClipboardList className="size-3.5" /></span>
+                  <h3 className="text-xs font-semibold">Основная информация</h3>
+                  <ChevronDown className="size-3 text-muted-foreground" />
+                </CollapsibleTrigger>
+                <CollapsibleContent>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-0.5 pl-5">
+                    <DetailRow label="Описание" value={r.description} />
+                    <DetailRow label="Причина" value={r.reason} />
+                    <DetailRow label="Местоположение" value={r.location ? <span className="flex items-center gap-1"><MapPin className="size-3" />{r.location}</span> : null} />
+                  </div>
+                </CollapsibleContent>
+              </Collapsible>
+
+              {/* Сроки и стоимость */}
+              <Collapsible defaultOpen>
+                <CollapsibleTrigger className="flex items-center gap-1.5 mb-1.5 w-full text-left hover:text-foreground transition-colors">
+                  <span className="text-muted-foreground"><CalendarDays className="size-3.5" /></span>
+                  <h3 className="text-xs font-semibold">Сроки и стоимость</h3>
+                  <ChevronDown className="size-3 text-muted-foreground" />
+                </CollapsibleTrigger>
+                <CollapsibleContent>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-0.5 pl-5">
+                    <DetailRow label="Дата начала" value={formatDate(r.startDate)} />
+                    <DetailRow label="Дата окончания" value={formatDate(r.endDate)} />
+                    <DetailRow label="Плановая дата" value={formatDate(r.estimatedEndDate)} />
+                    <DetailRow label="Стоимость" value={formatPrice(r.cost)} />
+                    <DetailRow label="Плановая стоимость" value={formatPrice(r.estimatedCost)} />
+                    {costDeviation != null && <DetailRow label="Отклонение" value={<span className={costDeviation > 0 ? 'text-red-600 dark:text-red-400' : 'text-emerald-600 dark:text-emerald-400'}>{costDeviation > 0 ? '+' : ''}{costDeviation}%</span>} />}
+                  </div>
+                </CollapsibleContent>
+              </Collapsible>
+
+              {/* Пробег и простой */}
+              {(r.mileageStart != null || r.mileageEnd != null || r.downtimeHours != null) && (
+                <Collapsible defaultOpen>
+                  <CollapsibleTrigger className="flex items-center gap-1.5 mb-1.5 w-full text-left hover:text-foreground transition-colors">
+                    <span className="text-muted-foreground"><Gauge className="size-3.5" /></span>
+                    <h3 className="text-xs font-semibold">Пробег и простой</h3>
+                    <ChevronDown className="size-3 text-muted-foreground" />
+                  </CollapsibleTrigger>
+                  <CollapsibleContent>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-0.5 pl-5">
+                      <DetailRow label="Пробег начало" value={r.mileageStart != null ? `${new Intl.NumberFormat('ru-RU').format(r.mileageStart)} км` : null} />
+                      <DetailRow label="Пробег конец" value={r.mileageEnd != null ? `${new Intl.NumberFormat('ru-RU').format(r.mileageEnd)} км` : null} />
+                      {(r.mileageStart != null && r.mileageEnd != null) && <DetailRow label="Разница пробега" value={`${new Intl.NumberFormat('ru-RU').format(r.mileageEnd! - r.mileageStart!)} км`} />}
+                      <DetailRow label="Время простоя" value={r.downtimeHours != null ? `${r.downtimeHours} ч.` : null} />
+                    </div>
+                  </CollapsibleContent>
+                </Collapsible>
+              )}
+
+              {/* Подрядчик */}
+              {(r.contractor || r.contractorPhone || r.contractorEmail) && (
+                <Collapsible defaultOpen>
+                  <CollapsibleTrigger className="flex items-center gap-1.5 mb-1.5 w-full text-left hover:text-foreground transition-colors">
+                    <span className="text-muted-foreground"><Building2 className="size-3.5" /></span>
+                    <h3 className="text-xs font-semibold">Подрядчик</h3>
+                    <ChevronDown className="size-3 text-muted-foreground" />
+                  </CollapsibleTrigger>
+                  <CollapsibleContent>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-0.5 pl-5">
+                      <DetailRow label="Подрядчик" value={r.contractor} />
+                      <DetailRow label="Телефон" value={r.contractorPhone ? <a href={`tel:${r.contractorPhone}`} className="text-primary hover:underline flex items-center gap-1"><Phone className="size-3" />{r.contractorPhone}</a> : null} />
+                      <DetailRow label="Email" value={r.contractorEmail ? <a href={`mailto:${r.contractorEmail}`} className="text-primary hover:underline flex items-center gap-1"><Mail className="size-3" />{r.contractorEmail}</a> : null} />
+                    </div>
+                  </CollapsibleContent>
+                </Collapsible>
+              )}
+
+              {/* Результат */}
+              {(r.workPerformed || r.spareParts || r.nextInspection) && (
+                <Collapsible>
+                  <CollapsibleTrigger className="flex items-center gap-1.5 mb-1.5 w-full text-left hover:text-foreground transition-colors">
+                    <span className="text-muted-foreground"><ClipboardCheck className="size-3.5" /></span>
+                    <h3 className="text-xs font-semibold">Результат</h3>
+                    <ChevronDown className="size-3 text-muted-foreground" />
+                  </CollapsibleTrigger>
+                  <CollapsibleContent>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-0.5 pl-5">
+                      <DetailRow label="Выполненные работы" value={r.workPerformed} />
+                      <DetailRow label="Запчасти" value={r.spareParts} />
+                      <DetailRow label="Следующий ТО" value={formatDate(r.nextInspection)} />
+                    </div>
+                  </CollapsibleContent>
+                </Collapsible>
+              )}
+
+              {/* Гарантия и страховка */}
+              {(r.warrantyRepair || r.insuranceClaim || r.insuranceNumber) && (
+                <Collapsible>
+                  <CollapsibleTrigger className="flex items-center gap-1.5 mb-1.5 w-full text-left hover:text-foreground transition-colors">
+                    <span className="text-muted-foreground"><Shield className="size-3.5" /></span>
+                    <h3 className="text-xs font-semibold">Гарантия и страховка</h3>
+                    <ChevronDown className="size-3 text-muted-foreground" />
+                  </CollapsibleTrigger>
+                  <CollapsibleContent>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-0.5 pl-5">
+                      <DetailRow label="Гарантийный ремонт" value={r.warrantyRepair ? <span className="text-emerald-600 dark:text-emerald-400 flex items-center gap-1"><CheckCircle2 className="size-3" />Да</span> : <span className="text-muted-foreground">Нет</span>} />
+                      <DetailRow label="Страховой случай" value={r.insuranceClaim ? <span className="text-emerald-600 dark:text-emerald-400 flex items-center gap-1"><CheckCircle2 className="size-3" />Да</span> : <span className="text-muted-foreground">Нет</span>} />
+                      <DetailRow label="Номер страховки" value={r.insuranceNumber} />
+                    </div>
+                  </CollapsibleContent>
+                </Collapsible>
+              )}
+
+              {/* Заметки */}
+              {r.notes && (
+                <Collapsible>
+                  <CollapsibleTrigger className="flex items-center gap-1.5 mb-1.5 w-full text-left hover:text-foreground transition-colors">
+                    <span className="text-muted-foreground"><StickyNote className="size-3.5" /></span>
+                    <h3 className="text-xs font-semibold">Заметки</h3>
+                    <ChevronDown className="size-3 text-muted-foreground" />
+                  </CollapsibleTrigger>
+                  <CollapsibleContent>
+                    <div className="pl-5">
+                      <p className="text-xs text-muted-foreground whitespace-pre-wrap">{r.notes}</p>
+                    </div>
+                  </CollapsibleContent>
+                </Collapsible>
+              )}
 
               {/* Assigned Masters */}
               <RepairMastersSection repair={r} employees={employees} onRefresh={onRefresh} />
@@ -4092,46 +6285,55 @@ function RepairDetailDialog({ open, onOpenChange, repair, loading, fullPhoto, se
                 <div className="col-span-2">
                   <div className="flex items-center justify-between mb-2">
                     <Button size="sm" variant="outline" className="h-7 gap-1 text-[11px]" onClick={() => onAddStage(r.id)}><Plus className="size-3" />Добавить этап</Button>
-                    {r.stages && r.stages.length > 0 && (
-                      <span className="text-[10px] text-muted-foreground">Итого по этапам: {formatPrice(r.stages.reduce((s, st) => s + (st.cost || 0), 0))}</span>
+                    {totalStages > 0 && (
+                      <span className="text-[10px] text-muted-foreground">Итого по этапам: {formatPrice(stagesCost)}</span>
                     )}
                   </div>
-                  {r.stages && r.stages.length > 0 ? (
+                  {totalStages > 0 ? (
                     <div className="relative pl-4">
-                      {/* Vertical timeline line */}
                       <div className="absolute left-[7px] top-2 bottom-2 w-px bg-border" />
                       <div className="space-y-2">
-                        {r.stages.map((stage, si) => {
+                        {r.stages!.map((stage, si) => {
                           const stageDays = stage.startDate ? Math.ceil(((stage.endDate ? new Date(stage.endDate) : new Date()).getTime() - new Date(stage.startDate).getTime()) / (1000*60*60*24)) : null
+                          const actualDuration = stage.startDate && stage.endDate ? Math.ceil((new Date(stage.endDate).getTime() - new Date(stage.startDate).getTime()) / (1000*60*60*24)) : null
                           return (
                             <div key={stage.id} className="relative flex items-start gap-2">
-                              {/* Timeline dot */}
                               <button
                                 className="shrink-0 z-10 mt-1"
                                 onClick={() => {
-                                  const nextStatus = stage.status === 'pending' ? 'in_progress' : stage.status === 'in_progress' ? 'completed' : 'pending'
+                                  const nextStatus = stage.status === 'pending' ? 'in_progress' : stage.status === 'in_progress' ? 'completed' : stage.status === 'paused' ? 'in_progress' : 'pending'
                                   fetch(`/api/repairs/${r.id}/stages`, {
                                     method: 'PUT',
                                     headers: { 'Content-Type': 'application/json' },
-                                    body: JSON.stringify({ stageId: stage.id, status: nextStatus })
-                                  }).then(res => { if (res.ok) { toast.success('Статус обновлён'); onRefresh() } else toast.error('Ошибка') }).catch(() => toast.error('Ошибка'))
+                                    body: JSON.stringify({ stageId: stage.id, status: nextStatus, startDate: nextStatus === 'in_progress' && !stage.startDate ? new Date().toISOString() : undefined, endDate: nextStatus === 'completed' ? new Date().toISOString() : undefined })
+                                  }).then(res => { if (res.ok) { toast.success(`Этап: ${STAGE_STATUS_MAP[nextStatus]?.label || nextStatus}`); onRefresh() } else toast.error('Ошибка') }).catch(() => toast.error('Ошибка'))
                                 }}
                                 aria-label="Переключить статус"
                               >
-                                {stage.status === 'completed' ? <CheckCircle2 className="size-4 text-emerald-500" /> : stage.status === 'in_progress' ? <Clock className="size-4 text-amber-500" /> : <XCircle className="size-4 text-gray-400" />}
+                                {stage.status === 'completed' ? <CheckCircle2 className="size-4 text-emerald-500" /> : stage.status === 'in_progress' ? <Clock className="size-4 text-amber-500" /> : stage.status === 'paused' ? <PauseCircle className="size-4 text-blue-500" /> : <XCircle className="size-4 text-gray-400" />}
                               </button>
                               <div className="flex-1 min-w-0 p-2 rounded-md border bg-card/50">
                                 <div className="flex items-center gap-1.5">
                                   <p className="text-xs font-medium">{stage.name}</p>
                                   {statusBadge(stage.status, STAGE_STATUS_MAP)}
-                                  {si + 1 < (r.stages?.length || 0) && <span className="text-[9px] text-muted-foreground">#{si + 1}</span>}
+                                  {si + 1 < totalStages && <span className="text-[9px] text-muted-foreground">#{si + 1}</span>}
                                 </div>
                                 {stage.description && <p className="text-[10px] text-muted-foreground">{stage.description}</p>}
                                 <div className="flex flex-wrap gap-2 mt-0.5 text-[10px] text-muted-foreground">
                                   {stage.performer && <span>Исполнитель: {stage.performer}</span>}
                                   {stage.cost != null && <span>Стоимость: {formatPrice(stage.cost)}</span>}
-                                  {stageDays != null && <span>Длительность: {stageDays} дн.</span>}
+                                  {stage.estimatedDuration != null && <span>План: {stage.estimatedDuration} дн.</span>}
+                                  {stageDays != null && <span>Факт: {stageDays} дн.</span>}
+                                  {stage.estimatedDuration != null && actualDuration != null && actualDuration !== stage.estimatedDuration && (
+                                    <span className={actualDuration > stage.estimatedDuration ? 'text-red-600 dark:text-red-400 font-medium' : 'text-emerald-600 dark:text-emerald-400 font-medium'}>
+                                      ({actualDuration > stage.estimatedDuration ? '+' : ''}{actualDuration - stage.estimatedDuration} дн.)
+                                    </span>
+                                  )}
                                 </div>
+                                {stage.notes && <p className="text-[10px] text-muted-foreground mt-0.5 italic">📝 {stage.notes}</p>}
+                                {stage.status === 'in_progress' && stage.startDate && (
+                                  <div className="mt-1"><Progress value={Math.min(100, Math.round(((Date.now() - new Date(stage.startDate).getTime()) / (1000*60*60*24*(stage.estimatedDuration || 7))) * 100))} className="h-1" /></div>
+                                )}
                                 <div className="flex gap-0.5 shrink-0 mt-1">
                                   <Button size="sm" variant="ghost" className="size-6 p-0" onClick={() => onEditStage(stage, r.id)} aria-label="Редактировать этап"><Edit className="size-3" /></Button>
                                   <Button size="sm" variant="ghost" className="size-6 p-0 text-destructive hover:text-destructive" onClick={() => onDeleteStage(stage.id, r.id)} aria-label="Удалить этап"><Trash2 className="size-3" /></Button>
@@ -4152,18 +6354,41 @@ function RepairDetailDialog({ open, onOpenChange, repair, loading, fullPhoto, se
                 </div>
               </DetailSection>
 
-              {/* Photos */}
+              {/* Photos with category filter */}
               <DetailSection title="Фотографии" icon={<Camera className="size-3.5" />}>
                 <div className="col-span-2">
-                  <Button size="sm" variant="outline" className="h-7 gap-1 text-[11px] mb-2" onClick={() => onUploadPhoto(r.id)}><Upload className="size-3" />Загрузить фото</Button>
-                  {r.photos && r.photos.length > 0 ? (
+                  <div className="flex items-center justify-between mb-2">
+                    <Button size="sm" variant="outline" className="h-7 gap-1 text-[11px]" onClick={() => onUploadPhoto(r.id)}><Upload className="size-3" />Загрузить фото</Button>
+                  </div>
+                  {/* Category filter tabs */}
+                  {(r.photos || []).length > 0 && (
+                    <div className="flex flex-wrap gap-1 mb-2">
+                      <button onClick={() => setPhotoCatFilter('all')} className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium transition-colors ${photoCatFilter === 'all' ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground hover:bg-muted/80'}`}>Все ({photoCounts.all})</button>
+                      {Object.entries(REPAIR_PHOTO_CATEGORY_MAP).map(([k, v]) => {
+                        const count = photoCounts[k] || 0
+                        if (count === 0) return null
+                        return (
+                          <button key={k} onClick={() => setPhotoCatFilter(k)} className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium transition-colors ${photoCatFilter === k ? v.color : 'bg-muted text-muted-foreground hover:bg-muted/80'}`}>{v.label} ({count})</button>
+                        )
+                      })}
+                    </div>
+                  )}
+                  {filteredPhotos.length > 0 ? (
                     <div className="grid grid-cols-3 sm:grid-cols-4 gap-1.5">
-                      {r.photos.map(p => (
-                        <div key={p.id} className="relative group rounded-md overflow-hidden border bg-muted aspect-square cursor-pointer" onClick={() => setFullPhoto(p.url)}>
+                      {filteredPhotos.map((p, idx) => (
+                        <div key={p.id} className="relative group rounded-md overflow-hidden border bg-muted aspect-square cursor-pointer" onClick={() => { setLightboxIdx((r.photos || []).indexOf(p)) }}>
                           <img src={p.url} alt={p.description || ''} className="w-full h-full object-cover" loading="lazy" />
+                          {/* Category badge */}
+                          {p.category && REPAIR_PHOTO_CATEGORY_MAP[p.category] && (
+                            <span className={`absolute top-1 left-1 inline-flex items-center rounded px-1 py-0.5 text-[8px] font-medium ${REPAIR_PHOTO_CATEGORY_MAP[p.category].color}`}>{REPAIR_PHOTO_CATEGORY_MAP[p.category].label}</span>
+                          )}
                           <div className="absolute inset-0 bg-black/0 group-hover:bg-black/30 transition-colors flex items-center justify-center">
                             <Eye className="size-4 text-white opacity-0 group-hover:opacity-100 transition-opacity" />
                           </div>
+                          {/* Delete button on hover */}
+                          <Button size="sm" variant="ghost" className="absolute top-1 right-1 size-5 p-0 text-white bg-black/50 hover:bg-red-600 opacity-0 group-hover:opacity-100 transition-opacity" onClick={(e) => { e.stopPropagation(); handleDeletePhoto(p.id) }} aria-label="Удалить фото">
+                            <X className="size-3" />
+                          </Button>
                         </div>
                       ))}
                     </div>
@@ -4172,19 +6397,95 @@ function RepairDetailDialog({ open, onOpenChange, repair, loading, fullPhoto, se
                   )}
                 </div>
               </DetailSection>
+
+              {/* Comments section */}
+              <DetailSection title="Комментарии" icon={<MessageSquare className="size-3.5" />}>
+                <div className="col-span-2">
+                  <div className="space-y-2 max-h-48 overflow-y-auto">
+                    {commentsLoading ? (
+                      <div className="flex items-center gap-2 text-[10px] text-muted-foreground"><Loader2 className="size-3 animate-spin" />Загрузка...</div>
+                    ) : comments.length === 0 ? (
+                      <p className="text-[11px] text-muted-foreground">Нет комментариев</p>
+                    ) : (
+                      comments.map(c => (
+                        <div key={c.id} className="flex gap-2 p-1.5 rounded-md border bg-card/50">
+                          <div className="size-6 rounded-full bg-primary/10 flex items-center justify-center shrink-0">
+                            <User className="size-3 text-primary" />
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-1.5">
+                              <span className="text-[10px] font-medium">{c.author || 'Аноним'}</span>
+                              <span className="text-[9px] text-muted-foreground">{formatDateTime(c.createdAt)}</span>
+                            </div>
+                            <p className="text-[11px] whitespace-pre-wrap">{c.text}</p>
+                          </div>
+                          <Button size="sm" variant="ghost" className="size-5 p-0 text-muted-foreground hover:text-destructive shrink-0" onClick={() => handleDeleteComment(c.id)} aria-label="Удалить комментарий">
+                            <X className="size-3" />
+                          </Button>
+                        </div>
+                      ))
+                    )}
+                    <div ref={commentsEndRef} />
+                  </div>
+                  {/* Add comment form */}
+                  <div className="flex gap-1.5 mt-2">
+                    <Input placeholder="Добавить комментарий..." value={commentText} onChange={e => setCommentText(e.target.value)} className="h-8 text-xs" onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleAddComment() } }} />
+                    <Button size="sm" className="h-8 px-3" onClick={handleAddComment} disabled={!commentText.trim()}><Send className="size-3" /></Button>
+                  </div>
+                </div>
+              </DetailSection>
             </div>
           )}
+
+          {/* Footer after content */}
+          <div className="sticky bottom-0 bg-card border-t pt-3 pb-2 -mx-4 sm:-mx-5 px-4 sm:px-5 mt-4 z-10">
+            <div className="flex flex-wrap gap-1.5 sm:gap-0 justify-end">
+              {r.status === 'in_progress' && (
+                <Button variant="outline" size="sm" className="h-8 gap-1 text-xs" onClick={() => setConfirmDialog({ open: true, title: 'Завершить ремонт?', desc: 'Ремонт будет отмечен как завершённый. Это действие можно отменить через редактирование.', action: () => { onComplete(r); setConfirmDialog(prev => ({ ...prev, open: false })) } })}><CheckCircle2 className="size-3.5" />Завершить</Button>
+              )}
+              {r.status === 'in_progress' && onPause && (
+                <Button variant="outline" size="sm" className="h-8 gap-1 text-xs" onClick={() => onPause(r)}><Pause className="size-3.5" />Приостановить</Button>
+              )}
+              {r.status === 'paused' && onResume && (
+                <Button variant="outline" size="sm" className="h-8 gap-1 text-xs" onClick={() => onResume(r)}><Play className="size-3.5" />Возобновить</Button>
+              )}
+              {(r.status === 'in_progress' || r.status === 'paused') && (
+                <Button variant="outline" size="sm" className="h-8 gap-1 text-xs text-red-600 hover:text-red-700" onClick={() => setConfirmDialog({ open: true, title: 'Отменить ремонт?', desc: 'Ремонт будет отмечен как отменённый.', action: () => { fetch(`/api/repairs/${r.id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status: 'cancelled' }) }).then(res => { if (res.ok) { toast.success('Ремонт отменён'); onRefresh() } else toast.error('Ошибка') }) ; setConfirmDialog(prev => ({ ...prev, open: false })) } })}><XCircle className="size-3.5" />Отменить</Button>
+              )}
+              {onDuplicate && (
+                <Button variant="outline" size="sm" className="h-8 gap-1 text-xs" onClick={() => onDuplicate(r)}><Copy className="size-3.5" />Дублировать</Button>
+              )}
+              <Button variant="outline" size="sm" className="h-8 gap-1 text-xs" onClick={() => onEdit(r)}><Edit className="size-3.5" />Редактировать</Button>
+              <Button variant="outline" size="sm" className="h-8 gap-1 text-xs" onClick={() => window.print()}><Printer className="size-3.5" />Печать</Button>
+              <Button variant="outline" size="sm" className="h-8 gap-1 text-xs" onClick={onRefresh}><RefreshCw className="size-3.5" />Обновить</Button>
+              <Button variant="destructive" size="sm" className="h-8 gap-1 text-xs" onClick={() => setConfirmDialog({ open: true, title: 'Удалить ремонт?', desc: 'Это действие необратимо. Все данные о ремонте будут удалены.', action: () => { onDelete(r); setConfirmDialog(prev => ({ ...prev, open: false })) } })}><Trash2 className="size-3.5" />Удалить</Button>
+            </div>
+          </div>
         </div>
 
-        <DialogFooter className="gap-1.5 sm:gap-0 flex-wrap">
-          {r.status === 'in_progress' && (
-            <Button variant="outline" size="sm" className="h-8 gap-1 text-xs" onClick={() => onComplete(r)}><CheckCircle2 className="size-3.5" />Завершить</Button>
-          )}
-          <Button variant="outline" size="sm" className="h-8 gap-1 text-xs" onClick={() => onEdit(r)}><Edit className="size-3.5" />Редактировать</Button>
-          <Button variant="outline" size="sm" className="h-8 gap-1 text-xs" onClick={() => window.print()}><Printer className="size-3.5" />Печать</Button>
-          <Button variant="outline" size="sm" className="h-8 gap-1 text-xs" onClick={onRefresh}><Activity className="size-3.5" />Обновить</Button>
-          <Button variant="destructive" size="sm" className="h-8 gap-1 text-xs" onClick={() => onDelete(r)}><Trash2 className="size-3.5" />Удалить</Button>
-        </DialogFooter>
+        {/* Lightbox */}
+        {lightboxIdx >= 0 && (r.photos || []).length > 0 && (
+          <div className="fixed inset-0 z-50 bg-black/90 flex items-center justify-center" onClick={() => setLightboxIdx(-1)}>
+            <button className="absolute top-4 right-4 text-white size-8 hover:bg-white/20 rounded-full flex items-center justify-center" onClick={() => setLightboxIdx(-1)}><X className="size-5" /></button>
+            {lightboxIdx > 0 && <button className="absolute left-4 top-1/2 -translate-y-1/2 text-white size-10 hover:bg-white/20 rounded-full flex items-center justify-center" onClick={e => { e.stopPropagation(); setLightboxIdx(lightboxIdx - 1) }}><ChevronLeft className="size-6" /></button>}
+            {lightboxIdx < (r.photos || []).length - 1 && <button className="absolute right-4 top-1/2 -translate-y-1/2 text-white size-10 hover:bg-white/20 rounded-full flex items-center justify-center" onClick={e => { e.stopPropagation(); setLightboxIdx(lightboxIdx + 1) }}><ChevronRight className="size-6" /></button>}
+            <img src={r.photos![lightboxIdx]?.url} alt="" className="max-h-[85vh] max-w-[90vw] object-contain" onClick={e => e.stopPropagation()} />
+            <div className="absolute bottom-4 left-1/2 -translate-x-1/2 text-white text-xs">{lightboxIdx + 1} / {(r.photos || []).length}</div>
+          </div>
+        )}
+
+        {/* Confirm dialog */}
+        <AlertDialog open={confirmDialog.open} onOpenChange={v => setConfirmDialog(prev => ({ ...prev, open: v }))}>
+          <AlertDialogContent>
+            <AlertDialogHeader><AlertDialogTitle>{confirmDialog.title}</AlertDialogTitle><AlertDialogDescription>{confirmDialog.desc}</AlertDialogDescription></AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Отмена</AlertDialogCancel>
+              <AlertDialogAction onClick={confirmDialog.action}>Подтвердить</AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+
+
       </DialogContent>
     </Dialog>
   )
@@ -4207,21 +6508,37 @@ function RepairFormDialog({ open, onOpenChange, editData, equipmentId, equipment
 
   useEffect(() => {
     if (editData) {
+      const sd = editData.startDate ? toLocalDate(editData.startDate) : toLocalDate(new Date())
+      // Auto-calculate estimatedEndDate = startDate + 7 days if not set
+      const autoEstEnd = editData.estimatedEndDate ? toLocalDate(editData.estimatedEndDate) : toLocalDate(new Date(new Date(sd).getTime() + 7 * 24 * 60 * 60 * 1000))
       setForm({
         equipmentId: editData.equipmentId, description: editData.description || '', reason: editData.reason || '',
-        startDate: editData.startDate ? toLocalDate(editData.startDate) : toLocalDate(new Date()),
+        startDate: sd,
         endDate: editData.endDate ? toLocalDate(editData.endDate) : '',
+        estimatedEndDate: autoEstEnd,
         status: editData.status || 'in_progress', cost: editData.cost?.toString() || '',
+        estimatedCost: editData.estimatedCost?.toString() || '',
         contractor: editData.contractor || '', contractorPhone: editData.contractorPhone || '',
+        contractorEmail: editData.contractorEmail || '',
+        location: editData.location || '',
+        mileageStart: editData.mileageStart?.toString() || '',
+        mileageEnd: editData.mileageEnd?.toString() || '',
+        downtimeHours: editData.downtimeHours?.toString() || '',
+        warrantyRepair: editData.warrantyRepair ? 'true' : 'false',
+        insuranceClaim: editData.insuranceClaim ? 'true' : 'false',
+        insuranceNumber: editData.insuranceNumber || '',
+        priority: editData.priority || 'medium',
+        repairType: editData.repairType || 'planned',
         workPerformed: editData.workPerformed || '', spareParts: editData.spareParts || '',
         nextInspection: editData.nextInspection ? toLocalDate(editData.nextInspection) : '',
         notes: editData.notes || '',
       })
-      // Pre-fill existing masters
       setSelectedMasters(editData.masters?.map(m => ({ employeeId: m.employeeId, role: m.role })) || [])
       setStages([])
     } else {
-      setForm({ equipmentId: equipmentId || '', startDate: toLocalDate(new Date()), status: 'in_progress' })
+      const sd = toLocalDate(new Date())
+      const autoEstEnd = toLocalDate(new Date(new Date(sd).getTime() + 7 * 24 * 60 * 60 * 1000))
+      setForm({ equipmentId: equipmentId || '', startDate: sd, estimatedEndDate: autoEstEnd, status: 'in_progress', priority: 'medium', repairType: 'planned', warrantyRepair: 'false', insuranceClaim: 'false' })
       setSelectedMasters([])
       setStages([])
     }
@@ -4245,12 +6562,56 @@ function RepairFormDialog({ open, onOpenChange, editData, equipmentId, equipment
 
   const availableEmployees = employees.filter(e => e.status === 'active' && !selectedMasters.some(m => m.employeeId === e.id))
 
+  // Calculate cost from stages
+  const calcCostFromStages = () => {
+    const stageCosts = stages.reduce((sum, s) => sum + (parseFloat((s as any).cost) || 0), 0)
+    if (stageCosts > 0) setF('cost', stageCosts.toString())
+  }
+
+  // Copy from last repair
+  const copyFromLastRepair = async () => {
+    if (!f('equipmentId')) { toast.error('Сначала выберите технику'); return }
+    try {
+      const res = await fetch(`/api/repairs?equipmentId=${f('equipmentId')}&limit=1`)
+      if (!res.ok) throw new Error()
+      const data = await res.json()
+      const lastRepair = Array.isArray(data) ? data[0] : null
+      if (!lastRepair) { toast.error('Нет предыдущих ремонтов для этой техники'); return }
+      setForm(prev => ({
+        ...prev,
+        contractor: lastRepair.contractor || prev.contractor,
+        contractorPhone: lastRepair.contractorPhone || prev.contractorPhone,
+        contractorEmail: lastRepair.contractorEmail || prev.contractorEmail,
+        location: lastRepair.location || prev.location,
+        priority: lastRepair.priority || prev.priority,
+        repairType: lastRepair.repairType || prev.repairType,
+      }))
+      toast.success('Данные скопированы из предыдущего ремонта')
+    } catch { toast.error('Ошибка загрузки данных') }
+  }
+
+  // Add stage templates
+  const addStageTemplate = (template: typeof STAGE_TEMPLATES[number]) => {
+    setStages([...stages, { name: template.name, description: template.description }])
+  }
+
   const handleSave = async () => {
     if (!f('equipmentId')) { toast.error('Выберите технику'); return }
     if (!f('description').trim()) { toast.error('Укажите описание ремонта'); return }
     setSaving(true)
     try {
-      const body = { ...form, stages: editData ? undefined : stages.filter(s => s.name.trim()), masters: selectedMasters }
+      const body: Record<string, unknown> = {
+        ...form,
+        cost: f('cost') ? parseFloat(f('cost')) : null,
+        estimatedCost: f('estimatedCost') ? parseFloat(f('estimatedCost')) : null,
+        mileageStart: f('mileageStart') ? parseFloat(f('mileageStart')) : null,
+        mileageEnd: f('mileageEnd') ? parseFloat(f('mileageEnd')) : null,
+        downtimeHours: f('downtimeHours') ? parseFloat(f('downtimeHours')) : null,
+        warrantyRepair: f('warrantyRepair') === 'true',
+        insuranceClaim: f('insuranceClaim') === 'true',
+        stages: editData ? undefined : stages.filter(s => s.name.trim()),
+        masters: selectedMasters,
+      }
       const url = editData ? `/api/repairs/${editData.id}` : '/api/repairs'
       const method = editData ? 'PUT' : 'POST'
       const res = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
@@ -4263,25 +6624,99 @@ function RepairFormDialog({ open, onOpenChange, editData, equipmentId, equipment
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-2xl">
+      <DialogContent className="sm:max-w-2xl max-h-[90vh] flex flex-col">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">{editData ? <Edit className="size-4" /> : <Plus className="size-4" />}{editData ? 'Редактирование ремонта' : 'Новый ремонт'}</DialogTitle>
         </DialogHeader>
         <div className="space-y-3 px-4 sm:px-5 overflow-y-auto flex-1 min-h-0">
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <div className="sm:col-span-2"><Label className="text-xs">Техника *</Label><Select value={f('equipmentId')} onValueChange={v => setF('equipmentId', v)} disabled={!!editData}><SelectTrigger className="h-9 text-sm"><SelectValue placeholder="Выберите технику" /></SelectTrigger><SelectContent>{equipmentList.map(e => <SelectItem key={e.id} value={e.id}>{e.name}</SelectItem>)}</SelectContent></Select></div>
-            <div className="sm:col-span-2"><Label className="text-xs">Описание *</Label><Textarea value={f('description')} onChange={e => setF('description', e.target.value)} rows={2} autoFocus /></div>
-            <div><Label className="text-xs">Причина</Label><Input value={f('reason')} onChange={e => setF('reason', e.target.value)} /></div>
-            <div><Label className="text-xs">Статус</Label><Select value={f('status')} onValueChange={v => setF('status', v)}><SelectTrigger className="h-9 text-sm"><SelectValue /></SelectTrigger><SelectContent>{Object.entries(REPAIR_STATUS_MAP).map(([k, v]) => <SelectItem key={k} value={k}>{v.label}</SelectItem>)}</SelectContent></Select></div>
-            <div><Label className="text-xs">Дата начала</Label><Input type="date" value={f('startDate')} onChange={e => setF('startDate', e.target.value)} /></div>
-            <div><Label className="text-xs">Дата окончания</Label><Input type="date" value={f('endDate')} onChange={e => setF('endDate', e.target.value)} /></div>
-            <div><Label className="text-xs">Стоимость (₽)</Label><Input type="number" value={f('cost')} onChange={e => setF('cost', e.target.value)} /></div>
-            <div><Label className="text-xs">Подрядчик</Label><Input value={f('contractor')} onChange={e => setF('contractor', e.target.value)} /></div>
-            <div><Label className="text-xs">Телефон подрядчика</Label><Input value={f('contractorPhone')} onChange={e => setF('contractorPhone', e.target.value)} /></div>
-            <div className="sm:col-span-2"><Label className="text-xs">Выполненные работы</Label><Textarea value={f('workPerformed')} onChange={e => setF('workPerformed', e.target.value)} rows={2} /></div>
-            <div className="sm:col-span-2"><Label className="text-xs">Запчасти</Label><Textarea value={f('spareParts')} onChange={e => setF('spareParts', e.target.value)} rows={2} /></div>
-            <div><Label className="text-xs">Дата следующего ТО</Label><Input type="date" value={f('nextInspection')} onChange={e => setF('nextInspection', e.target.value)} /></div>
-            <div className="sm:col-span-2"><Label className="text-xs">Заметки</Label><Textarea value={f('notes')} onChange={e => setF('notes', e.target.value)} rows={2} /></div>
+          {/* Основная информация */}
+          <div className="border rounded-md p-3 space-y-3">
+            <h4 className="text-xs font-semibold flex items-center gap-1.5"><ClipboardList className="size-3.5 text-muted-foreground" />Основная информация</h4>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div className="sm:col-span-2"><Label className="text-xs">Техника *</Label><Select value={f('equipmentId')} onValueChange={v => setF('equipmentId', v)} disabled={!!editData}><SelectTrigger className="h-9 text-sm"><SelectValue placeholder="Выберите технику" /></SelectTrigger><SelectContent>{equipmentList.map(e => <SelectItem key={e.id} value={e.id}>{e.name}</SelectItem>)}</SelectContent></Select></div>
+              <div className="sm:col-span-2"><Label className="text-xs">Описание *</Label><Textarea value={f('description')} onChange={e => setF('description', e.target.value)} rows={2} autoFocus /></div>
+              <div><Label className="text-xs">Причина</Label><Input value={f('reason')} onChange={e => setF('reason', e.target.value)} /></div>
+              <div><Label className="text-xs">Местоположение</Label><Input value={f('location')} onChange={e => setF('location', e.target.value)} placeholder="Цех, участок..." /></div>
+              <div><Label className="text-xs">Приоритет</Label><Select value={f('priority')} onValueChange={v => setF('priority', v)}><SelectTrigger className="h-9 text-sm"><SelectValue /></SelectTrigger><SelectContent>{Object.entries(REPAIR_PRIORITY_MAP).map(([k, v]) => <SelectItem key={k} value={k}>{v.label}</SelectItem>)}</SelectContent></Select></div>
+              <div><Label className="text-xs">Тип ремонта</Label><Select value={f('repairType')} onValueChange={v => setF('repairType', v)}><SelectTrigger className="h-9 text-sm"><SelectValue /></SelectTrigger><SelectContent>{Object.entries(REPAIR_TYPE_MAP).map(([k, v]) => <SelectItem key={k} value={k}>{v.label}</SelectItem>)}</SelectContent></Select></div>
+              <div><Label className="text-xs">Статус</Label><Select value={f('status')} onValueChange={v => setF('status', v)}><SelectTrigger className="h-9 text-sm"><SelectValue /></SelectTrigger><SelectContent>{Object.entries(REPAIR_STATUS_MAP).map(([k, v]) => <SelectItem key={k} value={k}>{v.label}</SelectItem>)}</SelectContent></Select></div>
+            </div>
+          </div>
+
+          {/* Сроки и стоимость */}
+          <div className="border rounded-md p-3 space-y-3">
+            <h4 className="text-xs font-semibold flex items-center gap-1.5"><CalendarDays className="size-3.5 text-muted-foreground" />Сроки и стоимость</h4>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div><Label className="text-xs">Дата начала</Label><Input type="date" value={f('startDate')} onChange={e => { setF('startDate', e.target.value); if (!editData) { setF('estimatedEndDate', toLocalDate(new Date(new Date(e.target.value).getTime() + 7 * 24 * 60 * 60 * 1000))) } }} /></div>
+              <div><Label className="text-xs">Дата окончания</Label><Input type="date" value={f('endDate')} onChange={e => setF('endDate', e.target.value)} /></div>
+              <div><Label className="text-xs">Плановая дата окончания</Label><Input type="date" value={f('estimatedEndDate')} onChange={e => setF('estimatedEndDate', e.target.value)} /></div>
+              <div><Label className="text-xs">Стоимость (₽)</Label><Input type="number" value={f('cost')} onChange={e => setF('cost', e.target.value)} /></div>
+              <div><Label className="text-xs">Плановая стоимость (₽)</Label><Input type="number" value={f('estimatedCost')} onChange={e => setF('estimatedCost', e.target.value)} /></div>
+              {f('cost') && f('estimatedCost') && (
+                <div className="flex items-end">
+                  <div className="text-[10px] text-muted-foreground">
+                    Отклонение: {Math.round(((parseFloat(f('cost')) - parseFloat(f('estimatedCost'))) / parseFloat(f('estimatedCost'))) * 100)}%
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Пробег и простой */}
+          <div className="border rounded-md p-3 space-y-3">
+            <h4 className="text-xs font-semibold flex items-center gap-1.5"><Gauge className="size-3.5 text-muted-foreground" />Пробег и простой</h4>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div><Label className="text-xs">Пробег начало (км)</Label><Input type="number" value={f('mileageStart')} onChange={e => setF('mileageStart', e.target.value)} /></div>
+              <div><Label className="text-xs">Пробег конец (км)</Label><Input type="number" value={f('mileageEnd')} onChange={e => setF('mileageEnd', e.target.value)} disabled={!editData} /></div>
+              <div><Label className="text-xs">Время простоя (ч)</Label><Input type="number" step="0.5" value={f('downtimeHours')} onChange={e => setF('downtimeHours', e.target.value)} /></div>
+            </div>
+          </div>
+
+          {/* Подрядчик */}
+          <div className="border rounded-md p-3 space-y-3">
+            <div className="flex items-center justify-between">
+              <h4 className="text-xs font-semibold flex items-center gap-1.5"><Building2 className="size-3.5 text-muted-foreground" />Подрядчик</h4>
+              {!editData && <Button size="sm" variant="ghost" className="h-6 gap-1 text-[10px]" onClick={copyFromLastRepair}><Copy className="size-3" />Из предыдущего</Button>}
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div><Label className="text-xs">Подрядчик</Label><Input value={f('contractor')} onChange={e => setF('contractor', e.target.value)} /></div>
+              <div><Label className="text-xs">Телефон подрядчика</Label><Input value={f('contractorPhone')} onChange={e => setF('contractorPhone', e.target.value)} /></div>
+              <div><Label className="text-xs">Email подрядчика</Label><Input type="email" value={f('contractorEmail')} onChange={e => setF('contractorEmail', e.target.value)} /></div>
+            </div>
+          </div>
+
+          {/* Гарантия и страховка */}
+          <div className="border rounded-md p-3 space-y-3">
+            <h4 className="text-xs font-semibold flex items-center gap-1.5"><Shield className="size-3.5 text-muted-foreground" />Гарантия и страховка</h4>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div className="flex items-center gap-2">
+                <Checkbox id="warrantyRepair" checked={f('warrantyRepair') === 'true'} onCheckedChange={v => setF('warrantyRepair', v ? 'true' : 'false')} />
+                <Label htmlFor="warrantyRepair" className="text-xs">Гарантийный ремонт</Label>
+              </div>
+              <div className="flex items-center gap-2">
+                <Checkbox id="insuranceClaim" checked={f('insuranceClaim') === 'true'} onCheckedChange={v => setF('insuranceClaim', v ? 'true' : 'false')} />
+                <Label htmlFor="insuranceClaim" className="text-xs">Страховой случай</Label>
+              </div>
+              {f('insuranceClaim') === 'true' && (
+                <div className="sm:col-span-2"><Label className="text-xs">Номер страховки</Label><Input value={f('insuranceNumber')} onChange={e => setF('insuranceNumber', e.target.value)} /></div>
+              )}
+            </div>
+          </div>
+
+          {/* Результат */}
+          <div className="border rounded-md p-3 space-y-3">
+            <h4 className="text-xs font-semibold flex items-center gap-1.5"><ClipboardCheck className="size-3.5 text-muted-foreground" />Результат</h4>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div className="sm:col-span-2"><Label className="text-xs">Выполненные работы</Label><Textarea value={f('workPerformed')} onChange={e => setF('workPerformed', e.target.value)} rows={2} /></div>
+              <div className="sm:col-span-2"><Label className="text-xs">Запчасти</Label><Textarea value={f('spareParts')} onChange={e => setF('spareParts', e.target.value)} rows={2} /></div>
+              <div><Label className="text-xs">Дата следующего ТО</Label><Input type="date" value={f('nextInspection')} onChange={e => setF('nextInspection', e.target.value)} /></div>
+            </div>
+          </div>
+
+          {/* Заметки */}
+          <div className="border rounded-md p-3 space-y-3">
+            <h4 className="text-xs font-semibold flex items-center gap-1.5"><StickyNote className="size-3.5 text-muted-foreground" />Заметки</h4>
+            <Textarea value={f('notes')} onChange={e => setF('notes', e.target.value)} rows={2} />
           </div>
 
           {/* Masters assignment */}
@@ -4335,8 +6770,22 @@ function RepairFormDialog({ open, onOpenChange, editData, equipmentId, equipment
           {!editData && (
             <div>
               <div className="flex items-center justify-between mb-1.5">
-                <Label className="text-xs">Начальные этапы</Label>
-                <Button size="sm" variant="outline" className="h-6 gap-1 text-[11px]" onClick={() => setStages([...stages, { name: '', description: '' }])}><Plus className="size-3" />Добавить</Button>
+                <Label className="text-xs flex items-center gap-1"><Settings2 className="size-3" />Начальные этапы</Label>
+                <div className="flex gap-1">
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button size="sm" variant="outline" className="h-6 gap-1 text-[11px]"><BookmarkCheck className="size-3" />Шаблоны</Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent>
+                      {STAGE_TEMPLATES.map((t, i) => (
+                        <DropdownMenuItem key={i} onClick={() => addStageTemplate(t)}>{t.name}</DropdownMenuItem>
+                      ))}
+                      <DropdownMenuSeparator />
+                      <DropdownMenuItem onClick={() => setStages(STAGE_TEMPLATES.map(t => ({ name: t.name, description: t.description })))}>Добавить все шаблоны</DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                  <Button size="sm" variant="outline" className="h-6 gap-1 text-[11px]" onClick={() => setStages([...stages, { name: '', description: '' }])}><Plus className="size-3" />Добавить</Button>
+                </div>
               </div>
               {stages.map((s, i) => (
                 <div key={i} className="flex gap-1.5 mb-1.5">
@@ -4563,18 +7012,21 @@ function StageFormDialog({ open, onOpenChange, repairId, editData, saving, setSa
 
   useEffect(() => {
     if (editData) {
-      setForm({ name: editData.name || '', description: editData.description || '', status: editData.status || 'pending', startDate: editData.startDate ? toLocalDate(editData.startDate) : '', endDate: editData.endDate ? toLocalDate(editData.endDate) : '', performer: editData.performer || '', cost: editData.cost?.toString() || '', sortOrder: editData.sortOrder?.toString() || '0' })
+      setForm({ name: editData.name || '', description: editData.description || '', status: editData.status || 'pending', startDate: editData.startDate ? toLocalDate(editData.startDate) : '', endDate: editData.endDate ? toLocalDate(editData.endDate) : '', performer: editData.performer || '', cost: editData.cost?.toString() || '', sortOrder: editData.sortOrder?.toString() || '0', estimatedDuration: editData.estimatedDuration?.toString() || '', notes: editData.notes || '' })
     } else { setForm({ status: 'pending', sortOrder: '0' }) }
   }, [editData, open])
 
   const f = (key: string) => form[key] || ''
   const setF = (key: string, value: string) => setForm(prev => ({ ...prev, [key]: value }))
 
+  // Auto-calculate actual duration display
+  const actualDuration = f('startDate') && f('endDate') ? Math.ceil((new Date(f('endDate')).getTime() - new Date(f('startDate')).getTime()) / (1000*60*60*24)) : null
+
   const handleSave = async () => {
     if (!f('name').trim()) { toast.error('Укажите название этапа'); return }
     setSaving(true)
     try {
-      const body: Record<string, unknown> = { name: f('name'), description: f('description') || null, status: f('status'), startDate: f('startDate') || null, endDate: f('endDate') || null, performer: f('performer') || null, cost: f('cost') ? parseFloat(f('cost')) : null, sortOrder: parseInt(f('sortOrder') || '0') }
+      const body: Record<string, unknown> = { name: f('name'), description: f('description') || null, status: f('status'), startDate: f('startDate') || null, endDate: f('endDate') || null, performer: f('performer') || null, cost: f('cost') ? parseFloat(f('cost')) : null, sortOrder: parseInt(f('sortOrder') || '0'), estimatedDuration: f('estimatedDuration') ? parseFloat(f('estimatedDuration')) : null, notes: f('notes') || null }
       if (editData) body.stageId = editData.id
       const res = await fetch(`/api/repairs/${repairId}/stages`, { method: editData ? 'PUT' : 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
       if (!res.ok) throw new Error()
@@ -4591,13 +7043,31 @@ function StageFormDialog({ open, onOpenChange, repairId, editData, saving, setSa
           <DialogTitle className="text-base">{editData ? 'Редактирование этапа' : 'Новый этап ремонта'}</DialogTitle>
         </DialogHeader>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 px-4 sm:px-5 overflow-y-auto flex-1 min-h-0">
-          <div className="sm:col-span-2"><Label className="text-xs">Название *</Label><Input value={f('name')} onChange={e => setF('name', e.target.value)} autoFocus /></div>
+          <div className="sm:col-span-2"><Label className="text-xs">Название *</Label>
+            {!editData && (
+              <div className="flex gap-1 mt-1">
+                {STAGE_TEMPLATES.slice(0, 4).map((t, i) => (
+                  <button key={i} type="button" className="text-[9px] rounded px-1.5 py-0.5 bg-muted hover:bg-muted/80 transition-colors" onClick={() => { setF('name', t.name); setF('description', t.description) }}>{t.name}</button>
+                ))}
+              </div>
+            )}
+            <Input value={f('name')} onChange={e => setF('name', e.target.value)} autoFocus className="mt-1" />
+          </div>
           <div className="sm:col-span-2"><Label className="text-xs">Описание</Label><Textarea value={f('description')} onChange={e => setF('description', e.target.value)} rows={2} /></div>
           <div><Label className="text-xs">Статус</Label><Select value={f('status')} onValueChange={v => setF('status', v)}><SelectTrigger className="h-9 text-sm"><SelectValue /></SelectTrigger><SelectContent>{Object.entries(STAGE_STATUS_MAP).map(([k, v]) => <SelectItem key={k} value={k}>{v.label}</SelectItem>)}</SelectContent></Select></div>
           <div><Label className="text-xs">Исполнитель</Label><Input value={f('performer')} onChange={e => setF('performer', e.target.value)} /></div>
           <div><Label className="text-xs">Дата начала</Label><Input type="date" value={f('startDate')} onChange={e => setF('startDate', e.target.value)} /></div>
           <div><Label className="text-xs">Дата окончания</Label><Input type="date" value={f('endDate')} onChange={e => setF('endDate', e.target.value)} /></div>
-          <div><Label className="text-xs">Стоимость (₽)</Label><Input type="number" value={f('cost')} onChange={e => setF('cost', e.target.value)} /></div>
+          <div><Label className="text-xs">Плановая длительность (дн.)</Label><Input type="number" value={f('estimatedDuration')} onChange={e => setF('estimatedDuration', e.target.value)} /></div>
+          <div>
+            <Label className="text-xs">Стоимость (₽)</Label><Input type="number" value={f('cost')} onChange={e => setF('cost', e.target.value)} />
+            {actualDuration != null && f('estimatedDuration') && actualDuration !== parseFloat(f('estimatedDuration')) && (
+              <p className={`text-[9px] mt-0.5 ${actualDuration > parseFloat(f('estimatedDuration')) ? 'text-red-600 dark:text-red-400' : 'text-emerald-600 dark:text-emerald-400'}`}>
+                Факт: {actualDuration} дн. ({actualDuration > parseFloat(f('estimatedDuration')) ? '+' : ''}{actualDuration - parseFloat(f('estimatedDuration'))} дн.)
+              </p>
+            )}
+          </div>
+          <div className="sm:col-span-2"><Label className="text-xs">Заметки</Label><Textarea value={f('notes')} onChange={e => setF('notes', e.target.value)} rows={2} placeholder="Дополнительные заметки по этапу..." /></div>
         </div>
         <DialogFooter>
           <Button size="sm" onClick={handleSave} disabled={saving}>{saving ? <Loader2 className="size-3.5 animate-spin" /> : <CheckCircle2 className="size-3.5" />}{editData ? 'Сохранить' : 'Добавить'}</Button>
@@ -4671,24 +7141,28 @@ function RepairPhotoUploadDialog({ open, onOpenChange, targetId, stages, onUploa
   targetId: string; stages: RepairStage[];
   onUploaded: () => void;
 }) {
-  const [file, setFile] = useState<File | null>(null)
+  const [files, setFiles] = useState<File[]>([])
   const [description, setDescription] = useState('')
   const [stageId, setStageId] = useState('')
+  const [category, setCategory] = useState('during')
   const [uploading, setUploading] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
-  useEffect(() => { if (!open) { setFile(null); setDescription(''); setStageId('') } }, [open])
+  useEffect(() => { if (!open) { setFiles([]); setDescription(''); setStageId(''); setCategory('during') } }, [open])
 
   const handleUpload = async () => {
-    if (!file) { toast.error('Выберите файл'); return }
+    if (files.length === 0) { toast.error('Выберите файл(ы)'); return }
     setUploading(true)
     try {
-      const formData = new FormData()
-      formData.append('file', file); formData.append('description', description)
-      if (stageId) formData.append('stageId', stageId)
-      const res = await fetch(`/api/repairs/${targetId}/photos`, { method: 'POST', body: formData })
-      if (!res.ok) throw new Error()
-      toast.success('Фото загружено')
+      for (const file of files) {
+        const formData = new FormData()
+        formData.append('file', file); formData.append('description', description)
+        formData.append('category', category)
+        if (stageId) formData.append('stageId', stageId)
+        const res = await fetch(`/api/repairs/${targetId}/photos`, { method: 'POST', body: formData })
+        if (!res.ok) throw new Error()
+      }
+      toast.success(`Загружено ${files.length} фото`)
       onUploaded()
     } catch { toast.error('Ошибка загрузки фото') }
     setUploading(false)
@@ -4702,18 +7176,29 @@ function RepairPhotoUploadDialog({ open, onOpenChange, targetId, stages, onUploa
         </DialogHeader>
         <div className="space-y-3 px-4 sm:px-5">
           <div>
-            <Label className="text-xs">Файл *</Label>
-            <input type="file" ref={fileInputRef} accept="image/*" onChange={e => setFile(e.target.files?.[0] || null)} className="hidden" />
-            <Button variant="outline" className="w-full gap-2 h-9 text-sm mt-1" onClick={() => fileInputRef.current?.click()}><ImagePlus className="size-3.5" />{file ? file.name : 'Выбрать файл'}</Button>
+            <Label className="text-xs">Файл(ы) *</Label>
+            <input type="file" ref={fileInputRef} accept="image/*" multiple onChange={e => setFiles(Array.from(e.target.files || []))} className="hidden" />
+            <Button variant="outline" className="w-full gap-2 h-9 text-sm mt-1" onClick={() => fileInputRef.current?.click()}><ImagePlus className="size-3.5" />{files.length > 0 ? `${files.length} файл(ов)` : 'Выбрать файл(ы)'}</Button>
           </div>
+          <div><Label className="text-xs">Категория</Label><Select value={category} onValueChange={setCategory}><SelectTrigger className="h-9 text-sm"><SelectValue /></SelectTrigger><SelectContent>{Object.entries(REPAIR_PHOTO_CATEGORY_MAP).map(([k, v]) => <SelectItem key={k} value={k}>{v.label}</SelectItem>)}</SelectContent></Select></div>
           <div><Label className="text-xs">Описание</Label><Input value={description} onChange={e => setDescription(e.target.value)} /></div>
           {stages.length > 0 && (
             <div><Label className="text-xs">Привязка к этапу</Label><Select value={stageId || '_none'} onValueChange={v => setStageId(v === '_none' ? '' : v)}><SelectTrigger className="h-9 text-sm"><SelectValue placeholder="Без привязки" /></SelectTrigger><SelectContent><SelectItem value="_none">Без привязки</SelectItem>{stages.map(s => <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>)}</SelectContent></Select></div>
           )}
-          {file && <div className="rounded-lg overflow-hidden border bg-muted aspect-video"><img src={URL.createObjectURL(file)} alt="Preview" className="w-full h-full object-contain" /></div>}
+          {/* Preview for files */}
+          {files.length > 0 && (
+            <div className="grid grid-cols-3 gap-1.5">
+              {files.slice(0, 6).map((file, i) => (
+                <div key={i} className="relative rounded-md overflow-hidden border bg-muted aspect-square">
+                  <img src={URL.createObjectURL(file)} alt={`Preview ${i}`} className="w-full h-full object-cover" />
+                  {i === 5 && files.length > 6 && <div className="absolute inset-0 bg-black/50 flex items-center justify-center text-white text-xs font-medium">+{files.length - 6}</div>}
+                </div>
+              ))}
+            </div>
+          )}
         </div>
         <DialogFooter>
-          <Button size="sm" onClick={handleUpload} disabled={uploading || !file}>{uploading ? <Loader2 className="size-3.5 animate-spin" /> : <Upload className="size-3.5" />}Загрузить</Button>
+          <Button size="sm" onClick={handleUpload} disabled={uploading || files.length === 0}>{uploading ? <Loader2 className="size-3.5 animate-spin" /> : <Upload className="size-3.5" />}Загрузить{files.length > 1 ? ` (${files.length})` : ''}</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
@@ -5049,14 +7534,14 @@ const TripsTab = React.memo(function TripsTab({ trips, equipment, crews, routeTe
                       <td className="py-1.5 px-2 hidden md:table-cell">
                         {t.distance != null ? <span className="inline-flex items-center gap-0.5 font-medium"><Navigation className="size-2 text-sky-500" />{t.distance} км</span> : <span className="text-muted-foreground">—</span>}
                         <div className="flex gap-1 mt-0.5">
-                          {t.avgSpeed != null && <span className="text-[9px] text-muted-foreground"><Gauge className="inline size-2 mr-0.5" />{t.avgSpeed} км/ч</span>}
-                          {t.maxSpeed != null && <span className={`text-[9px] ${t.maxSpeed > 90 ? 'text-red-500 font-medium' : 'text-muted-foreground'}`}>макс: {t.maxSpeed}</span>}
+                          {t.avgSpeed != null && t.avgSpeed > 0 && t.avgSpeed < 200 && <span className="text-[9px] text-muted-foreground"><Gauge className="inline size-2 mr-0.5" />{t.avgSpeed.toFixed(1)} км/ч</span>}
+                          {t.maxSpeed != null && t.maxSpeed > 0 && t.maxSpeed < 300 && <span className={`text-[9px] ${t.maxSpeed > 90 ? 'text-red-500 font-medium' : 'text-muted-foreground'}`}>макс: {t.maxSpeed}</span>}
                         </div>
                       </td>
                       <td className="py-1.5 px-2 hidden lg:table-cell">
-                        {t.fuelConsumed != null ? (
-                          <span className="inline-flex items-center gap-0.5 font-medium text-amber-600 dark:text-amber-400"><Fuel className="size-2" />{t.fuelConsumed} л</span>
-                        ) : '—'}
+                        {t.fuelConsumed != null && Math.abs(t.fuelConsumed) < 10000 ? (
+                          <span className="inline-flex items-center gap-0.5 font-medium text-amber-600 dark:text-amber-400"><Fuel className="size-2" />{t.fuelConsumed.toFixed(1)} л</span>
+                        ) : (t.fuelConsumed != null && Math.abs(t.fuelConsumed) >= 10000) ? <span className="text-[9px] text-yellow-500" title="Некорректные данные">⚠</span> : '—'}
                         <div className="flex gap-1 mt-0.5">
                           {t.refuelVolume != null && t.refuelVolume > 0 && <span className="inline-flex items-center gap-0.5 text-[9px] text-emerald-600 dark:text-emerald-400"><ArrowUpFromLine className="size-2" />+{t.refuelVolume}л</span>}
                           {t.plumVolume != null && t.plumVolume > 0 && <span className="inline-flex items-center gap-0.5 text-[9px] text-red-600 dark:text-red-400"><ArrowDownToLine className="size-2" />-{t.plumVolume}л</span>}
@@ -5064,7 +7549,7 @@ const TripsTab = React.memo(function TripsTab({ trips, equipment, crews, routeTe
                       </td>
                       <td className="py-1.5 px-2 hidden xl:table-cell">
                         <div className="space-y-0.5">
-                          {t.idleTime != null && <span className="text-[9px] text-muted-foreground"><Clock className="inline size-2 mr-0.5" />Простой: {formatDurationShort(t.idleTime)}</span>}
+                          {t.idleTime != null && t.idleTime > 0 && t.idleTime < 8640000 && <span className="text-[9px] text-muted-foreground"><Clock className="inline size-2 mr-0.5" />Простой: {formatDurationShort(t.idleTime)}</span>}
                           {(t.cost != null || t.revenue != null) && (
                             <div className="flex gap-1">
                               {t.cost != null && <span className="text-[9px] text-red-500">−{new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 0 }).format(t.cost)}₽</span>}
@@ -5129,6 +7614,7 @@ function TripDetailDialog({ open, onOpenChange, trip, loading, crews, onEdit, on
   const [routeMapLoading, setRouteMapLoading] = useState(false)
   const [routeMapTrackData, setRouteMapTrackData] = useState<any>(null)
   const [focusedPoint, setFocusedPoint] = useState<{ lat: number; lng: number; type: 'parking' | 'stop' | 'refuel' | 'plum'; label?: string } | null>(null)
+  const [routePointsCollapsed, setRoutePointsCollapsed] = useState(true)
 
   // ─── Complete trip dialog with refuel detection ─────────────
   const [completeDialog, setCompleteDialog] = useState<{
@@ -5708,19 +8194,19 @@ function TripDetailDialog({ open, onOpenChange, trip, loading, crews, onEdit, on
             <div className="space-y-4 py-2">
               {/* Trip summary dashboard */}
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                {t.tripDuration != null && <Card className="border-0 shadow-none bg-violet-50 dark:bg-violet-950/20 py-2"><CardContent className="p-2 text-center"><Timer className="size-4 text-violet-500 mx-auto mb-0.5" /><p className="text-xs font-bold text-violet-700 dark:text-violet-400">{fmtDur(t.tripDuration)}</p><p className="text-[9px] text-muted-foreground">Длительность поездок</p></CardContent></Card>}
-                {t.fuelConsumed != null && <Card className="border-0 shadow-none bg-amber-50 dark:bg-amber-950/20 py-2"><CardContent className="p-2 text-center"><Fuel className="size-4 text-amber-500 mx-auto mb-0.5" /><p className="text-xs font-bold text-amber-700 dark:text-amber-400">{t.fuelConsumed} л</p><p className="text-[9px] text-muted-foreground">Расход топлива</p></CardContent></Card>}
-                {t.avgFuelRate != null && <Card className="border-0 shadow-none bg-orange-50 dark:bg-orange-950/20 py-2"><CardContent className="p-2 text-center"><Droplets className="size-4 text-orange-500 mx-auto mb-0.5" /><p className="text-xs font-bold text-orange-700 dark:text-orange-400">{t.avgFuelRate} л/100км</p><p className="text-[9px] text-muted-foreground">Ср. расход</p></CardContent></Card>}
-                {t.refuelVolume != null && t.refuelVolume > 0 && <Card className="border-0 shadow-none bg-emerald-50 dark:bg-emerald-950/20 py-2"><CardContent className="p-2 text-center"><ArrowUpFromLine className="size-4 text-emerald-500 mx-auto mb-0.5" /><p className="text-xs font-bold text-emerald-700 dark:text-emerald-400">+{t.refuelVolume} л</p><p className="text-[9px] text-muted-foreground">Заправки</p></CardContent></Card>}
-                {t.engineHours != null && <Card className="border-0 shadow-none bg-sky-50 dark:bg-sky-950/20 py-2"><CardContent className="p-2 text-center"><Cog className="size-4 text-sky-500 mx-auto mb-0.5" /><p className="text-xs font-bold text-sky-700 dark:text-sky-400">{fmtDur(t.engineHours)}</p><p className="text-[9px] text-muted-foreground">Моточасы</p></CardContent></Card>}
-                {t.parkingsDuration != null && <Card className="border-0 shadow-none bg-rose-50 dark:bg-rose-950/20 py-2"><CardContent className="p-2 text-center"><Armchair className="size-4 text-rose-500 mx-auto mb-0.5" /><p className="text-xs font-bold text-rose-700 dark:text-rose-400">{fmtDur(t.parkingsDuration)}</p><p className="text-[9px] text-muted-foreground">Время стоянок</p></CardContent></Card>}
+                {t.tripDuration != null && t.tripDuration > 0 && t.tripDuration < 8640000 && <Card className="border-0 shadow-none bg-violet-50 dark:bg-violet-950/20 py-2"><CardContent className="p-2 text-center"><Timer className="size-4 text-violet-500 mx-auto mb-0.5" /><p className="text-xs font-bold text-violet-700 dark:text-violet-400">{fmtDur(t.tripDuration)}</p><p className="text-[9px] text-muted-foreground">Длительность</p></CardContent></Card>}
+                {t.fuelConsumed != null && Math.abs(t.fuelConsumed) < 10000 && <Card className="border-0 shadow-none bg-amber-50 dark:bg-amber-950/20 py-2"><CardContent className="p-2 text-center"><Fuel className="size-4 text-amber-500 mx-auto mb-0.5" /><p className="text-xs font-bold text-amber-700 dark:text-amber-400">{t.fuelConsumed.toFixed(1)} л</p><p className="text-[9px] text-muted-foreground">Расход топлива</p></CardContent></Card>}
+                {t.avgFuelRate != null && t.avgFuelRate > 0 && t.avgFuelRate < 200 && <Card className="border-0 shadow-none bg-orange-50 dark:bg-orange-950/20 py-2"><CardContent className="p-2 text-center"><Droplets className="size-4 text-orange-500 mx-auto mb-0.5" /><p className="text-xs font-bold text-orange-700 dark:text-orange-400">{t.avgFuelRate.toFixed(1)} л/100км</p><p className="text-[9px] text-muted-foreground">Ср. расход</p></CardContent></Card>}
+                {t.refuelVolume != null && t.refuelVolume > 0 && <Card className="border-0 shadow-none bg-emerald-50 dark:bg-emerald-950/20 py-2"><CardContent className="p-2 text-center"><ArrowUpFromLine className="size-4 text-emerald-500 mx-auto mb-0.5" /><p className="text-xs font-bold text-emerald-700 dark:text-emerald-400">+{t.refuelVolume.toFixed(1)} л</p><p className="text-[9px] text-muted-foreground">Заправки</p></CardContent></Card>}
+                {t.engineHours != null && t.engineHours > 0 && t.engineHours < 50000 && <Card className="border-0 shadow-none bg-sky-50 dark:bg-sky-950/20 py-2"><CardContent className="p-2 text-center"><Cog className="size-4 text-sky-500 mx-auto mb-0.5" /><p className="text-xs font-bold text-sky-700 dark:text-sky-400">{fmtDur(t.engineHours)}</p><p className="text-[9px] text-muted-foreground">Моточасы</p></CardContent></Card>}
+                {t.parkingsDuration != null && t.parkingsDuration > 0 && t.parkingsDuration < 8640000 && <Card className="border-0 shadow-none bg-rose-50 dark:bg-rose-950/20 py-2"><CardContent className="p-2 text-center"><Armchair className="size-4 text-rose-500 mx-auto mb-0.5" /><p className="text-xs font-bold text-rose-700 dark:text-rose-400">{fmtDur(t.parkingsDuration)}</p><p className="text-[9px] text-muted-foreground">Время стоянок</p></CardContent></Card>}
               </div>
               {/* Speed profile bar */}
-              {t.avgSpeed != null && t.maxSpeed != null && (
+              {t.avgSpeed != null && t.maxSpeed != null && t.avgSpeed > 0 && t.avgSpeed < 200 && t.maxSpeed > 0 && t.maxSpeed < 300 && (
                 <div className="rounded-lg border p-2">
                   <div className="flex items-center justify-between text-[10px] text-muted-foreground mb-1">
                     <span>Профиль скорости</span>
-                    <span>мин: {0} • ср: {t.avgSpeed} • макс: <span className={t.maxSpeed > 90 ? 'text-red-500 font-medium' : ''}>{t.maxSpeed}</span> км/ч</span>
+                    <span>мин: {0} • ср: {t.avgSpeed.toFixed(1)} • макс: <span className={t.maxSpeed > 90 ? 'text-red-500 font-medium' : ''}>{t.maxSpeed}</span> км/ч</span>
                   </div>
                   <div className="h-2 rounded-full bg-muted overflow-hidden flex">
                     <div className="h-full bg-emerald-400 rounded-l-full" style={{ width: `${Math.min((t.avgSpeed / t.maxSpeed) * 100, 100)}%` }} />
@@ -5730,7 +8216,7 @@ function TripDetailDialog({ open, onOpenChange, trip, loading, crews, onEdit, on
                 </div>
               )}
               {/* Fuel economy rating */}
-              {t.fuelConsumed != null && t.distance != null && t.distance > 0 && (
+              {t.fuelConsumed != null && t.distance != null && t.distance > 0 && Math.abs(t.fuelConsumed) < 10000 && (
                 <div className="rounded-lg border p-2">
                   <div className="flex items-center justify-between">
                     <span className="text-[10px] text-muted-foreground flex items-center gap-1"><Fuel className="size-3" />Экономичность</span>
@@ -5757,10 +8243,200 @@ function TripDetailDialog({ open, onOpenChange, trip, loading, crews, onEdit, on
                   } />
                 )}
               </DetailSection>
+
+              <DetailSection title="Груз" icon={<Package className="size-3.5" />}>
+                <DetailRow label="Груз" value={t.cargo} />
+                <DetailRow label="Вес (т)" value={t.cargoWeight?.toString()} />
+              </DetailSection>
+              <DetailSection title="Время" icon={<Calendar className="size-3.5" />}>
+                <DetailRow label="Начало рейса" value={formatDateTime(t.startDate)} />
+                <DetailRow label="Планируемое окончание" value={formatDateTime(t.plannedEndDate)} />
+                <DetailRow label="Окончание рейса" value={formatDateTime(t.endDate)} />
+                {isCompleted && t.tripDuration != null && (
+                  <DetailRow label="Длительность" value={fmtDur(t.tripDuration)} />
+                )}
+                {isCompleted && t.parkingsDuration != null && (
+                  <DetailRow label="Время стоянок" value={fmtDur(t.parkingsDuration)} />
+                )}
+              </DetailSection>
+              <DetailSection title="Экипаж" icon={<Users className="size-3.5" />}>
+                <DetailRow label="Экипаж" value={crew?.name || t.crew?.name} />
+                {crew?.members && crew.members.length > 0 && (
+                  <div className="col-span-2 space-y-0.5 pl-2">
+                    {crew.members.map(m => (
+                      <div key={m.id} className="flex items-center gap-1 text-[10px]">
+                        {m.employeeId ? <UserCheck className="size-3 text-primary" /> : <UserCircle className="size-3 text-muted-foreground" />}
+                        <span className={m.employeeId ? 'font-medium' : ''}>{m.fullName}</span>
+                        <span className="text-muted-foreground">({MEMBER_ROLE_MAP[m.role] || m.role})</span>
+                        {m.phone && <span className="text-muted-foreground">• {m.phone}</span>}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </DetailSection>
+              {/* ── ПОДРОБНЫЕ ПОКАЗАНИЯ (collapsible) ── */}
+              <Collapsible>
+                <CollapsibleTrigger className="flex items-center gap-1.5 w-full text-xs font-semibold hover:text-foreground transition-colors py-1.5 px-2 rounded hover:bg-muted/50">
+                  <CircuitBoard className="size-3.5 text-muted-foreground" />
+                  <span>Подробные показания</span>
+                  <ChevronRight className="size-3 text-muted-foreground transition-transform [[data-state=open]>&]:rotate-90" />
+                </CollapsibleTrigger>
+                <CollapsibleContent>
+                  <div className="space-y-2 mt-2">
+                    {/* ── ТОПЛИВО И ПРОБЕГ ── */}
+                    <DetailSection title="Топливо и пробег" icon={<Fuel className="size-3.5" />}>
+                      <DetailRow label="Топливо на старте (л)" value={t.fuelStart?.toString()} />
+                      <DetailRow label="Топливо на финише (л)" value={t.fuelEnd?.toString()} />
+                      <DetailRow label="Пробег на старте (км)" value={t.mileageStart?.toLocaleString('ru-RU')} />
+                      <DetailRow label="Пробег на финише (км)" value={t.mileageEnd?.toLocaleString('ru-RU')} />
+                      {(t.mileageStart != null && t.mileageEnd != null) && (
+                        <DetailRow label="Пройдено (км)" value={
+                          <span className="font-semibold text-emerald-600 dark:text-emerald-400">{(t.mileageEnd! - t.mileageStart!).toLocaleString('ru-RU')} км</span> as any
+                        } />
+                      )}
+                    </DetailSection>
+
+                    {/* ── АНАЛИТИКА ТРЕКЕРА ── */}
+                    <DetailSection title="Статистика рейса" icon={<Gauge className="size-3.5" />} extra={
+                      <Button variant="ghost" size="sm" className="h-6 text-[9px] gap-1 px-1.5" onClick={async () => {
+                        try {
+                          const res = await fetch(`/api/trips/${t.id}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'recalculate' }) })
+                          if (!res.ok) { const d = await res.json().catch(() => null); throw new Error(d?.error || 'Ошибка') }
+                          const data = await res.json()
+                          toast.success(data.message || 'Аналитика пересчитана')
+                          onRefresh()
+                        } catch (e: any) { toast.error(e.message || 'Ошибка пересчёта') }
+                      }} title="Пересчитать аналитику из Axenta">
+                        <RefreshCw className="size-3" />Пересчитать
+                      </Button>
+                    }>
+                      {/* Quick stats cards */}
+                      <div className="grid grid-cols-3 gap-2 mb-3">
+                        {t.distance != null && (
+                          <Card className="border-0 shadow-none bg-emerald-50 dark:bg-emerald-950/20 py-2">
+                            <CardContent className="p-2 text-center">
+                              <Route className="size-4 text-emerald-500 mx-auto mb-0.5" />
+                              <p className="text-xs font-bold text-emerald-700 dark:text-emerald-400">{t.distance.toFixed(1)} км</p>
+                              <p className="text-[9px] text-muted-foreground">Расстояние</p>
+                            </CardContent>
+                          </Card>
+                        )}
+                        {t.fuelConsumed != null && (
+                          <Card className="border-0 shadow-none bg-amber-50 dark:bg-amber-950/20 py-2">
+                            <CardContent className="p-2 text-center">
+                              <Fuel className="size-4 text-amber-500 mx-auto mb-0.5" />
+                              <p className="text-xs font-bold text-amber-700 dark:text-amber-400">{Math.abs(t.fuelConsumed) < 10000 ? t.fuelConsumed.toFixed(1) : '—'} л</p>
+                              <p className="text-[9px] text-muted-foreground">Расход</p>
+                            </CardContent>
+                          </Card>
+                        )}
+                        {t.avgFuelRate != null && t.avgFuelRate > 0 && t.avgFuelRate < 200 && (
+                          <Card className="border-0 shadow-none bg-blue-50 dark:bg-blue-950/20 py-2">
+                            <CardContent className="p-2 text-center">
+                              <Gauge className="size-4 text-blue-500 mx-auto mb-0.5" />
+                              <p className={`text-xs font-bold ${t.avgFuelRate < 15 ? 'text-emerald-700 dark:text-emerald-400' : t.avgFuelRate < 30 ? 'text-blue-700 dark:text-blue-400' : 'text-red-700 dark:text-red-400'}`}>{t.avgFuelRate.toFixed(1)}</p>
+                              <p className="text-[9px] text-muted-foreground">л/100км</p>
+                            </CardContent>
+                          </Card>
+                        )}
+                      </div>
+                      {/* Detail rows */}
+                      {t.distance != null && <DetailRow label="Расстояние" value={<span className="font-semibold text-emerald-600 dark:text-emerald-400">{t.distance.toFixed(1)} км</span> as any} />}
+                      {t.tripDuration != null && t.tripDuration > 0 && t.tripDuration < 8640000 && <DetailRow label="Время в пути" value={fmtDur(t.tripDuration)} />}
+                      {t.parkingsDuration != null && t.parkingsDuration > 0 && t.parkingsDuration < 8640000 && <DetailRow label="Время стоянок" value={fmtDur(t.parkingsDuration)} />}
+                      {t.avgSpeed != null && t.avgSpeed > 0 && t.avgSpeed < 200 && <DetailRow label="Средняя скорость" value={`${t.avgSpeed.toFixed(1)} км/ч`} />}
+                      {t.maxSpeed != null && t.maxSpeed > 0 && t.maxSpeed < 300 && <DetailRow label="Макс. скорость" value={<span className={t.maxSpeed > 90 ? 'text-red-500 font-medium' : ''}>{t.maxSpeed} км/ч</span> as any} />}
+                      {t.engineHours != null && t.engineHours > 0 && t.engineHours < 50000 && <DetailRow label="Моточасы" value={fmtDur(t.engineHours)} />}
+                      {t.idleTime != null && t.idleTime > 0 && t.idleTime < 8640000 && <DetailRow label="Холостой ход" value={fmtDur(t.idleTime)} />}
+                      {t.fuelConsumed != null && Math.abs(t.fuelConsumed) < 10000 && <DetailRow label="Расход топлива" value={<span className="font-semibold text-amber-600 dark:text-amber-400">{t.fuelConsumed.toFixed(1)} л</span> as any} />}
+                      {t.avgFuelRate != null && t.avgFuelRate > 0 && t.avgFuelRate < 200 && <DetailRow label="Средний расход" value={<span className={t.avgFuelRate < 15 ? 'text-emerald-600 dark:text-emerald-400' : t.avgFuelRate < 30 ? 'text-blue-600 dark:text-blue-400' : 'text-red-600 dark:text-red-400'}>{t.avgFuelRate.toFixed(1)} л/100км</span> as any} />}
+                      {t.refuelVolume != null && t.refuelVolume > 0 && <DetailRow label="Заправки" value={<span className="text-emerald-600 dark:text-emerald-400">+{t.refuelVolume.toFixed(1)} л</span> as any} />}
+                      {t.plumVolume != null && t.plumVolume > 0 && <DetailRow label="Сливы" value={<span className="font-semibold text-red-600 dark:text-red-400">-{t.plumVolume.toFixed(1)} л</span> as any} />}
+                      {/* Fuel efficiency indicator */}
+                      {t.fuelConsumed != null && t.distance != null && t.distance > 0 && Math.abs(t.fuelConsumed) < 10000 && (
+                        <div className="mt-2 p-2 rounded-lg bg-muted/50">
+                          <div className="flex items-center justify-between text-[10px] mb-1">
+                            <span className="text-muted-foreground">Эффективность расхода</span>
+                            <span className={`font-medium ${(() => { const rate = (t.fuelConsumed! / t.distance!) * 100; return rate < 15 ? 'text-emerald-600 dark:text-emerald-400' : rate < 25 ? 'text-amber-600 dark:text-amber-400' : 'text-red-600 dark:text-red-400' })()}`}>
+                              {(() => { const rate = (t.fuelConsumed! / t.distance!) * 100; return rate < 15 ? '✓ Отлично' : rate < 25 ? '• Норма' : '⚠ Высокий' })()}
+                            </span>
+                          </div>
+                          <div className="h-1.5 bg-muted rounded-full overflow-hidden">
+                            <div className={`h-full rounded-full ${(() => { const rate = (t.fuelConsumed! / t.distance!) * 100; return rate < 15 ? 'bg-emerald-500' : rate < 25 ? 'bg-amber-500' : 'bg-red-500' })()}`} style={{ width: `${Math.min((t.fuelConsumed! / t.distance!) * 100 / 40 * 100, 100)}%` }} />
+                          </div>
+                        </div>
+                      )}
+                      {/* Warning for invalid data */}
+                      {(t.engineHours != null && (t.engineHours < 0 || t.engineHours > 50000)) && (
+                        <div className="flex items-center gap-1.5 p-1.5 bg-yellow-50 dark:bg-yellow-900/20 rounded text-[10px] text-yellow-600 dark:text-yellow-400">
+                          <AlertTriangle className="size-3 shrink-0" />Моточасы содержат некорректные данные ({t.engineHours.toFixed(1)} ч). Нажмите «Пересчитать».
+                        </div>
+                      )}
+                      {(t.fuelConsumed != null && Math.abs(t.fuelConsumed) >= 10000) && (
+                        <div className="flex items-center gap-1.5 p-1.5 bg-yellow-50 dark:bg-yellow-900/20 rounded text-[10px] text-yellow-600 dark:text-yellow-400">
+                          <AlertTriangle className="size-3 shrink-0" />Расход топлива содержит некорректные данные ({t.fuelConsumed.toFixed(0)} л). Нажмите «Пересчитать».
+                        </div>
+                      )}
+                    </DetailSection>
+
+                    {/* ── ФИНАНСЫ ── */}
+                    {(t.cost != null || t.revenue != null) && (
+                      <DetailSection title="Финансы" icon={<DollarSign className="size-3.5" />}>
+                        {t.cost != null && <DetailRow label="Расходы" value={<span className="text-red-600 dark:text-red-400">{formatPrice(t.cost)}</span> as any} />}
+                        {t.revenue != null && <DetailRow label="Доходы" value={<span className="text-emerald-600 dark:text-emerald-400">{formatPrice(t.revenue)}</span> as any} />}
+                        {t.cost != null && t.revenue != null && <DetailRow label="Прибыль" value={<span className={`font-bold ${t.revenue - t.cost >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400'}`}>{formatPrice(t.revenue - t.cost)}</span> as any} />}
+                        {t.fuelConsumed != null && t.distance != null && t.distance > 0 && t.cost != null && <DetailRow label="Стоимость за км" value={`${(t.cost / t.distance).toFixed(2)} ₽/км`} />}
+                      </DetailSection>
+                    )}
+
+                    {/* ── СРАВНЕНИЕ ДАТЧИКОВ СТАРТ/ФИНИШ ── */}
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between">
+                        <h4 className="text-xs font-semibold flex items-center gap-1.5"><CircuitBoard className="size-3.5" />Датчики (старт / финиш)</h4>
+                      </div>
+
+                      {compareError && (
+                        <div className="flex items-center gap-2 p-2 bg-yellow-50 dark:bg-yellow-900/20 rounded-lg text-xs text-yellow-600 dark:text-yellow-400">
+                          <AlertTriangle className="size-3.5 shrink-0" />{compareError}
+                        </div>
+                      )}
+
+                      {applySuccess && (
+                        <div className="flex items-center gap-2 p-2 bg-emerald-50 dark:bg-emerald-900/20 rounded-lg text-xs text-emerald-600 dark:text-emerald-400">
+                          <CheckCircle2 className="size-3.5 shrink-0" />{applySuccess}
+                        </div>
+                      )}
+
+                      {compareData && !compareLoading && (
+                        <div className="space-y-2">
+                          {/* Apply buttons */}
+                          <div className="flex flex-wrap gap-1.5">
+                            {(t.status === 'planned' || t.status === 'in_progress') && compareData?.startSnapshot && (
+                              <Button variant="outline" size="sm" className="h-7 text-[10px] gap-1" onClick={applyStartValues}>
+                                <ArrowDownToLine className="size-3" />Заполнить начало
+                              </Button>
+                            )}
+                            {(t.status === 'in_progress' || t.status === 'completed') && compareData?.endSnapshot && (
+                              <Button variant="outline" size="sm" className="h-7 text-[10px] gap-1" onClick={applyEndValues}>
+                                <ArrowUpFromLine className="size-3" />Заполнить финиш
+                              </Button>
+                            )}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </CollapsibleContent>
+              </Collapsible>
+
               {/* ── ROUTE POINTS TIMELINE ── */}
               {t.routePoints && t.routePoints.length > 0 && (
                 <div>
-                  <div className="flex items-center gap-1.5 mb-1.5">
+                  <div
+                    className="flex items-center gap-1.5 mb-1.5 cursor-pointer select-none hover:bg-muted/40 -mx-1 px-1 py-0.5 rounded transition-colors"
+                    onClick={() => setRoutePointsCollapsed(!routePointsCollapsed)}
+                  >
+                    <ChevronDown className={`size-3.5 text-muted-foreground transition-transform duration-200 ${routePointsCollapsed ? '-rotate-90' : ''}`} />
                     <span className="text-muted-foreground"><MapPinned className="size-3.5" /></span>
                     <h3 className="text-xs font-semibold">Точки маршрута</h3>
                     <Badge variant="secondary" className="text-[9px] h-4 px-1.5">{t.routePoints.length}</Badge>
@@ -5773,60 +8449,62 @@ function TripDetailDialog({ open, onOpenChange, trip, loading, crews, onEdit, on
                       ) : null
                     })()}
                   </div>
-                  <div className="pl-2 space-y-0">
-                    {t.routePoints.map((rp, idx) => (
-                      <div key={rp.id} className="flex gap-2">
-                        {/* Timeline circle + line */}
-                        <div className="flex flex-col items-center w-6 shrink-0 pt-1">
-                          <div className={`size-5 rounded-full flex items-center justify-center text-[9px] font-bold shrink-0 ${
-                            idx === 0 ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-400' :
-                            idx === t.routePoints!.length - 1 ? 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-400' :
-                            'bg-primary/10 text-primary'
-                          }`}>
-                            {idx + 1}
-                          </div>
-                          {idx < t.routePoints!.length - 1 && (
-                            <div className="w-0.5 flex-1 bg-border/60 min-h-[16px]" />
-                          )}
-                        </div>
-                        {/* Point content */}
-                        <div className="flex-1 pb-2">
-                          <div className="flex items-center gap-1.5">
-                            <span className="text-xs font-medium">{rp.name}</span>
-                            {rp.distanceFromPrev != null && rp.distanceFromPrev > 0 && (
-                              <span className="text-[9px] text-sky-600 dark:text-sky-400 bg-sky-50 dark:bg-sky-950/30 px-1 py-0 rounded">
-                                +{rp.distanceFromPrev.toFixed(1)} км
-                              </span>
-                            )}
-                          </div>
-                          {rp.address && (
-                            <div className="text-[10px] text-muted-foreground flex items-center gap-0.5">
-                              <MapPin className="size-2.5 shrink-0" />{rp.address}
+                  <div className={`overflow-hidden transition-all duration-200 ${routePointsCollapsed ? 'max-h-0 opacity-0' : 'max-h-[2000px] opacity-100'}`}>
+                    <div className="pl-2 space-y-0">
+                      {t.routePoints.map((rp, idx) => (
+                        <div key={rp.id} className="flex gap-2">
+                          {/* Timeline circle + line */}
+                          <div className="flex flex-col items-center w-6 shrink-0 pt-1">
+                            <div className={`size-5 rounded-full flex items-center justify-center text-[9px] font-bold shrink-0 ${
+                              idx === 0 ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-400' :
+                              idx === t.routePoints!.length - 1 ? 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-400' :
+                              'bg-primary/10 text-primary'
+                            }`}>
+                              {idx + 1}
                             </div>
-                          )}
-                          <div className="flex flex-wrap gap-x-3 gap-y-0 text-[9px] text-muted-foreground">
-                            {rp.plannedArrival && (
-                              <span className="flex items-center gap-0.5">
-                                <Clock className="size-2.5" />Прибытие: {formatDateTime(rp.plannedArrival)}
-                              </span>
-                            )}
-                            {rp.plannedDeparture && (
-                              <span className="flex items-center gap-0.5">
-                                <Clock className="size-2.5" />Отправление: {formatDateTime(rp.plannedDeparture)}
-                              </span>
-                            )}
-                            {rp.actualArrival && (
-                              <span className="flex items-center gap-0.5 text-emerald-600 dark:text-emerald-400">
-                                <CheckCircle2 className="size-2.5" />Факт: {formatDateTime(rp.actualArrival)}
-                              </span>
+                            {idx < t.routePoints!.length - 1 && (
+                              <div className="w-0.5 flex-1 bg-border/60 min-h-[16px]" />
                             )}
                           </div>
-                          {rp.notes && (
-                            <div className="text-[9px] text-muted-foreground italic mt-0.5">{rp.notes}</div>
-                          )}
+                          {/* Point content */}
+                          <div className="flex-1 pb-2">
+                            <div className="flex items-center gap-1.5">
+                              <span className="text-xs font-medium">{rp.name}</span>
+                              {rp.distanceFromPrev != null && rp.distanceFromPrev > 0 && (
+                                <span className="text-[9px] text-sky-600 dark:text-sky-400 bg-sky-50 dark:bg-sky-950/30 px-1 py-0 rounded">
+                                  +{rp.distanceFromPrev.toFixed(1)} км
+                                </span>
+                              )}
+                            </div>
+                            {rp.address && (
+                              <div className="text-[10px] text-muted-foreground flex items-center gap-0.5">
+                                <MapPin className="size-2.5 shrink-0" />{rp.address}
+                              </div>
+                            )}
+                            <div className="flex flex-wrap gap-x-3 gap-y-0 text-[9px] text-muted-foreground">
+                              {rp.plannedArrival && (
+                                <span className="flex items-center gap-0.5">
+                                  <Clock className="size-2.5" />Прибытие: {formatDateTime(rp.plannedArrival)}
+                                </span>
+                              )}
+                              {rp.plannedDeparture && (
+                                <span className="flex items-center gap-0.5">
+                                  <Clock className="size-2.5" />Отправление: {formatDateTime(rp.plannedDeparture)}
+                                </span>
+                              )}
+                              {rp.actualArrival && (
+                                <span className="flex items-center gap-0.5 text-emerald-600 dark:text-emerald-400">
+                                  <CheckCircle2 className="size-2.5" />Факт: {formatDateTime(rp.actualArrival)}
+                                </span>
+                              )}
+                            </div>
+                            {rp.notes && (
+                              <div className="text-[9px] text-muted-foreground italic mt-0.5">{rp.notes}</div>
+                            )}
+                          </div>
                         </div>
-                      </div>
-                    ))}
+                      ))}
+                    </div>
                   </div>
                 </div>
               )}
@@ -5897,36 +8575,6 @@ function TripDetailDialog({ open, onOpenChange, trip, loading, crews, onEdit, on
                 </div>
                 ) : null
               })()}
-              <DetailSection title="Груз" icon={<Package className="size-3.5" />}>
-                <DetailRow label="Груз" value={t.cargo} />
-                <DetailRow label="Вес (т)" value={t.cargoWeight?.toString()} />
-              </DetailSection>
-              <DetailSection title="Время" icon={<Calendar className="size-3.5" />}>
-                <DetailRow label="Начало рейса" value={formatDateTime(t.startDate)} />
-                <DetailRow label="Планируемое окончание" value={formatDateTime(t.plannedEndDate)} />
-                <DetailRow label="Окончание рейса" value={formatDateTime(t.endDate)} />
-                {isCompleted && t.tripDuration != null && (
-                  <DetailRow label="Длительность" value={fmtDur(t.tripDuration)} />
-                )}
-                {isCompleted && t.parkingsDuration != null && (
-                  <DetailRow label="Время стоянок" value={fmtDur(t.parkingsDuration)} />
-                )}
-              </DetailSection>
-              <DetailSection title="Экипаж" icon={<Users className="size-3.5" />}>
-                <DetailRow label="Экипаж" value={crew?.name || t.crew?.name} />
-                {crew?.members && crew.members.length > 0 && (
-                  <div className="col-span-2 space-y-0.5 pl-2">
-                    {crew.members.map(m => (
-                      <div key={m.id} className="flex items-center gap-1 text-[10px]">
-                        {m.employeeId ? <UserCheck className="size-3 text-primary" /> : <UserCircle className="size-3 text-muted-foreground" />}
-                        <span className={m.employeeId ? 'font-medium' : ''}>{m.fullName}</span>
-                        <span className="text-muted-foreground">({MEMBER_ROLE_MAP[m.role] || m.role})</span>
-                        {m.phone && <span className="text-muted-foreground">• {m.phone}</span>}
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </DetailSection>
 
               {/* ── СТАТИСТИКА ЗА ПЕРИОД РЕЙСА (always visible) ── */}
               {compareData?.tripStats ? (
@@ -5978,95 +8626,6 @@ function TripDetailDialog({ open, onOpenChange, trip, loading, crews, onEdit, on
                   )}
                 </div>
               )}
-
-              {/* ── ПОДРОБНЫЕ ПОКАЗАНИЯ (collapsible) ── */}
-              <Collapsible>
-                <CollapsibleTrigger className="flex items-center gap-1.5 w-full text-xs font-semibold hover:text-foreground transition-colors py-1.5 px-2 rounded hover:bg-muted/50">
-                  <CircuitBoard className="size-3.5 text-muted-foreground" />
-                  <span>Подробные показания</span>
-                  <ChevronRight className="size-3 text-muted-foreground transition-transform [[data-state=open]>&]:rotate-90" />
-                </CollapsibleTrigger>
-                <CollapsibleContent>
-                  <div className="space-y-2 mt-2">
-                    {/* ── ТОПЛИВО И ПРОБЕГ ── */}
-                    <DetailSection title="Топливо и пробег" icon={<Fuel className="size-3.5" />}>
-                      <DetailRow label="Топливо на старте (л)" value={t.fuelStart?.toString()} />
-                      <DetailRow label="Топливо на финише (л)" value={t.fuelEnd?.toString()} />
-                      <DetailRow label="Пробег на старте (км)" value={t.mileageStart?.toLocaleString('ru-RU')} />
-                      <DetailRow label="Пробег на финише (км)" value={t.mileageEnd?.toLocaleString('ru-RU')} />
-                      {(t.mileageStart != null && t.mileageEnd != null) && (
-                        <DetailRow label="Пройдено (км)" value={
-                          <span className="font-semibold text-emerald-600 dark:text-emerald-400">{(t.mileageEnd! - t.mileageStart!).toLocaleString('ru-RU')} км</span> as any
-                        } />
-                      )}
-                    </DetailSection>
-
-                    {/* ── АНАЛИТИКА ТРЕКЕРА ── */}
-                    {(t.avgSpeed != null || t.maxSpeed != null || t.engineHours != null || t.idleTime != null || t.fuelConsumed != null || t.distance != null || t.tripDuration != null || t.parkingsDuration != null) && (
-                      <DetailSection title="Статистика рейса" icon={<Gauge className="size-3.5" />}>
-                        {t.distance != null && <DetailRow label="Расстояние" value={<span className="font-semibold text-emerald-600 dark:text-emerald-400">{t.distance.toFixed(1)} км</span> as any} />}
-                        {t.tripDuration != null && <DetailRow label="Время в пути" value={fmtDur(t.tripDuration)} />}
-                        {t.parkingsDuration != null && <DetailRow label="Время стоянок" value={fmtDur(t.parkingsDuration)} />}
-                        {t.avgSpeed != null && <DetailRow label="Средняя скорость" value={`${t.avgSpeed} км/ч`} />}
-                        {t.maxSpeed != null && <DetailRow label="Макс. скорость" value={`${t.maxSpeed} км/ч`} />}
-                        {t.engineHours != null && <DetailRow label="Моточасы" value={fmtDur(t.engineHours)} />}
-                        {t.idleTime != null && <DetailRow label="Холостой ход" value={fmtDur(t.idleTime)} />}
-                        {t.fuelConsumed != null && <DetailRow label="Расход топлива" value={<span className="font-semibold text-amber-600 dark:text-amber-400">{t.fuelConsumed} л</span> as any} />}
-                        {t.avgFuelRate != null && <DetailRow label="Средний расход" value={`${t.avgFuelRate} л/100км`} />}
-                        {t.refuelVolume != null && t.refuelVolume > 0 && <DetailRow label="Заправки" value={`${t.refuelVolume} л`} />}
-                        {t.plumVolume != null && t.plumVolume > 0 && <DetailRow label="Сливы" value={<span className="font-semibold text-red-600 dark:text-red-400">{t.plumVolume} л</span> as any} />}
-                      </DetailSection>
-                    )}
-
-                    {/* ── ФИНАНСЫ ── */}
-                    {(t.cost != null || t.revenue != null) && (
-                      <DetailSection title="Финансы" icon={<DollarSign className="size-3.5" />}>
-                        {t.cost != null && <DetailRow label="Расходы" value={<span className="text-red-600 dark:text-red-400">{formatPrice(t.cost)}</span> as any} />}
-                        {t.revenue != null && <DetailRow label="Доходы" value={<span className="text-emerald-600 dark:text-emerald-400">{formatPrice(t.revenue)}</span> as any} />}
-                        {t.cost != null && t.revenue != null && <DetailRow label="Прибыль" value={<span className={`font-bold ${t.revenue - t.cost >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400'}`}>{formatPrice(t.revenue - t.cost)}</span> as any} />}
-                        {t.fuelConsumed != null && t.distance != null && t.distance > 0 && t.cost != null && <DetailRow label="Стоимость за км" value={`${(t.cost / t.distance).toFixed(2)} ₽/км`} />}
-                      </DetailSection>
-                    )}
-
-                    {/* ── СРАВНЕНИЕ ДАТЧИКОВ СТАРТ/ФИНИШ ── */}
-                    <div className="space-y-2">
-                      <div className="flex items-center justify-between">
-                        <h4 className="text-xs font-semibold flex items-center gap-1.5"><CircuitBoard className="size-3.5" />Датчики (старт / финиш)</h4>
-                      </div>
-
-                      {compareError && (
-                        <div className="flex items-center gap-2 p-2 bg-yellow-50 dark:bg-yellow-900/20 rounded-lg text-xs text-yellow-600 dark:text-yellow-400">
-                          <AlertTriangle className="size-3.5 shrink-0" />{compareError}
-                        </div>
-                      )}
-
-                      {applySuccess && (
-                        <div className="flex items-center gap-2 p-2 bg-emerald-50 dark:bg-emerald-900/20 rounded-lg text-xs text-emerald-600 dark:text-emerald-400">
-                          <CheckCircle2 className="size-3.5 shrink-0" />{applySuccess}
-                        </div>
-                      )}
-
-                      {compareData && !compareLoading && (
-                        <div className="space-y-2">
-                          {/* Apply buttons */}
-                          <div className="flex flex-wrap gap-1.5">
-                            {(t.status === 'planned' || t.status === 'in_progress') && compareData?.startSnapshot && (
-                              <Button variant="outline" size="sm" className="h-7 text-[10px] gap-1" onClick={applyStartValues}>
-                                <ArrowDownToLine className="size-3" />Заполнить начало
-                              </Button>
-                            )}
-                            {(t.status === 'in_progress' || t.status === 'completed') && compareData?.endSnapshot && (
-                              <Button variant="outline" size="sm" className="h-7 text-[10px] gap-1" onClick={applyEndValues}>
-                                <ArrowUpFromLine className="size-3" />Заполнить финиш
-                              </Button>
-                            )}
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                </CollapsibleContent>
-              </Collapsible>
 
               {/* ── ТРЕК НА КАРТЕ ── */}
               <div ref={trackSectionRef} />
@@ -6268,29 +8827,33 @@ function TripDetailDialog({ open, onOpenChange, trip, loading, crews, onEdit, on
               {t.notes && <DetailSection title="Заметки" icon={<ClipboardList className="size-3.5" />}><p className="text-xs whitespace-pre-wrap">{t.notes}</p></DetailSection>}
             </div>
           )}
+
+          {/* Footer after content */}
+          <div className="sticky bottom-0 bg-card border-t pt-3 pb-2 -mx-4 sm:-mx-5 px-4 sm:px-5 mt-4 z-10">
+            <div className="flex flex-wrap gap-1.5 sm:gap-0 justify-end">
+              {t.status === 'planned' && (
+                <Button variant="outline" size="sm" className="h-8 gap-1 text-xs" onClick={() => onStart(t)}><Navigation className="size-3.5" />Начать</Button>
+              )}
+              {t.status === 'in_progress' && (
+                <Button variant="outline" size="sm" className="h-8 gap-1 text-xs" onClick={handleInitComplete}><CheckCircle2 className="size-3.5" />Завершить</Button>
+              )}
+              <Button variant="outline" size="sm" className="h-8 gap-1 text-xs" onClick={() => onEdit(t)}><Edit className="size-3.5" />Редактировать</Button>
+              <Button variant="outline" size="sm" className="h-8 gap-1 text-xs" onClick={onRefresh}><Activity className="size-3.5" />Обновить</Button>
+              {compareData && (
+                <Button variant="outline" size="sm" className="h-8 gap-1 text-xs" onClick={saveTripData} disabled={savingTrip || tripSaved}>
+                  {savingTrip ? <Loader2 className="size-3.5 animate-spin" /> : tripSaved ? <CheckCircle2 className="size-3.5 text-emerald-500" /> : <Save className="size-3.5" />}
+                  {tripSaved ? 'Сохранено' : 'Сохранить'}
+                </Button>
+              )}
+              {(t.status === 'in_progress' || t.status === 'completed') && (
+                <Button variant="default" size="sm" className="h-8 gap-1 text-xs" onClick={() => window.open(`/api/trips/${t.id}/print`, '_blank')}>
+                  <Printer className="size-3.5" />Распечатать
+                </Button>
+              )}
+              <Button variant="destructive" size="sm" className="h-8 gap-1 text-xs" onClick={() => onDelete(t)}><Trash2 className="size-3.5" />Удалить</Button>
+            </div>
+          </div>
         </div>
-        <DialogFooter className="gap-1.5 sm:gap-0 flex-wrap sticky bottom-0 bg-card z-10 border-t pt-2">
-          {t.status === 'planned' && (
-            <Button variant="outline" size="sm" className="h-8 gap-1 text-xs" onClick={() => onStart(t)}><Navigation className="size-3.5" />Начать</Button>
-          )}
-          {t.status === 'in_progress' && (
-            <Button variant="outline" size="sm" className="h-8 gap-1 text-xs" onClick={handleInitComplete}><CheckCircle2 className="size-3.5" />Завершить</Button>
-          )}
-          <Button variant="outline" size="sm" className="h-8 gap-1 text-xs" onClick={() => onEdit(t)}><Edit className="size-3.5" />Редактировать</Button>
-          <Button variant="outline" size="sm" className="h-8 gap-1 text-xs" onClick={onRefresh}><Activity className="size-3.5" />Обновить</Button>
-          {compareData && (
-            <Button variant="outline" size="sm" className="h-8 gap-1 text-xs" onClick={saveTripData} disabled={savingTrip || tripSaved}>
-              {savingTrip ? <Loader2 className="size-3.5 animate-spin" /> : tripSaved ? <CheckCircle2 className="size-3.5 text-emerald-500" /> : <Save className="size-3.5" />}
-              {tripSaved ? 'Сохранено' : 'Сохранить'}
-            </Button>
-          )}
-          {(t.status === 'in_progress' || t.status === 'completed') && (
-            <Button variant="default" size="sm" className="h-8 gap-1 text-xs" onClick={() => window.open(`/api/trips/${t.id}/print`, '_blank')}>
-              <Printer className="size-3.5" />Распечатать
-            </Button>
-          )}
-          <Button variant="destructive" size="sm" className="h-8 gap-1 text-xs" onClick={() => onDelete(t)}><Trash2 className="size-3.5" />Удалить</Button>
-        </DialogFooter>
       </DialogContent>
       {/* Discrepancy resolution dialog */}
       <AlertDialog open={discrepancyDialog.open} onOpenChange={(v) => setDiscrepancyDialog(d => ({ ...d, open: v }))}>
@@ -6413,45 +8976,75 @@ function TripDetailDialog({ open, onOpenChange, trip, loading, crews, onEdit, on
 
       {/* ─── Complete Trip Dialog with Refuel Detection ─── */}
       <Dialog open={completeDialog.open} onOpenChange={(v) => !completeDialog.loading && setCompleteDialog(prev => ({ ...prev, open: v }))}>
-        <DialogContent className="max-w-md">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <CheckCircle2 className="size-4 text-emerald-500" />
-              Завершение рейса
+        <DialogContent className="max-w-lg p-0 gap-0 overflow-hidden">
+          {/* Gradient header */}
+          <DialogHeader className="px-6 pt-5 pb-3 border-b bg-gradient-to-r from-emerald-50 to-green-50 dark:from-emerald-950/30 dark:to-green-950/30">
+            <DialogTitle className="flex items-center gap-2.5 text-base">
+              <div className="size-8 rounded-lg bg-emerald-100 dark:bg-emerald-900/50 flex items-center justify-center shrink-0">
+                <CheckCircle2 className="size-4 text-emerald-600 dark:text-emerald-400" />
+              </div>
+              <div>
+                <span>Завершение рейса</span>
+                <p className="text-xs font-normal text-muted-foreground mt-0.5">
+                  Проверьте и подтвердите данные перед завершением
+                </p>
+              </div>
             </DialogTitle>
-            <DialogDescription>
-              Проверьте и подтвердите данные перед завершением рейса.
-              {completeDialog.refuelDetected && (
-                <span className="block mt-1 text-amber-600 dark:text-amber-400 font-medium">
-                  ⚠ Обнаружены заправки во время рейса!
-                </span>
-              )}
-            </DialogDescription>
+            {completeDialog.refuelDetected && (
+              <div className="mt-2 p-2 rounded-md bg-amber-100/80 dark:bg-amber-900/30 border border-amber-300 dark:border-amber-700 flex items-center gap-2">
+                <Fuel className="size-4 text-amber-600 dark:text-amber-400 shrink-0" />
+                <div>
+                  <p className="text-xs font-semibold text-amber-700 dark:text-amber-400">Обнаружены заправки!</p>
+                  <p className="text-[10px] text-amber-600 dark:text-amber-500">По данным датчиков во время рейса была заправка</p>
+                </div>
+              </div>
+            )}
           </DialogHeader>
 
           {completeDialog.loading ? (
-            <div className="flex items-center justify-center py-8">
-              <Loader2 className="size-5 animate-spin text-muted-foreground" />
-              <span className="ml-2 text-sm text-muted-foreground">Получение данных с датчиков...</span>
+            <div className="flex flex-col items-center justify-center py-12">
+              <div className="size-12 rounded-full bg-emerald-100 dark:bg-emerald-900/40 flex items-center justify-center mb-3">
+                <Loader2 className="size-6 animate-spin text-emerald-600 dark:text-emerald-400" />
+              </div>
+              <p className="text-sm font-medium text-muted-foreground">Получение данных с датчиков...</p>
+              <p className="text-xs text-muted-foreground/60 mt-1">Запрос показаний трекера</p>
             </div>
           ) : (
-            <div className="space-y-4">
+            <div className="space-y-4 px-6 py-4">
+              {/* Trip summary bar */}
+              <div className="flex items-center gap-3 p-2.5 rounded-lg bg-muted/40 border">
+                <div className="flex-1 text-center">
+                  <p className="text-[10px] text-muted-foreground">Маршрут</p>
+                  <p className="text-xs font-semibold truncate">{t.route || '—'}</p>
+                </div>
+                <div className="w-px h-6 bg-border" />
+                <div className="text-center">
+                  <p className="text-[10px] text-muted-foreground">Топливо начало</p>
+                  <p className="text-xs font-semibold">{completeDialog.fuelStart != null ? `${completeDialog.fuelStart} л` : '—'}</p>
+                </div>
+                <div className="w-px h-6 bg-border" />
+                <div className="text-center">
+                  <p className="text-[10px] text-muted-foreground">Старт</p>
+                  <p className="text-xs font-semibold">{t.mileageStart != null ? `${t.mileageStart.toLocaleString('ru-RU')} км` : '—'}</p>
+                </div>
+              </div>
+
               {/* Fuel data section */}
               <div className="space-y-2">
-                <h4 className="text-xs font-semibold text-muted-foreground flex items-center gap-1">
-                  <Fuel className="size-3" /> Топливо
+                <h4 className="text-xs font-semibold text-muted-foreground flex items-center gap-1.5">
+                  <Fuel className="size-3.5" /> Показания топлива
                 </h4>
-                <div className="grid grid-cols-2 gap-2">
-                  <div>
-                    <Label className="text-[10px] text-muted-foreground">Топливо начало (л)</Label>
-                    <Input
-                      value={completeDialog.fuelStart != null ? completeDialog.fuelStart : '—'}
-                      disabled
-                      className="h-8 text-xs bg-muted/50"
-                    />
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="p-2.5 rounded-lg bg-muted/30 border">
+                    <Label className="text-[10px] text-muted-foreground flex items-center gap-1">
+                      <div className="size-1.5 rounded-full bg-sky-500" />Топливо начало (л)
+                    </Label>
+                    <div className="text-lg font-bold mt-1">{completeDialog.fuelStart != null ? completeDialog.fuelStart : '—'}</div>
                   </div>
                   <div>
-                    <Label className="text-[10px] text-muted-foreground">Топливо конец (л)</Label>
+                    <Label className="text-[10px] text-muted-foreground flex items-center gap-1">
+                      <div className="size-1.5 rounded-full bg-emerald-500" />Топливо конец (л)
+                    </Label>
                     <Input
                       type="number"
                       step="0.1"
@@ -6468,23 +9061,25 @@ function TripDetailDialog({ open, onOpenChange, trip, loading, crews, onEdit, on
                         })
                       }}
                       placeholder="Показание датчика"
-                      className="h-8 text-xs"
+                      className="h-9 text-sm font-semibold mt-1"
                     />
                   </div>
                 </div>
               </div>
 
-              {/* Refuel section - highlighted if detected */}
+              {/* Refuel section */}
               {completeDialog.refuelDetected ? (
                 <div className="rounded-lg border-2 border-amber-300 dark:border-amber-700 bg-amber-50/50 dark:bg-amber-900/20 p-3 space-y-2">
                   <div className="flex items-center gap-2 text-xs font-semibold text-amber-700 dark:text-amber-400">
-                    <FuelIcon className="size-3.5" />
+                    <div className="size-6 rounded-md bg-amber-200 dark:bg-amber-800/50 flex items-center justify-center">
+                      <FuelIcon className="size-3.5" />
+                    </div>
                     Заправка обнаружена!
                   </div>
-                  <p className="text-[10px] text-amber-600 dark:text-amber-500">
-                    По данным датчиков за время рейса была заправка. Подтвердите объём заправки или введите вручную.
+                  <p className="text-[10px] text-amber-600 dark:text-amber-500 ml-8">
+                    Подтвердите объём заправки или введите вручную.
                   </p>
-                  <div>
+                  <div className="ml-8">
                     <Label className="text-[10px] text-amber-700 dark:text-amber-400">Объём заправки (л)</Label>
                     <div className="flex items-center gap-2">
                       <Input
@@ -6503,12 +9098,12 @@ function TripDetailDialog({ open, onOpenChange, trip, loading, crews, onEdit, on
                           })
                         }}
                         placeholder="0"
-                        className="h-8 text-xs"
+                        className="h-8 text-xs w-28"
                       />
                       {completeDialog.sensorRefuelVolume != null && (
-                        <span className="text-[10px] text-muted-foreground whitespace-nowrap">
-                          По датчикам: {completeDialog.sensorRefuelVolume.toFixed(1)} л
-                        </span>
+                        <Badge variant="outline" className="text-[10px] h-6 bg-amber-100/50 dark:bg-amber-900/30 border-amber-300 dark:border-amber-700 text-amber-700 dark:text-amber-400">
+                          Датчик: {completeDialog.sensorRefuelVolume.toFixed(1)} л
+                        </Badge>
                       )}
                     </div>
                   </div>
@@ -6522,22 +9117,22 @@ function TripDetailDialog({ open, onOpenChange, trip, loading, crews, onEdit, on
                     <Button
                       variant="outline"
                       size="sm"
-                      className={`h-7 text-[10px] ${completeDialog.refuelVolume ? 'bg-amber-50 dark:bg-amber-900/30 border-amber-300 dark:border-amber-700' : ''}`}
+                      className={`h-8 text-[11px] flex-1 gap-1.5 ${completeDialog.refuelVolume ? 'bg-amber-50 dark:bg-amber-900/30 border-amber-300 dark:border-amber-700' : ''}`}
                       onClick={() => setCompleteDialog(prev => ({ ...prev, refuelVolume: prev.refuelVolume || '0' }))}
                     >
-                      Да, была заправка
+                      <Fuel className="size-3" />Да, была
                     </Button>
                     <Button
                       variant="outline"
                       size="sm"
-                      className={`h-7 text-[10px] ${!completeDialog.refuelVolume && completeDialog.refuelVolume !== '' ? '' : 'bg-muted/50'}`}
+                      className={`h-8 text-[11px] flex-1 gap-1.5 ${!completeDialog.refuelVolume && completeDialog.refuelVolume !== '' ? '' : 'bg-muted/50'}`}
                       onClick={() => setCompleteDialog(prev => ({ ...prev, refuelVolume: '', fuelConsumed: prev.fuelStart != null && prev.fuelEnd ? String(Math.round((prev.fuelStart - (parseFloat(prev.fuelEnd) || 0)) * 100) / 100) : '' }))}
                     >
-                      Нет заправок
+                      <X className="size-3" />Нет заправок
                     </Button>
                   </div>
                   {completeDialog.refuelVolume !== '' && (
-                    <div>
+                    <div className="p-2.5 rounded-lg bg-amber-50/50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800/50">
                       <Label className="text-[10px] text-muted-foreground">Объём заправки (л)</Label>
                       <Input
                         type="number"
@@ -6555,52 +9150,70 @@ function TripDetailDialog({ open, onOpenChange, trip, loading, crews, onEdit, on
                           })
                         }}
                         placeholder="0"
-                        className="h-8 text-xs"
+                        className="h-8 text-xs mt-1"
                       />
                     </div>
                   )}
                 </div>
               )}
 
-              {/* Calculated fuel consumption */}
-              <div className="grid grid-cols-2 gap-2">
-                <div>
-                  <Label className="text-[10px] text-muted-foreground">Расход топлива (л)</Label>
+              {/* Calculated section */}
+              <div className="grid grid-cols-2 gap-3">
+                <div className="p-2.5 rounded-lg bg-muted/30 border">
+                  <Label className="text-[10px] text-muted-foreground flex items-center gap-1">
+                    <Flame className="size-2.5" />Расход топлива (л)
+                  </Label>
                   <Input
                     type="number"
                     step="0.1"
                     value={completeDialog.fuelConsumed}
                     onChange={e => setCompleteDialog(prev => ({ ...prev, fuelConsumed: e.target.value }))}
-                    className="h-8 text-xs font-semibold"
+                    className="h-8 text-xs font-bold mt-1"
                     placeholder="Авто-расчёт"
                   />
                 </div>
-                <div>
-                  <Label className="text-[10px] text-muted-foreground">Пробег конец (км)</Label>
+                <div className="p-2.5 rounded-lg bg-muted/30 border">
+                  <Label className="text-[10px] text-muted-foreground flex items-center gap-1">
+                    <Gauge className="size-2.5" />Пробег конец (км)
+                  </Label>
                   <Input
                     type="number"
                     value={completeDialog.mileageEnd}
                     onChange={e => setCompleteDialog(prev => ({ ...prev, mileageEnd: e.target.value }))}
-                    className="h-8 text-xs"
+                    className="h-8 text-xs font-bold mt-1"
                     placeholder="Показание одометра"
                   />
                 </div>
               </div>
 
+              {/* Trip distance summary if available */}
+              {(t.distance || (t.mileageStart != null && completeDialog.mileageEnd)) && (
+                <div className="flex items-center gap-2 p-2 rounded-lg bg-sky-50 dark:bg-sky-900/20 border border-sky-200 dark:border-sky-800/50">
+                  <Navigation className="size-3.5 text-sky-600 dark:text-sky-400 shrink-0" />
+                  <span className="text-[11px] text-sky-700 dark:text-sky-400">
+                    {t.distance ? `Расстояние по маршруту: ${t.distance.toFixed(1)} км` : ''}
+                    {t.distance && completeDialog.mileageEnd && t.mileageStart ? ' • ' : ''}
+                    {completeDialog.mileageEnd && t.mileageStart ? `По одометру: ${(parseFloat(completeDialog.mileageEnd) - t.mileageStart).toLocaleString('ru-RU')} км` : ''}
+                  </span>
+                </div>
+              )}
+
               {/* Notes */}
               <div>
-                <Label className="text-[10px] text-muted-foreground">Примечание к завершению</Label>
+                <Label className="text-[10px] text-muted-foreground flex items-center gap-1">
+                  <StickyNote className="size-2.5" />Примечание к завершению
+                </Label>
                 <Textarea
                   value={completeDialog.notes}
                   onChange={e => setCompleteDialog(prev => ({ ...prev, notes: e.target.value }))}
-                  placeholder="Комментарий о заправке, расходе и т.д."
-                  className="text-xs min-h-[60px]"
+                  placeholder="Комментарий о заправке, расходе, особенностях рейса..."
+                  className="text-xs min-h-[60px] mt-1"
                 />
               </div>
             </div>
           )}
 
-          <DialogFooter className="gap-2">
+          <DialogFooter className="gap-2 px-6 py-3 border-t bg-muted/20">
             <Button
               variant="outline"
               size="sm"
@@ -6612,7 +9225,7 @@ function TripDetailDialog({ open, onOpenChange, trip, loading, crews, onEdit, on
             </Button>
             <Button
               size="sm"
-              className="h-8 text-xs bg-emerald-600 text-white hover:bg-emerald-700 gap-1"
+              className="h-8 text-xs bg-emerald-600 text-white hover:bg-emerald-700 gap-1.5"
               onClick={handleConfirmComplete}
               disabled={completeDialog.loading}
             >

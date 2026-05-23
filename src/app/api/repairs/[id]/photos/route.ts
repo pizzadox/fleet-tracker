@@ -7,6 +7,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     const formData = await request.formData()
     const file = formData.get('file') as File
     const description = formData.get('description') as string | null
+    const category = formData.get('category') as string || 'during'
     const stageId = formData.get('stageId') as string | null
 
     if (!file) {
@@ -29,6 +30,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
         repairId: id,
         url: filePath,
         description: description || null,
+        category,
         stageId: stageId || null,
       }
     })

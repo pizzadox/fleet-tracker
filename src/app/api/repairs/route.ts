@@ -6,17 +6,21 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url)
     const equipmentId = searchParams.get('equipmentId') || ''
     const status = searchParams.get('status') || ''
+    const priority = searchParams.get('priority') || ''
+    const repairType = searchParams.get('repairType') || ''
 
     const where: Record<string, unknown> = {}
     if (equipmentId) where.equipmentId = equipmentId
     if (status) where.status = status
+    if (priority) where.priority = priority
+    if (repairType) where.repairType = repairType
 
     const repairs = await db.repair.findMany({
       where,
       orderBy: { createdAt: 'desc' },
       include: {
         equipment: {
-          select: { id: true, name: true, registrationNum: true, brand: true, model: true }
+          select: { id: true, name: true, registrationNum: true, brand: true, model: true, type: true }
         },
         photos: true,
         stages: { orderBy: { sortOrder: 'asc' } },
@@ -28,6 +32,7 @@ export async function GET(request: NextRequest) {
           },
           orderBy: { assignedAt: 'asc' }
         },
+        comments: { orderBy: { createdAt: 'desc' } },
       }
     })
     return NextResponse.json(repairs)
@@ -48,12 +53,24 @@ export async function POST(request: NextRequest) {
         startDate: new Date(body.startDate),
         endDate: body.endDate ? new Date(body.endDate) : null,
         status: body.status || 'in_progress',
+        priority: body.priority || 'medium',
+        repairType: body.repairType || 'planned',
+        estimatedEndDate: body.estimatedEndDate ? new Date(body.estimatedEndDate) : null,
+        estimatedCost: body.estimatedCost ? parseFloat(String(body.estimatedCost)) : null,
         cost: body.cost ? parseFloat(String(body.cost)) : null,
         contractor: body.contractor || null,
         contractorPhone: body.contractorPhone || null,
+        contractorEmail: body.contractorEmail || null,
         workPerformed: body.workPerformed || null,
         spareParts: body.spareParts || null,
         nextInspection: body.nextInspection ? new Date(body.nextInspection) : null,
+        location: body.location || null,
+        mileageStart: body.mileageStart ? parseInt(String(body.mileageStart)) : null,
+        mileageEnd: body.mileageEnd ? parseInt(String(body.mileageEnd)) : null,
+        downtimeHours: body.downtimeHours ? parseFloat(String(body.downtimeHours)) : null,
+        warrantyRepair: body.warrantyRepair || false,
+        insuranceClaim: body.insuranceClaim || false,
+        insuranceNumber: body.insuranceNumber || null,
         notes: body.notes || null,
       },
       include: {
@@ -80,7 +97,7 @@ export async function POST(request: NextRequest) {
       data: {
         equipmentId: body.equipmentId,
         event: 'repair',
-        description: `Постановка на ремонт: ${body.description}`,
+        description: `Постановка на ремонт: ${body.description}${body.repairType ? ` (${body.repairType})` : ''}${body.priority === 'critical' ? ' — СРОЧНЫЙ' : ''}`,
         date: new Date(),
         newValue: 'repair',
       }
@@ -95,6 +112,8 @@ export async function POST(request: NextRequest) {
             name: body.stages[i].name,
             description: body.stages[i].description || null,
             status: 'pending',
+            estimatedDuration: body.stages[i].estimatedDuration ? parseFloat(String(body.stages[i].estimatedDuration)) : null,
+            notes: body.stages[i].notes || null,
             sortOrder: i,
           }
         })
@@ -130,6 +149,8 @@ export async function POST(request: NextRequest) {
             }
           }
         },
+        photos: true,
+        comments: { orderBy: { createdAt: 'desc' } },
       }
     })
 

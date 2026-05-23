@@ -7,6 +7,9 @@ export async function GET(request: NextRequest) {
     const search = searchParams.get('search') || ''
     const status = searchParams.get('status') || ''
     const type = searchParams.get('type') || ''
+    const condition = searchParams.get('condition') || ''
+    const ownerId = searchParams.get('ownerId') || ''
+    const renterId = searchParams.get('renterId') || ''
 
     const where: Record<string, unknown> = {}
 
@@ -17,16 +20,17 @@ export async function GET(request: NextRequest) {
         { model: { contains: search } },
         { registrationNum: { contains: search } },
         { vin: { contains: search } },
+        { garageNumber: { contains: search } },
+        { unitNumber: { contains: search } },
+        { assignedDriver: { contains: search } },
       ]
     }
 
-    if (status) {
-      where.status = status
-    }
-
-    if (type) {
-      where.type = type
-    }
+    if (status) where.status = status
+    if (type) where.type = type
+    if (condition) where.condition = condition
+    if (ownerId) where.ownerId = ownerId
+    if (renterId) where.renterId = renterId
 
     const equipment = await db.equipment.findMany({
       where,
@@ -46,7 +50,7 @@ export async function GET(request: NextRequest) {
           }
         },
         employees: {
-          select: { id: true, fullName: true, position: true, phone: true, status: true },
+          select: { id: true, fullName: true, position: true, phone: true, status: true, licenseCat: true },
         },
       }
     })
@@ -89,6 +93,26 @@ export async function POST(request: NextRequest) {
         inspectionDate: body.inspectionDate ? new Date(body.inspectionDate) : null,
         inspectionExpiry: body.inspectionExpiry ? new Date(body.inspectionExpiry) : null,
         status: body.status || 'active',
+        condition: body.condition || 'good',
+        location: body.location || null,
+        depot: body.depot || null,
+        lastMaintenanceDate: body.lastMaintenanceDate ? new Date(body.lastMaintenanceDate) : null,
+        nextMaintenanceDate: body.nextMaintenanceDate ? new Date(body.nextMaintenanceDate) : null,
+        maintenanceInterval: body.maintenanceInterval ? parseInt(String(body.maintenanceInterval)) : null,
+        fuelConsumptionNorm: body.fuelConsumptionNorm ? parseFloat(String(body.fuelConsumptionNorm)) : null,
+        tireSize: body.tireSize || null,
+        tireReplacementDate: body.tireReplacementDate ? new Date(body.tireReplacementDate) : null,
+        oilChangeDate: body.oilChangeDate ? new Date(body.oilChangeDate) : null,
+        oilChangeMileage: body.oilChangeMileage ? parseInt(String(body.oilChangeMileage)) : null,
+        oilChangeInterval: body.oilChangeInterval ? parseInt(String(body.oilChangeInterval)) : null,
+        assignedDriver: body.assignedDriver || null,
+        garageNumber: body.garageNumber || null,
+        unitNumber: body.unitNumber || null,
+        rentalStartDate: body.rentalStartDate ? new Date(body.rentalStartDate) : null,
+        rentalEndDate: body.rentalEndDate ? new Date(body.rentalEndDate) : null,
+        rentalCost: body.rentalCost ? parseFloat(String(body.rentalCost)) : null,
+        decommissionDate: body.decommissionDate ? new Date(body.decommissionDate) : null,
+        decommissionReason: body.decommissionReason || null,
         notes: body.notes || null,
         ownerId: body.ownerId || null,
         renterId: body.renterId || null,

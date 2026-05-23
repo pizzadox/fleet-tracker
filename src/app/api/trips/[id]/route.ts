@@ -105,45 +105,79 @@ async function fetchAxentaTrackSnapshots(
     }
 
     // Extract sensors from a sensors array, finding fuel/mileage/engineTemp/ignition
+    // IMPORTANT: fuelLevel should ONLY come from fuel_level_sensor (tank level, e.g. "бак (CAN)")
+    // absoluteFuelConsumed tracks absolute_fuel_impulse_sensor (total consumed since manufacture)
     const parseSensors = (sensorsArr: any[]): {
       sensors: Array<{ type: string; name: string; value: number | null; unit: string }>;
-      fuelLevel: number | null; mileage: number | null; engineTemp: number | null; ignition: boolean | null;
+      fuelLevel: number | null; absoluteFuelConsumed: number | null; mileage: number | null; engineTemp: number | null; ignition: boolean | null;
+      fuelSensorType: string | null; // 'fuel_level_sensor' or 'absolute_fuel_impulse_sensor'
     } => {
       const sensors: Array<{ type: string; name: string; value: number | null; unit: string }> = []
       let fuelLevel: number | null = null
+      let absoluteFuelConsumed: number | null = null
       let mileage: number | null = null
       let engineTemp: number | null = null
       let ignition: boolean | null = null
+      let fuelSensorType: string | null = null
 
       for (const s of sensorsArr) {
         const val = s.value != null ? Number(s.value) : null
         sensors.push({ type: s.type || '', name: s.name || s.type || '', value: val, unit: s.unit || '' })
 
-        // Detect fuel
-        if ((s.type === 'fuel_level_sensor' || s.type === 'absolute_fuel_impulse_sensor' ||
-             s.name?.toLowerCase().includes('бак') || s.name?.toLowerCase().includes('топлив')) && val != null) {
-          if (fuelLevel == null) fuelLevel = val
+        const sType = s.type || ''
+        const sName = (s.name || '').toLowerCase()
+
+        // Detect TANK fuel level — ONLY fuel_level_sensor type (бак (CAN), топливный бак)
+        // This gives the actual fuel in the tank at this moment
+        if ((sType === 'fuel_level_sensor' ||
+             (sName.includes('бак') && sType !== 'absolute_fuel_impulse_sensor') ||
+             (sName.includes('топливн') && sType !== 'absolute_fuel_impulse_sensor')) && val != null) {
+          if (fuelLevel == null) {
+            fuelLevel = val
+            fuelSensorType = 'fuel_level_sensor'
+          }
+        }
+        // Detect ABSOLUTE fuel impulse sensor — total fuel consumed since manufacture
+        // This is NOT the tank level, but an accumulating counter
+        if ((sType === 'absolute_fuel_impulse_sensor' ||
+             sName.includes('расход с выпуска') ||
+             sName.includes('расход имп')) && val != null) {
+          if (absoluteFuelConsumed == null) {
+            absoluteFuelConsumed = val
+            // If we don't have a tank fuel level, mark the type as absolute so downstream knows
+            if (fuelLevel == null) fuelSensorType = 'absolute_fuel_impulse_sensor'
+          }
         }
         // Detect mileage
-        if ((s.type === 'odometer' || s.name?.toLowerCase().includes('пробег')) && val != null) {
+        if ((sType === 'odometer' || sName.includes('пробег')) && val != null) {
           if (mileage == null) mileage = val
         }
         // Detect engine temp
-        if ((s.type === 'temperature' || s.name?.toLowerCase().includes('температур') || s.name?.toLowerCase().includes('ож')) && val != null) {
+        if ((sType === 'temperature' || sName.includes('температур') || sName.includes('ож')) && val != null) {
           if (engineTemp == null) engineTemp = val
         }
         // Detect ignition
-        if ((s.type === 'ignition_sensor' || s.name?.toLowerCase().includes('зажиган')) && val != null) {
+        if ((sType === 'ignition_sensor' || sName.includes('зажиган')) && val != null) {
           if (ignition == null) ignition = val > 0
         }
       }
-      return { sensors, fuelLevel, mileage, engineTemp, ignition }
+      return { sensors, fuelLevel, absoluteFuelConsumed, mileage, engineTemp, ignition, fuelSensorType }
     }
 
     // Sensor type detection helpers (used by top-level sensors and object state parsing)
+    // TANK fuel sensor — actual fuel level in the tank right now
+    const isTankFuelSensorType = (type: string, name: string) =>
+      type === 'fuel_level_sensor' ||
+      (name?.toLowerCase().includes('бак') && type !== 'absolute_fuel_impulse_sensor') ||
+      (name?.toLowerCase().includes('топливн') && type !== 'absolute_fuel_impulse_sensor')
+    // ABSOLUTE fuel impulse sensor — total consumed since manufacture (NOT tank level)
+    const isAbsoluteFuelSensorType = (type: string, name: string) =>
+      type === 'absolute_fuel_impulse_sensor' ||
+      name?.toLowerCase().includes('расход с выпуска') ||
+      name?.toLowerCase().includes('расход имп')
+    // Combined: any fuel-related sensor (used for sensor discovery/fallback)
     const isFuelSensorType = (type: string, name: string) =>
-      type === 'fuel_level_sensor' || type === 'absolute_fuel_impulse_sensor' ||
-      name?.toLowerCase().includes('бак') || name?.toLowerCase().includes('топлив')
+      isTankFuelSensorType(type, name) || isAbsoluteFuelSensorType(type, name)
     const isMileageSensorType = (type: string, name: string) =>
       type === 'odometer' || name?.toLowerCase().includes('пробег')
     const isEngineTempType = (type: string, name: string) =>
@@ -156,6 +190,8 @@ async function fetchAxentaTrackSnapshots(
       imei: tracker.imei,
       capturedAt: point.timestamp || capturedAt,
       fuelLevel: sensorData.fuelLevel,
+      absoluteFuelConsumed: sensorData.absoluteFuelConsumed,
+      fuelSensorType: sensorData.fuelSensorType,
       mileage: sensorData.mileage,
       engineTemp: sensorData.engineTemp,
       speed: point.spd,
@@ -290,14 +326,33 @@ async function fetchAxentaTrackSnapshots(
     }
 
     // Helper: enrich sensorData from a set of parsed sensor values
+    // Properly distinguishes tank fuel level from absolute fuel impulse
     const enrichFromSensorValues = (
       sensorValues: Map<string, { startVal: number | null; endVal: number | null; meta: { type: string; name: string; unit: string } }>
     ) => {
       for (const [, sv] of sensorValues) {
         const { startVal, endVal, meta } = sv
-        if (isFuelSensorType(meta.type, meta.name)) {
-          if (startSensorData.fuelLevel == null && startVal != null) startSensorData.fuelLevel = startVal
-          if (endSensorData.fuelLevel == null && endVal != null) endSensorData.fuelLevel = endVal
+        // TANK fuel level — only from fuel_level_sensor type
+        if (isTankFuelSensorType(meta.type, meta.name)) {
+          if (startSensorData.fuelLevel == null && startVal != null) {
+            startSensorData.fuelLevel = startVal
+            startSensorData.fuelSensorType = 'fuel_level_sensor'
+          }
+          if (endSensorData.fuelLevel == null && endVal != null) {
+            endSensorData.fuelLevel = endVal
+            endSensorData.fuelSensorType = 'fuel_level_sensor'
+          }
+        }
+        // ABSOLUTE fuel impulse — accumulating counter, NOT tank level
+        if (isAbsoluteFuelSensorType(meta.type, meta.name)) {
+          if (startSensorData.absoluteFuelConsumed == null && startVal != null) {
+            startSensorData.absoluteFuelConsumed = startVal
+            if (startSensorData.fuelSensorType == null) startSensorData.fuelSensorType = 'absolute_fuel_impulse_sensor'
+          }
+          if (endSensorData.absoluteFuelConsumed == null && endVal != null) {
+            endSensorData.absoluteFuelConsumed = endVal
+            if (endSensorData.fuelSensorType == null) endSensorData.fuelSensorType = 'absolute_fuel_impulse_sensor'
+          }
         }
         if (isMileageSensorType(meta.type, meta.name)) {
           if (startSensorData.mileage == null && startVal != null) startSensorData.mileage = startVal
@@ -390,9 +445,13 @@ async function fetchAxentaTrackSnapshots(
                   const endVal = findClosestValue(graphPoints, endTime)
                   console.log('[fetchAxentaTrackSnapshots] Sensor graph API — sensor', sid, '(' + meta.name + '): startVal=', startVal, 'endVal=', endVal, 'points:', graphPoints.length)
 
-                  if (isFuelSensorType(meta.type, meta.name)) {
-                    if (startSensorData.fuelLevel == null && startVal != null) startSensorData.fuelLevel = startVal
-                    if (endSensorData.fuelLevel == null && endVal != null) endSensorData.fuelLevel = endVal
+                  if (isTankFuelSensorType(meta.type, meta.name)) {
+                    if (startSensorData.fuelLevel == null && startVal != null) { startSensorData.fuelLevel = startVal; startSensorData.fuelSensorType = 'fuel_level_sensor' }
+                    if (endSensorData.fuelLevel == null && endVal != null) { endSensorData.fuelLevel = endVal; endSensorData.fuelSensorType = 'fuel_level_sensor' }
+                  }
+                  if (isAbsoluteFuelSensorType(meta.type, meta.name)) {
+                    if (startSensorData.absoluteFuelConsumed == null && startVal != null) { startSensorData.absoluteFuelConsumed = startVal; if (!startSensorData.fuelSensorType) startSensorData.fuelSensorType = 'absolute_fuel_impulse_sensor' }
+                    if (endSensorData.absoluteFuelConsumed == null && endVal != null) { endSensorData.absoluteFuelConsumed = endVal; if (!endSensorData.fuelSensorType) endSensorData.fuelSensorType = 'absolute_fuel_impulse_sensor' }
                   }
                   if (isMileageSensorType(meta.type, meta.name)) {
                     if (startSensorData.mileage == null && startVal != null) startSensorData.mileage = startVal
@@ -427,9 +486,8 @@ async function fetchAxentaTrackSnapshots(
     }
 
     // ── Fallback: Try to get sensor values from Axenta messages API ──
-    // If we still have no fuel/mileage data, fetch the first and last messages for the trip period
-    // which should contain sensor values at those points in time
-    if (startSensorData.fuelLevel == null && sensorTypeMap.size > 0) {
+    // Only try if we're still missing fuelLevel OR absoluteFuelConsumed
+    if ((startSensorData.fuelLevel == null || startSensorData.absoluteFuelConsumed == null) && sensorTypeMap.size > 0) {
       try {
         // Fetch first message near start time
         const firstMsgUrl = `${settings.apiUrl}/api/objects/${objectId}/messages/?startDate=${encodeURIComponent(startISO)}&endDate=${encodeURIComponent(new Date(startTime.getTime() + 600000).toISOString())}&limit=1`
@@ -446,11 +504,12 @@ async function fetchAxentaTrackSnapshots(
               if (!meta || rawVal == null) continue
               const val = Number(rawVal)
               if (isNaN(val)) continue
-              if (isFuelSensorType(meta.type, meta.name) && startSensorData.fuelLevel == null) startSensorData.fuelLevel = val
+              if (isTankFuelSensorType(meta.type, meta.name) && startSensorData.fuelLevel == null) { startSensorData.fuelLevel = val; startSensorData.fuelSensorType = 'fuel_level_sensor' }
+              if (isAbsoluteFuelSensorType(meta.type, meta.name) && startSensorData.absoluteFuelConsumed == null) { startSensorData.absoluteFuelConsumed = val; if (!startSensorData.fuelSensorType) startSensorData.fuelSensorType = 'absolute_fuel_impulse_sensor' }
               if (isMileageSensorType(meta.type, meta.name) && startSensorData.mileage == null) startSensorData.mileage = val
               if (isEngineTempType(meta.type, meta.name) && startSensorData.engineTemp == null) startSensorData.engineTemp = val
             }
-            console.log('[fetchAxentaTrackSnapshots] First message sensor values — fuel:', startSensorData.fuelLevel, 'mileage:', startSensorData.mileage)
+            console.log('[fetchAxentaTrackSnapshots] First message sensor values — fuel:', startSensorData.fuelLevel, 'absoluteFuel:', startSensorData.absoluteFuelConsumed, 'mileage:', startSensorData.mileage)
           } else {
             console.log('[fetchAxentaTrackSnapshots] Messages API: no messages with sensors found near start (msgs:', msgs.length, ')')
           }
@@ -461,7 +520,7 @@ async function fetchAxentaTrackSnapshots(
         console.error('[fetchAxentaTrackSnapshots] Messages API error (start):', msgErr)
       }
     }
-    if (endSensorData.fuelLevel == null && sensorTypeMap.size > 0) {
+    if ((endSensorData.fuelLevel == null || endSensorData.absoluteFuelConsumed == null) && sensorTypeMap.size > 0) {
       try {
         // Fetch last message near end time
         const lastMsgUrl = `${settings.apiUrl}/api/objects/${objectId}/messages/?startDate=${encodeURIComponent(new Date(endTime.getTime() - 600000).toISOString())}&endDate=${encodeURIComponent(endISO)}&limit=1`
@@ -478,11 +537,12 @@ async function fetchAxentaTrackSnapshots(
               if (!meta || rawVal == null) continue
               const val = Number(rawVal)
               if (isNaN(val)) continue
-              if (isFuelSensorType(meta.type, meta.name) && endSensorData.fuelLevel == null) endSensorData.fuelLevel = val
+              if (isTankFuelSensorType(meta.type, meta.name) && endSensorData.fuelLevel == null) { endSensorData.fuelLevel = val; endSensorData.fuelSensorType = 'fuel_level_sensor' }
+              if (isAbsoluteFuelSensorType(meta.type, meta.name) && endSensorData.absoluteFuelConsumed == null) { endSensorData.absoluteFuelConsumed = val; if (!endSensorData.fuelSensorType) endSensorData.fuelSensorType = 'absolute_fuel_impulse_sensor' }
               if (isMileageSensorType(meta.type, meta.name) && endSensorData.mileage == null) endSensorData.mileage = val
               if (isEngineTempType(meta.type, meta.name) && endSensorData.engineTemp == null) endSensorData.engineTemp = val
             }
-            console.log('[fetchAxentaTrackSnapshots] Last message sensor values — fuel:', endSensorData.fuelLevel, 'mileage:', endSensorData.mileage)
+            console.log('[fetchAxentaTrackSnapshots] Last message sensor values — fuel:', endSensorData.fuelLevel, 'absoluteFuel:', endSensorData.absoluteFuelConsumed, 'mileage:', endSensorData.mileage)
           } else {
             console.log('[fetchAxentaTrackSnapshots] Messages API: no messages with sensors found near end (msgs:', msgs.length, ')')
           }
@@ -579,6 +639,234 @@ async function fetchAxentaSnapshot(
   const endTime = new Date(targetTime.getTime() + windowMinutes * 60 * 1000)
   const { startSnapshot } = await fetchAxentaTrackSnapshots(settings, objectId, tracker, startTime, endTime)
   return startSnapshot
+}
+
+// ═══════════════════════════════════════════════════════════════
+// Validation helpers for Axenta stat values
+// ═══════════════════════════════════════════════════════════════
+
+// Validate engineHours: reject negative or unreasonably large values (>50000h)
+function validateEngineHours(val: number | null | undefined): number | null {
+  if (val == null || isNaN(val)) return null
+  if (val < 0 || val > 50000) {
+    console.warn(`[validateEngineHours] Rejected invalid value: ${val}`)
+    return null
+  }
+  return val
+}
+
+// Validate fuelConsumed: reject negative or unreasonably large values (>10000L)
+function validateFuelConsumed(val: number | null | undefined): number | null {
+  if (val == null || isNaN(val)) return null
+  if (val < 0 || val > 10000) {
+    console.warn(`[validateFuelConsumed] Rejected invalid value: ${val}`)
+    return null
+  }
+  return Math.round(val * 100) / 100
+}
+
+// Validate avgFuelRate: reject negative or unreasonably large values (>200 л/100км)
+function validateAvgFuelRate(val: number | null | undefined): number | null {
+  if (val == null || isNaN(val)) return null
+  if (val < 1 || val > 200) {
+    console.warn(`[validateAvgFuelRate] Rejected invalid value: ${val}`)
+    return null
+  }
+  return Math.round(val * 100) / 100
+}
+
+// Validate avgSpeed: reject negative or unreasonably large values (>200 км/ч)
+function validateAvgSpeed(val: number | null | undefined): number | null {
+  if (val == null || isNaN(val)) return null
+  if (val < 0 || val > 200) {
+    console.warn(`[validateAvgSpeed] Rejected invalid value: ${val}`)
+    return null
+  }
+  return Math.round(val * 10) / 10
+}
+
+// ═══════════════════════════════════════════════════════════════
+// calculateTripAnalytics — computes all derivable fields from trip data
+// This is the single source of truth for trip analytics calculations
+// ═══════════════════════════════════════════════════════════════
+
+interface TripAnalyticsInput {
+  fuelStart?: number | null
+  fuelEnd?: number | null
+  fuelSensorType?: string | null   // 'fuel_level_sensor' or 'absolute_fuel_impulse_sensor'
+  absoluteFuelStart?: number | null // absolute fuel impulse at start
+  absoluteFuelEnd?: number | null   // absolute fuel impulse at end
+  mileageStart?: number | null
+  mileageEnd?: number | null
+  distance?: number | null
+  refuelVolume?: number | null
+  startDate?: Date | null
+  endDate?: Date | null
+  tripDuration?: number | null  // seconds (from Axenta or calculated)
+  parkingsDuration?: number | null // seconds
+  // Axenta stats (as fallbacks)
+  axentaMileage?: number | null
+  axentaAvgSpeed?: number | null
+  axentaMaxSpeed?: number | null
+  axentaFuelConsumption?: number | null
+  axentaAvgFuelConsumption?: number | null
+  axentaEngineHours?: number | null
+  axentaTripsDuration?: number | null
+}
+
+interface TripAnalyticsOutput {
+  fuelConsumed: number | null
+  fuelConsumedSource: string | null  // 'tank_sensor', 'absolute_sensor', 'axenta', 'user', 'calculated'
+  distance: number | null
+  avgSpeed: number | null
+  avgFuelRate: number | null
+  tripDuration: number | null
+  engineHours: number | null
+  maxSpeed: number | null
+}
+
+function calculateTripAnalytics(input: TripAnalyticsInput): TripAnalyticsOutput {
+  const result: TripAnalyticsOutput = {
+    fuelConsumed: null,
+    fuelConsumedSource: null,
+    distance: null,
+    avgSpeed: null,
+    avgFuelRate: null,
+    tripDuration: null,
+    engineHours: null,
+    maxSpeed: null,
+  }
+
+  // ── 1. Calculate tripDuration from startDate/endDate ──
+  if (input.startDate && input.endDate) {
+    const startMs = new Date(input.startDate).getTime()
+    const endMs = new Date(input.endDate).getTime()
+    const durationSec = Math.round((endMs - startMs) / 1000)
+    if (durationSec > 0) {
+      result.tripDuration = durationSec
+    }
+  }
+  // Prefer Axenta tripsDuration (moving time) if available
+  if (input.axentaTripsDuration != null && input.axentaTripsDuration > 0) {
+    result.tripDuration = input.axentaTripsDuration
+  }
+  // Keep existing tripDuration if we have it and it's reasonable
+  if (input.tripDuration != null && input.tripDuration > 0 && result.tripDuration == null) {
+    result.tripDuration = input.tripDuration
+  }
+
+  // ── 2. Calculate fuelConsumed ──
+  // Priority: absolute sensor difference > tank sensor difference > Axenta
+  const refuel = input.refuelVolume ?? 0
+
+  // Method 1: From absolute fuel impulse sensor (endAbsolute - startAbsolute)
+  // Absolute sensor accumulates total fuel consumed, so end > start
+  if (input.absoluteFuelStart != null && input.absoluteFuelEnd != null) {
+    const absoluteDiff = input.absoluteFuelEnd - input.absoluteFuelStart
+    if (absoluteDiff >= 0 && absoluteDiff < 10000) {
+      result.fuelConsumed = Math.round(absoluteDiff * 100) / 100
+      result.fuelConsumedSource = 'absolute_sensor'
+    }
+  }
+
+  // Method 2: From tank fuel level sensor (startLevel - endLevel + refuel)
+  // This is more accurate when tank sensor is available
+  if (input.fuelStart != null && input.fuelEnd != null) {
+    // Only use tank sensor calculation if fuelStart is a reasonable tank level (< 10000L)
+    if (input.fuelStart < 10000 && input.fuelEnd < 10000) {
+      const tankConsumed = Math.round((input.fuelStart - input.fuelEnd + refuel) * 100) / 100
+      if (tankConsumed >= 0) {
+        // Tank sensor calculation takes priority over absolute sensor
+        result.fuelConsumed = tankConsumed
+        result.fuelConsumedSource = 'tank_sensor'
+      }
+    } else if (input.fuelSensorType === 'absolute_fuel_impulse_sensor' && result.fuelConsumed == null) {
+      // If fuelStart/fuelEnd are from absolute sensor but we didn't already calculate
+      // (shouldn't happen since we handle it above, but just in case)
+      const absConsumed = input.fuelEnd - input.fuelStart
+      if (absConsumed >= 0 && absConsumed < 10000) {
+        result.fuelConsumed = Math.round(absConsumed * 100) / 100
+        result.fuelConsumedSource = 'absolute_sensor'
+      }
+    }
+  }
+
+  // Fallback: Axenta fuelConsumption
+  if (result.fuelConsumed == null && input.axentaFuelConsumption != null) {
+    const validated = validateFuelConsumed(input.axentaFuelConsumption)
+    if (validated != null) {
+      result.fuelConsumed = validated
+      result.fuelConsumedSource = 'axenta'
+    }
+  }
+
+  // ── 3. Calculate distance ──
+  // Priority: Axenta mileage > mileageEnd - mileageStart (only if both > 0) > existing distance
+  if (input.axentaMileage != null && input.axentaMileage > 0 && input.axentaMileage < 100000) {
+    result.distance = Math.round(input.axentaMileage * 10) / 10
+  } else if (input.mileageStart != null && input.mileageEnd != null && input.mileageEnd > input.mileageStart && input.mileageStart > 0) {
+    // Only calculate from mileage delta if both values are valid (>0 and end > start)
+    // A mileageStart of 0 usually means the sensor wasn't providing data
+    result.distance = Math.round((input.mileageEnd - input.mileageStart) * 10) / 10
+  } else if (input.distance != null && input.distance > 0 && input.distance < 100000) {
+    result.distance = input.distance
+  }
+
+  // ── 4. Calculate avgSpeed ──
+  // Prefer Axenta avgSpeed (usually moving average) over distance/duration
+  if (input.axentaAvgSpeed != null) {
+    const validated = validateAvgSpeed(input.axentaAvgSpeed)
+    if (validated != null && validated > 0) {
+      result.avgSpeed = validated
+    }
+  }
+  // Fallback: calculate from distance / movingDuration
+  if (result.avgSpeed == null && result.distance != null && result.distance > 0 && result.tripDuration != null && result.tripDuration > 0) {
+    result.avgSpeed = Math.round((result.distance / (result.tripDuration / 3600)) * 10) / 10
+  }
+
+  // ── 5. Calculate avgFuelRate (л/100км) ──
+  // Priority: self-calculated from fuelConsumed/distance > Axenta avgFuelConsumption
+  // Only calculate if fuelConsumed is reasonable (<10000л) and distance is reasonable
+  if (result.fuelConsumed != null && result.fuelConsumed > 0 && result.fuelConsumed < 10000
+      && result.distance != null && result.distance > 1 && result.distance < 100000) {
+    result.avgFuelRate = Math.round((result.fuelConsumed / result.distance * 100) * 100) / 100
+  } else if (input.axentaAvgFuelConsumption != null) {
+    const validated = validateAvgFuelRate(input.axentaAvgFuelConsumption)
+    if (validated != null && validated > 0) {
+      result.avgFuelRate = validated
+    }
+  }
+
+  // ── 6. engineHours ──
+  if (input.axentaEngineHours != null) {
+    const validated = validateEngineHours(input.axentaEngineHours)
+    if (validated != null) {
+      result.engineHours = validated
+    }
+  }
+  // Fallback: approximate from tripDuration (only if no Axenta engineHours)
+  if (result.engineHours == null && result.tripDuration != null && result.tripDuration > 0) {
+    // Approximate: tripDuration in seconds → hours (as decimal, e.g., 1.5 hours)
+    result.engineHours = Math.round((result.tripDuration / 3600) * 100) / 100
+  }
+
+  // ── 7. maxSpeed ──
+  if (input.axentaMaxSpeed != null && input.axentaMaxSpeed > 0) {
+    result.maxSpeed = Math.round(input.axentaMaxSpeed)
+  }
+
+  console.log('[calculateTripAnalytics] Result:', JSON.stringify({
+    fuelConsumed: result.fuelConsumed,
+    fuelConsumedSource: result.fuelConsumedSource,
+    distance: result.distance,
+    avgSpeed: result.avgSpeed,
+    avgFuelRate: result.avgFuelRate,
+    tripDuration: result.tripDuration,
+    engineHours: result.engineHours,
+  }))
+
+  return result
 }
 
 export async function GET(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -1330,9 +1618,27 @@ async function handleStart(id: string) {
   })
 
   if (tracker) {
-    // Auto-fill start values from tracker
+    // Auto-fill start values from tracker — but only use tank fuel level for fuelStart
+    // NOT the absolute_fuel_impulse_sensor which gives total consumed since manufacture
     if (tracker.lastFuelLevel != null) updateData.fuelStart = tracker.lastFuelLevel
     if (tracker.lastMileage != null) updateData.mileageStart = Math.round(tracker.lastMileage)
+
+    // Detect fuel sensor type and absolute fuel from sensor data
+    let fuelSensorType: string | null = null
+    let absoluteFuelConsumed: number | null = null
+    if (tracker.sensorData) {
+      for (const s of tracker.sensorData) {
+        const sType = s.sensorType || ''
+        const sName = (s.sensorName || '').toLowerCase()
+        if (sType === 'fuel_level_sensor' || (sName.includes('бак') && sType !== 'absolute_fuel_impulse_sensor')) {
+          if (!fuelSensorType) fuelSensorType = 'fuel_level_sensor'
+        }
+        if (sType === 'absolute_fuel_impulse_sensor' || sName.includes('расход с выпуска') || sName.includes('расход имп')) {
+          if (absoluteFuelConsumed == null && s.value != null) absoluteFuelConsumed = Number(s.value)
+          if (!fuelSensorType) fuelSensorType = 'absolute_fuel_impulse_sensor'
+        }
+      }
+    }
 
     // Snapshot tracker data at start — save to trackerSnapshotStart
     const snapshot: Record<string, unknown> = {
@@ -1340,6 +1646,8 @@ async function handleStart(id: string) {
       capturedAt: effectiveStartDate.toISOString(), fuelLevel: tracker.lastFuelLevel, mileage: tracker.lastMileage,
       engineTemp: tracker.lastEngineTemp, speed: tracker.lastSpeed, ignition: tracker.lastIgnition,
       latitude: tracker.lastLatitude, longitude: tracker.lastLongitude, address: tracker.lastAddress,
+      absoluteFuelConsumed,
+      fuelSensorType,
       sensors: tracker.sensorData.map(s => ({ type: s.sensorType, name: s.sensorName, value: s.value, unit: s.unit })),
     }
     updateData.trackerSnapshotStart = JSON.stringify(snapshot)
@@ -1388,49 +1696,55 @@ async function handleComplete(id: string, body?: Record<string, unknown> | null)
     include: { sensorData: true },
   })
 
-  if (tracker) {
-    // Use user override first, then tracker data
-    const effectiveFuelEnd = userFuelEnd ?? (tracker.lastFuelLevel != null && !trip.fuelEnd ? tracker.lastFuelLevel : null) ?? trip.fuelEnd ?? null
-    const effectiveMileageEnd = userMileageEnd ?? (tracker.lastMileage != null && !trip.mileageEnd ? Math.round(tracker.lastMileage) : null) ?? trip.mileageEnd ?? null
+  // Determine effective fuel/mileage values
+  const effectiveFuelEnd = userFuelEnd ?? (tracker?.lastFuelLevel != null && !trip.fuelEnd ? tracker.lastFuelLevel : null) ?? trip.fuelEnd ?? null
+  const effectiveMileageEnd = userMileageEnd ?? (tracker?.lastMileage != null && !trip.mileageEnd ? Math.round(tracker.lastMileage) : null) ?? trip.mileageEnd ?? null
+  const effectiveRefuelVolume = userRefuelVolume ?? trip.refuelVolume ?? 0
 
-    if (effectiveFuelEnd != null) updateData.fuelEnd = effectiveFuelEnd
-    if (effectiveMileageEnd != null) updateData.mileageEnd = effectiveMileageEnd
+  if (effectiveFuelEnd != null) updateData.fuelEnd = effectiveFuelEnd
+  if (effectiveMileageEnd != null) updateData.mileageEnd = effectiveMileageEnd
+  if (userRefuelVolume != null) updateData.refuelVolume = userRefuelVolume
 
-    // Calculate fuel consumed: fuelStart - fuelEnd + refuelVolume
-    const fuelStart = trip.fuelStart ?? null
-    if (userFuelConsumed != null) {
-      // User-confirmed value from dialog
-      updateData.fuelConsumed = userFuelConsumed
-    } else if (fuelStart != null && effectiveFuelEnd != null) {
-      const refuel = userRefuelVolume ?? 0
-      updateData.fuelConsumed = Math.round((fuelStart - effectiveFuelEnd + refuel) * 100) / 100
-      if ((updateData.fuelConsumed as number) < 0) updateData.fuelConsumed = 0
+  // Detect fuel sensor type from start snapshot
+  let fuelSensorType: string | null = null
+  let absoluteFuelStart: number | null = null
+  let absoluteFuelEnd: number | null = null
+  try {
+    if (trip.trackerSnapshotStart) {
+      const startSnap = JSON.parse(trip.trackerSnapshotStart)
+      fuelSensorType = startSnap.fuelSensorType || null
+      absoluteFuelStart = startSnap.absoluteFuelConsumed ?? null
     }
+  } catch { /* ignore */ }
 
-    // Save user-provided refuel volume
-    if (userRefuelVolume != null) updateData.refuelVolume = userRefuelVolume
+  // Get absolute fuel end from current tracker sensor data
+  if (tracker?.sensorData) {
+    for (const s of tracker.sensorData) {
+      const sType = s.sensorType || ''
+      const sName = (s.sensorName || '').toLowerCase()
+      if ((sType === 'absolute_fuel_impulse_sensor' || sName.includes('расход с выпуска') || sName.includes('расход имп')) && s.value != null) {
+        absoluteFuelEnd = Number(s.value)
+      }
+    }
+  }
 
-    const mileageStart = trip.mileageStart ?? null
-    if (mileageStart != null && effectiveMileageEnd != null && !trip.distance) updateData.distance = effectiveMileageEnd - mileageStart
-
-    const startDate = new Date(trip.startDate)
-    const durationSec = Math.round((now.getTime() - startDate.getTime()) / 1000)
-    updateData.tripDuration = durationSec
-
-    const dist = (updateData.distance as number) ?? trip.distance ?? null
-    if (dist && durationSec > 0) updateData.avgSpeed = Math.round((dist / (durationSec / 3600)) * 10) / 10
-
-    // Snapshot tracker data at end — save to trackerSnapshot (keeping trackerSnapshotStart intact)
+  // Snapshot tracker data at end — save to trackerSnapshot (keeping trackerSnapshotStart intact)
+  if (tracker) {
     const snapshot: Record<string, unknown> = {
       trackerId: tracker.id, trackerName: tracker.trackerName, imei: tracker.imei,
       capturedAt: now.toISOString(), fuelLevel: tracker.lastFuelLevel, mileage: tracker.lastMileage,
       engineTemp: tracker.lastEngineTemp, speed: tracker.lastSpeed, ignition: tracker.lastIgnition,
       latitude: tracker.lastLatitude, longitude: tracker.lastLongitude, address: tracker.lastAddress,
+      absoluteFuelConsumed: absoluteFuelEnd,
+      fuelSensorType,
       sensors: tracker.sensorData.map(s => ({ type: s.sensorType, name: s.sensorName, value: s.value, unit: s.unit })),
     }
     updateData.trackerSnapshot = JSON.stringify(snapshot)
+  }
 
-    // Try to get stats from Axenta.cloud (for additional metrics like maxSpeed, avgFuelRate, etc.)
+  // ── Fetch Axenta stats for additional metrics ──
+  let axentaStats: Record<string, unknown> | null = null
+  if (tracker) {
     try {
       const settings = await db.axentaSettings.findFirst()
       if (settings?.isActive && settings.apiUrl && settings.apiKey) {
@@ -1441,24 +1755,28 @@ async function handleComplete(id: string, body?: Record<string, unknown> | null)
           const statsResponse = await fetch(statsUrl, {
             method: 'POST',
             headers: { 'Authorization': `Token ${token}`, 'Content-Type': 'application/json' },
-            body: JSON.stringify({ objectId: Number(objectId), startDate: startDate.toISOString(), endDate: now.toISOString() }),
+            body: JSON.stringify({ objectId: Number(objectId), startDate: new Date(trip.startDate).toISOString(), endDate: now.toISOString() }),
             signal: AbortSignal.timeout(15000),
           })
           if (statsResponse.ok) {
             const stats = await statsResponse.json()
-            // Only use Axenta stats for fields NOT already set by user or basic calculations
-            if (stats.mileage && !updateData.distance) updateData.distance = Number(stats.mileage)
-            if (stats.avgSpeed) updateData.avgSpeed = Number(stats.avgSpeed)
-            if (stats.maxSpeed) updateData.maxSpeed = Number(stats.maxSpeed)
-            // Use Axenta fuelConsumption only if user didn't provide fuelConsumed
-            if (stats.fuelConsumption && userFuelConsumed == null) updateData.fuelConsumed = Number(stats.fuelConsumption)
-            if (stats.avgFuelConsumption) updateData.avgFuelRate = Number(stats.avgFuelConsumption)
-            // Use Axenta refuelVolume only if user didn't provide it
+            axentaStats = {
+              mileage: stats.mileage ?? null,
+              avgSpeed: stats.avgSpeed ?? null,
+              maxSpeed: stats.maxSpeed ?? null,
+              fuelConsumption: stats.fuelConsumption ?? null,
+              avgFuelConsumption: stats.avgFuelConsumption ?? null,
+              refuelVolume: stats.refuelVolume ?? null,
+              plumVolume: stats.plumVolume ?? null,
+              tripsDuration: stats.tripsDuration ?? null,
+              parkingsDuration: stats.parkingsDuration ?? null,
+              engineHours: stats.engineHours ?? null,
+              idleTime: stats.idleTime ?? null,
+            }
+            // Also use Axenta refuel/plum volumes
             if (stats.refuelVolume && userRefuelVolume == null) updateData.refuelVolume = Number(stats.refuelVolume)
             if (stats.plumVolume) updateData.plumVolume = Number(stats.plumVolume)
-            if (stats.tripsDuration) updateData.tripDuration = Number(stats.tripsDuration)
             if (stats.parkingsDuration) updateData.parkingsDuration = Number(stats.parkingsDuration)
-            if (stats.engineHours) updateData.engineHours = Number(stats.engineHours)
             if (stats.idleTime) updateData.idleTime = Number(stats.idleTime)
           }
         }
@@ -1466,21 +1784,52 @@ async function handleComplete(id: string, body?: Record<string, unknown> | null)
     } catch (statsError) {
       console.error('[Trip Complete] Stats fetch failed:', statsError)
     }
-  } else {
-    // No tracker — still apply user overrides if provided
-    if (userFuelEnd != null) updateData.fuelEnd = userFuelEnd
-    if (userMileageEnd != null) updateData.mileageEnd = userMileageEnd
-    if (userFuelConsumed != null) updateData.fuelConsumed = userFuelConsumed
-    if (userRefuelVolume != null) updateData.refuelVolume = userRefuelVolume
-
-    // Calculate distance from mileage if possible
-    const mileageStart = trip.mileageStart ?? null
-    if (mileageStart != null && userMileageEnd != null && !trip.distance) updateData.distance = userMileageEnd - mileageStart
-
-    const startDate = new Date(trip.startDate)
-    const durationSec = Math.round((now.getTime() - startDate.getTime()) / 1000)
-    updateData.tripDuration = durationSec
   }
+
+  // ── Calculate all analytics using the unified function ──
+  const fuelStart = trip.fuelStart ?? null
+  const mileageStart = trip.mileageStart ?? null
+
+  // If user explicitly provided fuelConsumed, use that instead of calculated
+  if (userFuelConsumed != null) {
+    const validated = validateFuelConsumed(userFuelConsumed)
+    if (validated != null) {
+      updateData.fuelConsumed = validated
+    }
+  }
+
+  const analytics = calculateTripAnalytics({
+    fuelStart,
+    fuelEnd: effectiveFuelEnd,
+    fuelSensorType,
+    absoluteFuelStart,
+    absoluteFuelEnd,
+    mileageStart,
+    mileageEnd: effectiveMileageEnd,
+    distance: trip.distance ?? null,
+    refuelVolume: effectiveRefuelVolume,
+    startDate: trip.startDate,
+    endDate: now,
+    tripDuration: trip.tripDuration ?? null,
+    axentaMileage: axentaStats?.mileage as number | null ?? null,
+    axentaAvgSpeed: axentaStats?.avgSpeed as number | null ?? null,
+    axentaMaxSpeed: axentaStats?.maxSpeed as number | null ?? null,
+    axentaFuelConsumption: axentaStats?.fuelConsumption as number | null ?? null,
+    axentaAvgFuelConsumption: axentaStats?.avgFuelConsumption as number | null ?? null,
+    axentaEngineHours: axentaStats?.engineHours as number | null ?? null,
+    axentaTripsDuration: axentaStats?.tripsDuration as number | null ?? null,
+  })
+
+  // Apply analytics results (don't override user-provided fuelConsumed)
+  if (updateData.fuelConsumed == null && analytics.fuelConsumed != null) {
+    updateData.fuelConsumed = analytics.fuelConsumed
+  }
+  if (analytics.distance != null) updateData.distance = analytics.distance
+  if (analytics.avgSpeed != null) updateData.avgSpeed = analytics.avgSpeed
+  if (analytics.avgFuelRate != null) updateData.avgFuelRate = analytics.avgFuelRate
+  if (analytics.tripDuration != null) updateData.tripDuration = analytics.tripDuration
+  if (analytics.engineHours != null) updateData.engineHours = analytics.engineHours
+  if (analytics.maxSpeed != null) updateData.maxSpeed = analytics.maxSpeed
 
   const updatedTrip = await db.trip.update({
     where: { id },
@@ -1504,11 +1853,161 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     const body = await request.json()
     if (body?.action === 'start') return await handleStart(id)
     if (body?.action === 'complete') return await handleComplete(id, body)
+    if (body?.action === 'recalculate') return await handleRecalculate(id)
     return NextResponse.json({ error: 'Unknown action' }, { status: 400 })
   } catch (error) {
     console.error('[Trip POST] Error:', error)
     return NextResponse.json({ error: 'Ошибка' }, { status: 500 })
   }
+}
+
+// ═══════════════════════════════════════════════════════════════
+// Recalculate analytics for a completed trip
+// Re-fetches Axenta stats and re-calculates all derivable fields
+// ═══════════════════════════════════════════════════════════════
+async function handleRecalculate(id: string) {
+  const trip = await db.trip.findUnique({
+    where: { id },
+    include: {
+      equipment: { select: { id: true, name: true, registrationNum: true, brand: true, model: true } },
+      crew: { select: { id: true, name: true, members: { select: { fullName: true, role: true } } } },
+    },
+  })
+  if (!trip) return NextResponse.json({ error: 'Рейс не найден' }, { status: 404 })
+  if (!trip.startDate) return NextResponse.json({ error: 'У рейса нет даты начала' }, { status: 400 })
+
+  const updateData: Record<string, unknown> = {}
+
+  // Extract fuel sensor type and absolute fuel from start snapshot
+  let fuelSensorType: string | null = null
+  let absoluteFuelStart: number | null = null
+  let absoluteFuelEnd: number | null = null
+
+  try {
+    if (trip.trackerSnapshotStart) {
+      const startSnap = JSON.parse(trip.trackerSnapshotStart)
+      fuelSensorType = startSnap.fuelSensorType || null
+      absoluteFuelStart = startSnap.absoluteFuelConsumed ?? null
+    }
+  } catch { /* ignore */ }
+  try {
+    if (trip.trackerSnapshot) {
+      const endSnap = JSON.parse(trip.trackerSnapshot)
+      absoluteFuelEnd = endSnap.absoluteFuelConsumed ?? null
+      if (!fuelSensorType) fuelSensorType = endSnap.fuelSensorType || null
+    }
+  } catch { /* ignore */ }
+
+  // Try to get tracker for Axenta stats
+  const tracker = await db.glonassTracker.findFirst({
+    where: { equipmentId: trip.equipmentId },
+  })
+
+  // Fetch Axenta stats
+  let axentaStats: Record<string, unknown> | null = null
+  if (tracker) {
+    try {
+      const settings = await db.axentaSettings.findFirst()
+      if (settings?.isActive && settings.apiUrl && settings.apiKey) {
+        const objectId = tracker.axentaCloudId || tracker.trackerId
+        if (objectId) {
+          const token = await getValidToken(settings)
+          const startDate = new Date(trip.startDate).toISOString()
+          const endDate = (trip.endDate ? new Date(trip.endDate) : new Date()).toISOString()
+          const statsResponse = await fetch(`${settings.apiUrl}/api/objects/stats/`, {
+            method: 'POST',
+            headers: { 'Authorization': `Token ${token}`, 'Content-Type': 'application/json' },
+            body: JSON.stringify({ objectId: Number(objectId), startDate, endDate }),
+            signal: AbortSignal.timeout(15000),
+          })
+          if (statsResponse.ok) {
+            const stats = await statsResponse.json()
+            axentaStats = {
+              mileage: stats.mileage ?? null,
+              avgSpeed: stats.avgSpeed ?? null,
+              maxSpeed: stats.maxSpeed ?? null,
+              fuelConsumption: stats.fuelConsumption ?? null,
+              avgFuelConsumption: stats.avgFuelConsumption ?? null,
+              refuelVolume: stats.refuelVolume ?? null,
+              plumVolume: stats.plumVolume ?? null,
+              tripsDuration: stats.tripsDuration ?? null,
+              parkingsDuration: stats.parkingsDuration ?? null,
+              engineHours: stats.engineHours ?? null,
+              idleTime: stats.idleTime ?? null,
+            }
+            // Update refuel/plum/parkings/idle from fresh Axenta data
+            if (stats.refuelVolume) updateData.refuelVolume = Number(stats.refuelVolume)
+            if (stats.plumVolume) updateData.plumVolume = Number(stats.plumVolume)
+            if (stats.parkingsDuration) updateData.parkingsDuration = Number(stats.parkingsDuration)
+            if (stats.idleTime) updateData.idleTime = Number(stats.idleTime)
+          }
+        }
+      }
+    } catch (statsErr) {
+      console.error('[Recalculate] Stats fetch failed:', statsErr)
+    }
+  }
+
+  // Calculate analytics
+  const analytics = calculateTripAnalytics({
+    fuelStart: trip.fuelStart,
+    fuelEnd: trip.fuelEnd,
+    fuelSensorType,
+    absoluteFuelStart,
+    absoluteFuelEnd,
+    mileageStart: trip.mileageStart,
+    mileageEnd: trip.mileageEnd,
+    distance: trip.distance,
+    refuelVolume: axentaStats?.refuelVolume as number | null ?? trip.refuelVolume ?? null,
+    startDate: trip.startDate,
+    endDate: trip.endDate ?? new Date(),
+    tripDuration: trip.tripDuration,
+    parkingsDuration: trip.parkingsDuration,
+    axentaMileage: axentaStats?.mileage as number | null ?? null,
+    axentaAvgSpeed: axentaStats?.avgSpeed as number | null ?? null,
+    axentaMaxSpeed: axentaStats?.maxSpeed as number | null ?? null,
+    axentaFuelConsumption: axentaStats?.fuelConsumption as number | null ?? null,
+    axentaAvgFuelConsumption: axentaStats?.avgFuelConsumption as number | null ?? null,
+    axentaEngineHours: axentaStats?.engineHours as number | null ?? null,
+    axentaTripsDuration: axentaStats?.tripsDuration as number | null ?? null,
+  })
+
+  // Apply all calculated fields (recalculate always overwrites)
+  if (analytics.fuelConsumed != null) updateData.fuelConsumed = analytics.fuelConsumed
+  if (analytics.distance != null) updateData.distance = analytics.distance
+  if (analytics.avgSpeed != null) updateData.avgSpeed = analytics.avgSpeed
+  if (analytics.avgFuelRate != null) updateData.avgFuelRate = analytics.avgFuelRate
+  if (analytics.tripDuration != null) updateData.tripDuration = analytics.tripDuration
+  if (analytics.engineHours != null) updateData.engineHours = analytics.engineHours
+  if (analytics.maxSpeed != null) updateData.maxSpeed = analytics.maxSpeed
+
+  if (Object.keys(updateData).length === 0) {
+    return NextResponse.json({ message: 'Нет данных для пересчёта', trip })
+  }
+
+  const updatedTrip = await db.trip.update({
+    where: { id },
+    data: updateData,
+    include: {
+      equipment: { select: { id: true, name: true, registrationNum: true, brand: true, model: true } },
+      crew: { select: { id: true, name: true, members: { select: { fullName: true, role: true } } } },
+    },
+  })
+
+  return NextResponse.json({
+    message: 'Аналитика пересчитана',
+    analytics: {
+      fuelConsumed: analytics.fuelConsumed,
+      fuelConsumedSource: analytics.fuelConsumedSource,
+      distance: analytics.distance,
+      avgSpeed: analytics.avgSpeed,
+      avgFuelRate: analytics.avgFuelRate,
+      tripDuration: analytics.tripDuration,
+      engineHours: analytics.engineHours,
+      maxSpeed: analytics.maxSpeed,
+    },
+    trip: updatedTrip,
+  })
 }
 
 export async function PUT(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {

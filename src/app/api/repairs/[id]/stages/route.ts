@@ -16,6 +16,8 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
         endDate: body.endDate ? new Date(body.endDate) : null,
         performer: body.performer || null,
         cost: body.cost ? parseFloat(String(body.cost)) : null,
+        estimatedDuration: body.estimatedDuration ? parseFloat(String(body.estimatedDuration)) : null,
+        notes: body.notes || null,
         sortOrder: body.sortOrder || 0,
       }
     })
@@ -37,18 +39,34 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
       return NextResponse.json({ error: 'Stage ID required' }, { status: 400 })
     }
 
+    // Auto-set start/end dates based on status transitions
+    const existingStage = await db.repairStage.findUnique({ where: { id: stageId } })
+    const updateData: Record<string, unknown> = {
+      name: body.name,
+      description: body.description || null,
+      status: body.status,
+      startDate: body.startDate ? new Date(body.startDate) : null,
+      endDate: body.endDate ? new Date(body.endDate) : null,
+      performer: body.performer || null,
+      cost: body.cost !== undefined ? (body.cost ? parseFloat(String(body.cost)) : null) : undefined,
+      estimatedDuration: body.estimatedDuration !== undefined ? (body.estimatedDuration ? parseFloat(String(body.estimatedDuration)) : null) : undefined,
+      notes: body.notes || null,
+      sortOrder: body.sortOrder,
+    }
+
+    // Auto-set startDate when moving to in_progress
+    if (body.status === 'in_progress' && existingStage?.status === 'pending' && !body.startDate) {
+      updateData.startDate = new Date()
+    }
+
+    // Auto-set endDate when moving to completed
+    if (body.status === 'completed' && existingStage?.status !== 'completed' && !body.endDate) {
+      updateData.endDate = new Date()
+    }
+
     const stage = await db.repairStage.update({
       where: { id: stageId },
-      data: {
-        name: body.name,
-        description: body.description || null,
-        status: body.status,
-        startDate: body.startDate ? new Date(body.startDate) : null,
-        endDate: body.endDate ? new Date(body.endDate) : null,
-        performer: body.performer || null,
-        cost: body.cost !== undefined ? (body.cost ? parseFloat(String(body.cost)) : null) : undefined,
-        sortOrder: body.sortOrder,
-      }
+      data: updateData,
     })
 
     return NextResponse.json(stage)

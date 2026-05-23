@@ -1,6 +1,14 @@
 import { db } from '@/lib/db'
 import { NextRequest, NextResponse } from 'next/server'
 
+function getStatusName(status: string): string {
+  const map: Record<string, string> = {
+    active: 'В эксплуатации', repair: 'На ремонте', decommissioned: 'Списана',
+    rented: 'В аренде', reserved: 'Зарезервирована',
+  }
+  return map[status] || status
+}
+
 export async function GET(_request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     const { id } = await params
@@ -58,7 +66,6 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
 
     const oldEquipment = await db.equipment.findUnique({ where: { id } })
 
-    // Helper: only include field if explicitly provided in body
     const data: Record<string, unknown> = {}
     const setOrNull = (key: string, val: unknown) => { if (val !== undefined) data[key] = val || null }
     const setOrKeep = (key: string, val: unknown) => { if (val !== undefined) data[key] = val }
@@ -93,6 +100,26 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
     setDateOrNull('inspectionDate', body.inspectionDate)
     setDateOrNull('inspectionExpiry', body.inspectionExpiry)
     setOrKeep('status', body.status)
+    setOrKeep('condition', body.condition)
+    setOrNull('location', body.location)
+    setOrNull('depot', body.depot)
+    setDateOrNull('lastMaintenanceDate', body.lastMaintenanceDate)
+    setDateOrNull('nextMaintenanceDate', body.nextMaintenanceDate)
+    setIntOrNull('maintenanceInterval', body.maintenanceInterval)
+    setFloatOrNull('fuelConsumptionNorm', body.fuelConsumptionNorm)
+    setOrNull('tireSize', body.tireSize)
+    setDateOrNull('tireReplacementDate', body.tireReplacementDate)
+    setDateOrNull('oilChangeDate', body.oilChangeDate)
+    setIntOrNull('oilChangeMileage', body.oilChangeMileage)
+    setIntOrNull('oilChangeInterval', body.oilChangeInterval)
+    setOrNull('assignedDriver', body.assignedDriver)
+    setOrNull('garageNumber', body.garageNumber)
+    setOrNull('unitNumber', body.unitNumber)
+    setDateOrNull('rentalStartDate', body.rentalStartDate)
+    setDateOrNull('rentalEndDate', body.rentalEndDate)
+    setFloatOrNull('rentalCost', body.rentalCost)
+    setDateOrNull('decommissionDate', body.decommissionDate)
+    setOrNull('decommissionReason', body.decommissionReason)
     setOrNull('notes', body.notes)
     setOrNull('ownerId', body.ownerId)
     setOrNull('renterId', body.renterId)
@@ -116,6 +143,20 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
           date: new Date(),
           oldValue: oldEquipment.status,
           newValue: body.status,
+        }
+      })
+    }
+
+    // Track condition changes in history
+    if (oldEquipment && body.condition !== undefined && oldEquipment.condition !== body.condition) {
+      await db.equipmentHistory.create({
+        data: {
+          equipmentId: id,
+          event: 'inspection',
+          description: `Состояние изменено: ${oldEquipment.condition || '—'} → ${body.condition}`,
+          date: new Date(),
+          oldValue: oldEquipment.condition,
+          newValue: body.condition,
         }
       })
     }
@@ -164,14 +205,4 @@ export async function DELETE(_request: NextRequest, { params }: { params: Promis
     console.error('Error deleting equipment:', error)
     return NextResponse.json({ error: 'Failed to delete equipment' }, { status: 500 })
   }
-}
-
-function getStatusName(status: string): string {
-  const map: Record<string, string> = {
-    active: 'В эксплуатации',
-    repair: 'На ремонте',
-    decommissioned: 'Списана',
-    rented: 'В аренде',
-  }
-  return map[status] || status
 }

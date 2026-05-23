@@ -291,8 +291,10 @@ async function updateTrackerFromAxenta(trackerDbId: string, axentaObject: Record
           }
 
           // Map Axenta sensor types to our tracker fields
-          if (sensorType.includes('fuel') || sensorName.toLowerCase().includes('топлив') || (sensorType === 'custom_sensor' && sensorName.toLowerCase().includes('бак'))) {
-            // Fuel level sensor
+          // IMPORTANT: Only use fuel_level_sensor and custom_sensor(бак) for tank fuel level
+          // absolute_fuel_impulse_sensor gives total consumed since manufacture — NOT tank level
+          if ((sensorType === 'fuel_level_sensor' || (sensorType === 'custom_sensor' && sensorName.toLowerCase().includes('бак')) || (sensorType.includes('fuel') && !sensorType.includes('impulse') && !sensorType.includes('absolute')))) {
+            // Fuel level sensor (tank level)
             if (sensorValue != null) {
               totalFuel += sensorValue
               hasFuelSensor = true
@@ -348,7 +350,7 @@ async function updateTrackerFromAxenta(trackerDbId: string, axentaObject: Record
         // Only use stats if we don't already have values from sensors
         if (stats.mileage != null && updateData.lastMileage == null) updateData.lastMileage = Number(stats.mileage)
         if (stats.avgSpeed != null && updateData.lastSpeed == null) updateData.lastSpeed = Number(stats.avgSpeed)
-        if (stats.fuelConsumption != null && updateData.lastFuelLevel == null) updateData.lastFuelLevel = Number(stats.fuelConsumption)
+        // Do NOT use stats.fuelConsumption as fuelLevel — it's total consumed, not tank level
       }
     } catch {
       // Stats are optional, continue
