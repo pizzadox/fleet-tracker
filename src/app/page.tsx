@@ -269,7 +269,8 @@ const ROLE_LABELS: Record<RoleKey, string> = {
   worker: 'Работник',
 }
 
-const ROLE_PERMISSIONS: Record<RoleKey, string[]> = {
+// Default permissions (used as fallback when DB has no entries)
+const DEFAULT_ROLE_PERMISSIONS: Record<RoleKey, string[]> = {
   admin: ['equipment', 'repairs', 'trips', 'employees', 'companies', 'crews', 'map', 'settings', 'users'],
   manager: ['equipment', 'repairs', 'trips', 'employees', 'companies', 'crews', 'map'],
   trip_master: ['trips', 'crews', 'map', 'equipment_read'],
@@ -277,9 +278,34 @@ const ROLE_PERMISSIONS: Record<RoleKey, string[]> = {
   worker: ['equipment_read', 'map'],
 }
 
+// All available permissions with labels and categories
+const ALL_PERMISSIONS: { key: string; label: string; category: string }[] = [
+  { key: 'equipment', label: 'Техника (полный доступ)', category: 'Техника' },
+  { key: 'equipment_read', label: 'Техника (просмотр)', category: 'Техника' },
+  { key: 'repairs', label: 'Ремонты (полный доступ)', category: 'Ремонты' },
+  { key: 'repairs_read', label: 'Ремонты (просмотр)', category: 'Ремонты' },
+  { key: 'trips', label: 'Рейсы (полный доступ)', category: 'Рейсы' },
+  { key: 'trips_read', label: 'Рейсы (просмотр)', category: 'Рейсы' },
+  { key: 'employees', label: 'Сотрудники', category: 'Управление' },
+  { key: 'companies', label: 'Компании', category: 'Управление' },
+  { key: 'crews', label: 'Экипажи', category: 'Управление' },
+  { key: 'map', label: 'Карта и трекеры', category: 'Мониторинг' },
+  { key: 'settings', label: 'Настройки системы', category: 'Система' },
+  { key: 'users', label: 'Управление пользователями', category: 'Система' },
+]
+
+// Dynamic permissions map — will be loaded from DB
+let dynamicPermissions: Record<string, string[]> = { ...DEFAULT_ROLE_PERMISSIONS }
+
+function setDynamicPermissions(perms: Record<string, string[]>) {
+  dynamicPermissions = perms
+}
+
 function hasPermission(role: string, perm: string): boolean {
-  const perms = ROLE_PERMISSIONS[role as RoleKey] || []
-  return perms.includes(perm) || (perm.endsWith('_read') && perms.includes(perm)) || perms.includes('equipment') && perm === 'equipment_read'
+  // Admin always has all permissions
+  if (role === 'admin') return true
+  const perms = dynamicPermissions[role] || DEFAULT_ROLE_PERMISSIONS[role as RoleKey] || []
+  return perms.includes(perm) || perms.includes('equipment') && perm === 'equipment_read'
 }
 
 const AVATAR_COLORS = [
@@ -859,7 +885,8 @@ export default function Home() {
   const [authLoading, setAuthLoading] = useState(true)
   const [users, setUsers] = useState<AppUserType[]>([])
   const [mgmtSubTab, setMgmtSubTab] = useState<'companies' | 'employees' | 'crews'>('companies')
-  const [settingsSubTab, setSettingsSubTab] = useState<'users' | 'axenta' | 'about'>('users')
+  const [settingsSubTab, setSettingsSubTab] = useState<'users' | 'permissions' | 'axenta' | 'about'>('users')
+  const [rolePermissions, setRolePermissions] = useState<Record<string, string[]>>(DEFAULT_ROLE_PERMISSIONS)
 
   // ═══════════════════════════════════════════════════════════════
   // DATA FETCHING
@@ -965,6 +992,25 @@ export default function Home() {
           // Restore last tab from localStorage
           const lastTab = localStorage.getItem('fleet_lastTab')
           if (lastTab) setMainTab(lastTab)
+
+          // Load dynamic permissions
+          try {
+            const permRes = await fetch('/api/permissions/me')
+            if (permRes.ok) {
+              const permData = await permRes.json()
+              // Also load all role permissions if admin
+              if (data.user.role === 'admin') {
+                const allPermRes = await fetch('/api/permissions')
+                if (allPermRes.ok) {
+                  const allPermData = await allPermRes.json()
+                  if (allPermData.grouped && Object.keys(allPermData.grouped).length > 0) {
+                    setRolePermissions(allPermData.grouped)
+                    setDynamicPermissions(allPermData.grouped)
+                  }
+                }
+              }
+            }
+          } catch {}
         }
       } catch {}
       setAuthLoading(false)
@@ -1615,7 +1661,7 @@ export default function Home() {
 
             {/* Settings tabs (admin only) */}
             {hasPermission(currentUser.role, 'settings') && (
-              <SettingsTabContent users={users} fetchUsers={fetchUsers} axentaSettings={axentaSettings} setAxentaSettings={setAxentaSettings} settingsSaving={settingsSaving} setSettingsSaving={setSettingsSaving} syncing={syncing} setSyncing={setSyncing} settingsSubTab={settingsSubTab} setSettingsSubTab={setSettingsSubTab} onRefreshAll={fetchAll} />
+              <SettingsTabContent users={users} fetchUsers={fetchUsers} axentaSettings={axentaSettings} setAxentaSettings={setAxentaSettings} settingsSaving={settingsSaving} setSettingsSaving={setSettingsSaving} syncing={syncing} setSyncing={setSyncing} settingsSubTab={settingsSubTab} setSettingsSubTab={setSettingsSubTab} onRefreshAll={fetchAll} rolePermissions={rolePermissions} onPermissionsUpdate={(perms) => { setRolePermissions(perms); setDynamicPermissions(perms) }} />
             )}
           </div>
         </SheetContent>
@@ -8550,19 +8596,24 @@ function MapTab({ equipment, onSync, onOpenDetail }: {
 
 function SettingsTabContent({
   users, fetchUsers, axentaSettings, setAxentaSettings, settingsSaving, setSettingsSaving,
-  syncing, setSyncing, settingsSubTab, setSettingsSubTab, onRefreshAll
+  syncing, setSyncing, settingsSubTab, setSettingsSubTab, onRefreshAll, rolePermissions, onPermissionsUpdate
 }: {
   users: AppUserType[]; fetchUsers: () => void;
   axentaSettings: AxentaSettings; setAxentaSettings: React.Dispatch<React.SetStateAction<AxentaSettings>>;
   settingsSaving: boolean; setSettingsSaving: (v: boolean) => void;
   syncing: boolean; setSyncing: (v: boolean) => void;
-  settingsSubTab: 'users' | 'axenta' | 'about'; setSettingsSubTab: (v: 'users' | 'axenta' | 'about') => void;
+  settingsSubTab: 'users' | 'permissions' | 'axenta' | 'about'; setSettingsSubTab: (v: 'users' | 'permissions' | 'axenta' | 'about') => void;
   onRefreshAll: () => void;
+  rolePermissions: Record<string, string[]>;
+  onPermissionsUpdate: (perms: Record<string, string[]>) => void;
 }) {
   const [userFormOpen, setUserFormOpen] = useState(false)
   const [userFormEdit, setUserFormEdit] = useState<AppUserType | null>(null)
   const [userFormSaving, setUserFormSaving] = useState(false)
   const [userDeleteDialog, setUserDeleteDialog] = useState<{ open: boolean; id: string; name: string }>({ open: false, id: '', name: '' })
+  const [editingRole, setEditingRole] = useState<string | null>(null)
+  const [editPerms, setEditPerms] = useState<string[]>([])
+  const [permsSaving, setPermsSaving] = useState(false)
 
   const handleSaveUser = async (data: { name: string; pin: string; role: string; isActive: boolean; avatar: string }) => {
     setUserFormSaving(true)
@@ -8596,11 +8647,50 @@ function SettingsTabContent({
     setUserDeleteDialog({ open: false, id: '', name: '' })
   }
 
+  const handleSavePermissions = async () => {
+    if (!editingRole) return
+    setPermsSaving(true)
+    try {
+      const res = await fetch('/api/permissions', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ role: editingRole, permissions: editPerms }),
+      })
+      if (!res.ok) throw new Error()
+      toast.success(`Права для "${ROLE_LABELS[editingRole as RoleKey] || editingRole}" сохранены`)
+      // Reload permissions
+      const allRes = await fetch('/api/permissions')
+      if (allRes.ok) {
+        const data = await allRes.json()
+        if (data.grouped) {
+          onPermissionsUpdate(data.grouped)
+        }
+      }
+      setEditingRole(null)
+    } catch { toast.error('Ошибка сохранения прав') }
+    setPermsSaving(false)
+  }
+
+  const togglePerm = (perm: string) => {
+    setEditPerms(prev => prev.includes(perm) ? prev.filter(p => p !== perm) : [...prev, perm])
+  }
+
+  // Group permissions by category
+  const PERM_CATEGORIES = (() => {
+    const cats: Record<string, typeof ALL_PERMISSIONS> = {}
+    for (const p of ALL_PERMISSIONS) {
+      if (!cats[p.category]) cats[p.category] = []
+      cats[p.category].push(p)
+    }
+    return cats
+  })()
+
   return (
     <div className="space-y-4">
-      <Tabs value={settingsSubTab} onValueChange={(v) => setSettingsSubTab(v as 'users' | 'axenta' | 'about')}>
+      <Tabs value={settingsSubTab} onValueChange={(v) => setSettingsSubTab(v as 'users' | 'permissions' | 'axenta' | 'about')}>
         <TabsList>
           <TabsTrigger value="users" className="gap-1.5"><Users className="size-3.5" />Пользователи</TabsTrigger>
+          <TabsTrigger value="permissions" className="gap-1.5"><Shield className="size-3.5" />Права</TabsTrigger>
           <TabsTrigger value="axenta" className="gap-1.5"><Satellite className="size-3.5" />Axenta</TabsTrigger>
           <TabsTrigger value="about" className="gap-1.5"><Info className="size-3.5" />О системе</TabsTrigger>
         </TabsList>
@@ -8663,6 +8753,126 @@ function SettingsTabContent({
               </AlertDialogFooter>
             </AlertDialogContent>
           </AlertDialog>
+        </div>
+      )}
+
+      {settingsSubTab === 'permissions' && (
+        <div className="space-y-4">
+          <div className="flex items-center justify-between">
+            <h3 className="text-sm font-semibold">Права доступа по ролям</h3>
+          </div>
+          <div className="rounded-md bg-muted/50 border p-3">
+            <p className="text-[11px] text-muted-foreground">
+              Настройте права доступа для каждой роли. Администратор всегда имеет полный доступ ко всем разделам.
+              Если роль имеет право «полный доступ» (например, Техника), право «просмотр» включается автоматически.
+            </p>
+          </div>
+
+          {editingRole ? (
+            <Card className="p-4">
+              <div className="space-y-4">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Button variant="ghost" size="icon" className="size-7" onClick={() => setEditingRole(null)}>
+                      <ArrowLeft className="size-4" />
+                    </Button>
+                    <h4 className="text-sm font-semibold">{ROLE_LABELS[editingRole as RoleKey] || editingRole}</h4>
+                    {editingRole === 'admin' && (
+                      <Badge className="bg-primary text-primary-foreground text-[10px]">Полный доступ</Badge>
+                    )}
+                  </div>
+                  <Button size="sm" onClick={handleSavePermissions} disabled={permsSaving || editingRole === 'admin'}>
+                    {permsSaving ? <Loader2 className="size-3.5 animate-spin mr-1" /> : <Save className="size-3.5 mr-1" />}
+                    Сохранить
+                  </Button>
+                </div>
+
+                {editingRole === 'admin' ? (
+                  <div className="rounded-md bg-primary/10 border border-primary/20 p-3">
+                    <p className="text-xs font-medium flex items-center gap-1.5">
+                      <Shield className="size-3.5 text-primary" />
+                      Администратор всегда имеет полный доступ ко всем разделам системы
+                    </p>
+                  </div>
+                ) : (
+                  Object.entries(PERM_CATEGORIES).map(([category, perms]) => (
+                    <div key={category} className="space-y-2">
+                      <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">{category}</p>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                        {perms.map(perm => {
+                          const isChecked = editPerms.includes(perm.key)
+                          // If full access is checked, read-only is automatically implied
+                          const isImplied = perm.key.endsWith('_read') && editPerms.includes(perm.key.replace('_read', ''))
+                          return (
+                            <label
+                              key={perm.key}
+                              className={`flex items-center gap-2 rounded-lg border p-2.5 cursor-pointer transition-colors text-xs
+                                ${isChecked ? 'bg-primary/10 border-primary/30' : isImplied ? 'bg-muted/50 border-muted' : 'hover:bg-accent border-border'}
+                                ${isImplied ? 'opacity-60' : ''}`}
+                            >
+                              <input
+                                type="checkbox"
+                                checked={isChecked || isImplied}
+                                disabled={isImplied}
+                                onChange={() => togglePerm(perm.key)}
+                                className="rounded border-input"
+                              />
+                              <span className={isChecked ? 'font-medium' : ''}>{perm.label}</span>
+                              {isImplied && <span className="text-[10px] text-muted-foreground ml-auto">(авто)</span>}
+                            </label>
+                          )
+                        })}
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+            </Card>
+          ) : (
+            <div className="space-y-2">
+              {(Object.keys(ROLE_LABELS) as RoleKey[]).map(role => {
+                const perms = rolePermissions[role] || []
+                return (
+                  <Card key={role} className="p-3 cursor-pointer hover:shadow-md transition-shadow" onClick={() => {
+                    setEditingRole(role)
+                    setEditPerms([...(rolePermissions[role] || [])])
+                  }}>
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <div className="size-8 rounded-full flex items-center justify-center text-white text-xs font-bold shrink-0"
+                          style={{ backgroundColor: role === 'admin' ? '#6366f1' : role === 'manager' ? '#10b981' : role === 'trip_master' ? '#f59e0b' : role === 'repair_worker' ? '#ef4444' : '#8b5cf6' }}>
+                          <Shield className="size-4" />
+                        </div>
+                        <div>
+                          <p className="text-sm font-medium">{ROLE_LABELS[role]}</p>
+                          <p className="text-[10px] text-muted-foreground">
+                            {role === 'admin' ? 'Полный доступ' : `${perms.length} прав${perms.length === 1 ? 'о' : perms.length < 5 ? 'а' : ''}`}
+                          </p>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        {role !== 'admin' && (
+                          <div className="flex flex-wrap gap-1 max-w-[200px]">
+                            {perms.slice(0, 4).map(p => (
+                              <span key={p} className="inline-flex items-center rounded px-1 py-0.5 text-[9px] bg-muted">
+                                {ALL_PERMISSIONS.find(ap => ap.key === p)?.label.split(' (')[0] || p}
+                              </span>
+                            ))}
+                            {perms.length > 4 && (
+                              <span className="text-[9px] text-muted-foreground">+{perms.length - 4}</span>
+                            )}
+                          </div>
+                        )}
+                        <Button variant="ghost" size="icon" className="size-7">
+                          <Edit className="size-3" />
+                        </Button>
+                      </div>
+                    </div>
+                  </Card>
+                )
+              })}
+            </div>
+          )}
         </div>
       )}
 

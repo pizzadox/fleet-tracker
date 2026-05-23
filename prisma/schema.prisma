@@ -433,3 +433,12 @@ model UserSession {
 
   @@unique([token])
 }
+
+model RolePermission {
+  id        String   @id @default(cuid())
+  role      String   // admin | manager | trip_master | repair_worker | worker
+  permission String  // equipment | equipment_read | repairs | repairs_read | trips | trips_read | employees | companies | crews | map | settings | users
+  createdAt DateTime @default(now())
+
+  @@unique([role, permission])
+}

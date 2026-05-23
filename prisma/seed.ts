@@ -16,29 +16,52 @@ function getRandomColor(): string {
 }
 
 async function seed() {
-  console.log('🌱 Seeding default admin user...')
+  console.log('🌱 Seeding default data...')
 
+  // ── Admin User ──
   const existingAdmin = await db.appUser.findFirst({
     where: { role: 'admin' },
   })
 
   if (existingAdmin) {
-    console.log('✅ Admin user already exists, skipping seed.')
-    return
+    console.log('✅ Admin user already exists, skipping user seed.')
+  } else {
+    const admin = await db.appUser.create({
+      data: {
+        name: 'Администратор',
+        pin: hashPin('1234'),
+        role: 'admin',
+        isActive: true,
+        avatar: '#6366f1',
+      },
+    })
+    console.log(`✅ Created admin user: ${admin.name} (ID: ${admin.id})`)
+    console.log('   PIN: 1234')
   }
 
-  const admin = await db.appUser.create({
-    data: {
-      name: 'Администратор',
-      pin: hashPin('1234'),
-      role: 'admin',
-      isActive: true,
-      avatar: '#6366f1',
-    },
-  })
+  // ── Role Permissions ──
+  const existingPerms = await db.rolePermission.count()
+  if (existingPerms > 0) {
+    console.log('✅ Role permissions already exist, skipping seed.')
+  } else {
+    const defaults: Record<string, string[]> = {
+      admin: ['equipment', 'repairs', 'trips', 'employees', 'companies', 'crews', 'map', 'settings', 'users'],
+      manager: ['equipment', 'repairs', 'trips', 'employees', 'companies', 'crews', 'map'],
+      trip_master: ['trips', 'crews', 'map', 'equipment_read'],
+      repair_worker: ['repairs', 'equipment_read'],
+      worker: ['equipment_read', 'map'],
+    }
 
-  console.log(`✅ Created admin user: ${admin.name} (ID: ${admin.id})`)
-  console.log('   PIN: 1234')
+    const data: { role: string; permission: string }[] = []
+    for (const [role, perms] of Object.entries(defaults)) {
+      for (const permission of perms) {
+        data.push({ role, permission })
+      }
+    }
+
+    await db.rolePermission.createMany({ data })
+    console.log(`✅ Created ${data.length} role permission entries`)
+  }
 }
 
 seed()
