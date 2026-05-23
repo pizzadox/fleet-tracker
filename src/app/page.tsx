@@ -1355,7 +1355,7 @@ export default function Home() {
     <div className="min-h-screen flex flex-col bg-background pb-16 md:pb-0">
       {/* ─── HEADER ──────────────────────────────────────────── */}
       <header className="border-b bg-card/80 backdrop-blur-sm sticky top-0 z-30">
-        <div className="max-w-7xl mx-auto px-3 sm:px-6 h-11 flex items-center justify-between gap-2">
+        <div className="max-w-7xl mx-auto px-2 sm:px-6 h-12 sm:h-11 flex items-center justify-between gap-1 sm:gap-2">
           {/* Left: logo + title + stats */}
           <div className="flex items-center gap-2 min-w-0">
             <div className="size-7 rounded-lg bg-primary text-primary-foreground flex items-center justify-center shrink-0"><Truck className="size-3.5" /></div>
@@ -1373,27 +1373,24 @@ export default function Home() {
           </div>
           {/* Right: actions */}
           <div className="flex items-center gap-0.5 shrink-0">
-            {/* Mobile stats as compact clickable badges */}
-            <div className="sm:hidden flex items-center gap-1 overflow-x-auto mr-1 scrollbar-none">
-              <button onClick={() => setMainTab('equipment')} className="inline-flex items-center gap-0.5 rounded bg-muted px-1 py-0.5 text-[9px] font-medium shrink-0 hover:bg-muted/80 transition-colors" title={`Всего техники: ${stats.total}`}>
+            {/* Mobile: compact stats row */}
+            <div className="sm:hidden flex items-center gap-0.5 mr-0.5">
+              <button onClick={() => setMainTab('equipment')} className="inline-flex items-center gap-0.5 rounded bg-muted px-1 py-0.5 text-[9px] font-medium shrink-0" title={`Всего: ${stats.total}`}>
                 <Truck className="size-2.5" />{stats.total}
               </button>
-              <button onClick={() => setMainTab('equipment')} className="inline-flex items-center gap-0.5 rounded bg-emerald-100 dark:bg-emerald-900/40 px-1 py-0.5 text-[9px] font-medium text-emerald-700 dark:text-emerald-400 shrink-0 hover:bg-emerald-200 dark:hover:bg-emerald-900/60 transition-colors" title={`В эксплуатации: ${stats.active}`}>
-                <CheckCircle2 className="size-2.5" />{stats.active}
-              </button>
-              <button onClick={() => setMainTab('repairs')} className="inline-flex items-center gap-0.5 rounded bg-amber-100 dark:bg-amber-900/40 px-1 py-0.5 text-[9px] font-medium text-amber-700 dark:text-amber-400 shrink-0 hover:bg-amber-200 dark:hover:bg-amber-900/60 transition-colors" title={`На ремонте: ${stats.repair}`}>
+              <button onClick={() => setMainTab('repairs')} className="inline-flex items-center gap-0.5 rounded bg-amber-100 dark:bg-amber-900/40 px-1 py-0.5 text-[9px] font-medium text-amber-700 dark:text-amber-400 shrink-0" title={`Ремонт: ${stats.repair}`}>
                 <Wrench className="size-2.5" />{stats.repair}
               </button>
-              <button onClick={() => setMainTab('trips')} className="inline-flex items-center gap-0.5 rounded bg-violet-100 dark:bg-violet-900/40 px-1 py-0.5 text-[9px] font-medium text-violet-700 dark:text-violet-400 shrink-0 hover:bg-violet-200 dark:hover:bg-violet-900/60 transition-colors" title={`Рейсов: ${stats.tripsTotal}`}>
+              <button onClick={() => setMainTab('trips')} className="inline-flex items-center gap-0.5 rounded bg-violet-100 dark:bg-violet-900/40 px-1 py-0.5 text-[9px] font-medium text-violet-700 dark:text-violet-400 shrink-0" title={`Рейсы: ${stats.tripsTotal}`}>
                 <Route className="size-2.5" />{stats.tripsTotal}
               </button>
-              <span className="inline-flex items-center gap-0.5 rounded bg-green-100 dark:bg-green-900/40 px-1 py-0.5 text-[9px] font-medium text-green-700 dark:text-green-400 shrink-0" title={`Онлайн трекеры: ${stats.onlineTrackers}`}>
+              <span className="inline-flex items-center gap-0.5 rounded bg-green-100 dark:bg-green-900/40 px-1 py-0.5 text-[9px] font-medium text-green-700 dark:text-green-400 shrink-0" title={`Онлайн: ${stats.onlineTrackers}`}>
                 <Wifi className="size-2.5" />{stats.onlineTrackers}
               </span>
             </div>
             {/* Global search button */}
-            <Button variant="ghost" size="icon" className="size-7" onClick={() => setGlobalSearchOpen(true)} aria-label="Поиск (Ctrl+K)" title="Поиск (Ctrl+K)">
-              <Search className="size-3.5" />
+            <Button variant="ghost" size="icon" className="size-8 sm:size-7" onClick={() => setGlobalSearchOpen(true)} aria-label="Поиск (Ctrl+K)" title="Поиск (Ctrl+K)">
+              <Search className="size-4 sm:size-3.5" />
             </Button>
             {/* Last sync indicator */}
             {lastSyncTime && (
@@ -1401,8 +1398,8 @@ export default function Home() {
                 <RefreshCw className="inline size-2.5 mr-0.5" />{new Date(lastSyncTime).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}
               </span>
             )}
-            {/* Auto-refresh toggle */}
-            <Button variant="ghost" size="icon" className={`size-7 ${autoRefreshEnabled ? 'text-emerald-600' : 'text-muted-foreground'}`} onClick={() => setAutoRefreshEnabled(!autoRefreshEnabled)} aria-label="Автообновление" title={autoRefreshEnabled ? 'Автообновление вкл' : 'Автообновление выкл'}>
+            {/* Auto-refresh toggle - hidden on mobile to save space */}
+            <Button variant="ghost" size="icon" className={`size-7 hidden sm:inline-flex ${autoRefreshEnabled ? 'text-emerald-600' : 'text-muted-foreground'}`} onClick={() => setAutoRefreshEnabled(!autoRefreshEnabled)} aria-label="Автообновление" title={autoRefreshEnabled ? 'Автообновление вкл' : 'Автообновление выкл'}>
               <RefreshCw className={`size-3.5 ${autoRefreshEnabled ? '' : 'opacity-50'}`} />
             </Button>
             {/* Notification bell */}
@@ -1505,7 +1502,7 @@ export default function Home() {
       </header>
 
       {/* ─── MAIN CONTENT ─────────────────────────────────────── */}
-      <main className="flex-1 max-w-7xl mx-auto w-full px-3 sm:px-6 py-4">
+      <main className="flex-1 max-w-7xl mx-auto w-full px-2 sm:px-6 py-3 sm:py-4">
         {/* Desktop tabs */}
         <Tabs value={mainTab} onValueChange={(v) => { setMainTab(v); if (v === 'management') setMgmtSubTab('companies'); if (v === 'settings') setSettingsSubTab('users'); }} className="hidden md:block">
           <TabsList className="mb-4">
@@ -1608,19 +1605,22 @@ export default function Home() {
       </main>
 
       {/* ─── MOBILE BOTTOM NAV ────────────────────────────────── */}
-      <nav className="md:hidden fixed bottom-0 left-0 right-0 z-40 border-t bg-card/95 backdrop-blur-sm">
+      <nav className="md:hidden fixed bottom-0 left-0 right-0 z-40 border-t bg-card/95 backdrop-blur-md safe-bottom">
         <div className="grid h-14 grid-cols-5">
           {[
             ...(hasPermission(currentUser.role, 'equipment') ? [{ value: 'equipment', icon: <Truck className="size-5" />, label: 'Техника' }] : []),
             ...(hasPermission(currentUser.role, 'repairs') ? [{ value: 'repairs', icon: <Wrench className="size-5" />, label: 'Ремонты' }] : []),
             ...(hasPermission(currentUser.role, 'trips') ? [{ value: 'trips', icon: <Route className="size-5" />, label: 'Рейсы' }] : []),
-            ...(hasPermission(currentUser.role, 'employees') && hasPermission(currentUser.role, 'companies') ? [{ value: 'management', icon: <ClipboardCheck className="size-5" />, label: 'Управление' }] : []),
+            ...(hasPermission(currentUser.role, 'employees') && hasPermission(currentUser.role, 'companies') ? [{ value: 'management', icon: <ClipboardCheck className="size-5" />, label: 'Управл.' }] : []),
             ...(hasPermission(currentUser.role, 'map') ? [{ value: 'map', icon: <Map className="size-5" />, label: 'Карта' }] : []),
           ].map(tab => (
             <button key={tab.value} onClick={() => setMainTab(tab.value)}
-              className={`flex flex-col items-center justify-center gap-0.5 transition-colors ${mainTab === tab.value ? 'text-primary' : 'text-muted-foreground'}`}>
+              className={`flex flex-col items-center justify-center gap-0.5 relative transition-colors ${mainTab === tab.value ? 'text-primary' : 'text-muted-foreground active:text-foreground'}`}>
+              {mainTab === tab.value && (
+                <span className="absolute top-0 left-1/2 -translate-x-1/2 w-8 h-0.5 rounded-full bg-primary" />
+              )}
               {tab.icon}
-              <span className="text-[10px] font-medium">{tab.label}</span>
+              <span className="text-[10px] font-medium leading-none">{tab.label}</span>
             </button>
           ))}
         </div>
@@ -3453,84 +3453,122 @@ function RepairsTab({ repairs, equipment, onOpenDetail, onAdd, onDelete, readOnl
           </CardContent>
         </Card>
       ) : (
-        <div className="border rounded-lg overflow-hidden">
-          <div className="overflow-x-auto">
-            <table className="w-full text-[11px]">
-              <thead>
-                <tr className="border-b bg-muted/50 text-muted-foreground">
-                  <th className="text-left py-1.5 px-2 font-medium w-8"></th>
-                  <th className="text-left py-1.5 px-2 font-medium">Описание</th>
-                  <th className="text-left py-1.5 px-2 font-medium hidden sm:table-cell">Техника</th>
-                  <th className="text-left py-1.5 px-2 font-medium">Статус</th>
-                  <th className="text-left py-1.5 px-2 font-medium hidden md:table-cell">Начало</th>
-                  <th className="text-left py-1.5 px-2 font-medium hidden md:table-cell">Стоимость</th>
-                  <th className="text-left py-1.5 px-2 font-medium hidden lg:table-cell">Дней</th>
-                  <th className="text-left py-1.5 px-2 font-medium hidden lg:table-cell">Подрядчик</th>
-                  <th className="text-left py-1.5 px-2 font-medium hidden sm:table-cell">Этапы</th>
-                  <th className="text-right py-1.5 px-2 font-medium w-16"></th>
-                </tr>
-              </thead>
-              <tbody>
-                {filtered.map((r, idx) => {
-                  const borderColor = r.status === 'in_progress' ? 'border-l-amber-500' : r.status === 'completed' ? 'border-l-emerald-500' : 'border-l-red-500'
-                  const repairDays = getRepairDays(r.startDate, r.endDate)
-                  return (
-                    <tr key={r.id} className={`border-b last:border-0 cursor-pointer hover:bg-accent/50 transition-colors border-l-2 ${borderColor} ${idx % 2 === 1 ? 'bg-muted/20' : ''}`} onClick={() => onOpenDetail(r)}>
-                      <td className="py-1.5 px-2">
-                        <div className="flex items-center justify-center size-6 rounded bg-amber-100 dark:bg-amber-900/30">
-                          <Wrench className="size-3 text-amber-600 dark:text-amber-400" />
-                        </div>
-                      </td>
-                      <td className="py-1.5 px-2">
-                        <div className="font-medium truncate max-w-[200px]">{r.description}</div>
-                        <div className="flex flex-wrap items-center gap-1 mt-0.5">
-                          {r.reason && <span className="text-[9px] text-muted-foreground truncate max-w-[200px]">{r.reason}</span>}
-                          {r.masters && r.masters.length > 0 && <span className="inline-flex items-center gap-0.5 text-[9px] text-muted-foreground"><Users className="size-2" />{r.masters.length}</span>}
-                          {r.photos && r.photos.length > 0 && <span className="inline-flex items-center gap-0.5 text-[9px] text-muted-foreground"><Camera className="size-2" />{r.photos.length}</span>}
-                        </div>
-                      </td>
-                      <td className="py-1.5 px-2 hidden sm:table-cell text-muted-foreground truncate max-w-[120px]">{r.equipment?.name || '—'}</td>
-                      <td className="py-1.5 px-2">{statusBadge(r.status, REPAIR_STATUS_MAP)}</td>
-                      <td className="py-1.5 px-2 hidden md:table-cell">{formatDate(r.startDate)}</td>
-                      <td className="py-1.5 px-2 hidden md:table-cell">
-                        {r.cost != null ? <span className="inline-flex items-center gap-0.5 font-medium"><span className="text-[9px]">₽</span>{new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 0 }).format(r.cost)}</span> : '—'}
-                      </td>
-                      <td className="py-1.5 px-2 hidden lg:table-cell">
-                        <span className={`font-medium ${r.status === 'in_progress' ? getDaysColor(repairDays) : ''}`}>{repairDays} дн.</span>
-                      </td>
-                      <td className="py-1.5 px-2 hidden lg:table-cell">
-                        {r.contractor ? (
-                          <div className="truncate max-w-[100px]">
-                            <span className="text-muted-foreground">{r.contractor}</span>
-                            {r.contractorPhone && <span className="block text-[9px] text-muted-foreground"><Phone className="inline size-2 mr-0.5" />{r.contractorPhone}</span>}
-                          </div>
-                        ) : '—'}
-                      </td>
-                      <td className="py-1.5 px-2 hidden sm:table-cell">
-                        {r.stages && r.stages.length > 0 ? (
-                          <div className="space-y-0.5">
-                            <div className="flex items-center justify-between text-[10px] text-muted-foreground">
-                              <span>{r.stages.filter(s => s.status === 'completed').length}/{r.stages.length}</span>
-                              <span className="font-medium">{getStageProgress(r.stages)}%</span>
-                            </div>
-                            <Progress value={getStageProgress(r.stages)} className="h-1" />
-                          </div>
-                        ) : (
-                          <span className="text-muted-foreground">—</span>
-                        )}
-                      </td>
-                      <td className="py-1.5 px-2 text-right" onClick={e => e.stopPropagation()}>
-                        <div className="flex items-center justify-end gap-0.5">
-                          <Button size="sm" variant="ghost" className="size-6 p-0 text-destructive hover:text-destructive" onClick={() => onDelete(r)}><Trash2 className="size-3" /></Button>
-                        </div>
-                      </td>
-                    </tr>
-                  )
-                })}
-              </tbody>
-            </table>
+        <>
+          {/* Mobile: card layout */}
+          <div className="sm:hidden space-y-2">
+            {filtered.map(r => {
+              const repairDays = getRepairDays(r.startDate, r.endDate)
+              const statusInfo = REPAIR_STATUS_MAP[r.status]
+              return (
+                <div key={r.id} className="rounded-xl border p-3 cursor-pointer hover:bg-accent/50 transition-colors border-l-[3px]"
+                  style={{ borderLeftColor: r.status === 'in_progress' ? '#f59e0b' : r.status === 'completed' ? '#10b981' : '#ef4444' }}
+                  onClick={() => onOpenDetail(r)}>
+                  <div className="flex items-start gap-2.5">
+                    <div className="size-9 rounded-lg bg-amber-100 dark:bg-amber-900/30 flex items-center justify-center shrink-0">
+                      <Wrench className="size-4 text-amber-600 dark:text-amber-400" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium truncate">{r.description}</p>
+                      {r.equipment?.name && <p className="text-xs text-muted-foreground truncate mt-0.5 flex items-center gap-1"><Truck className="size-3" />{r.equipment.name}</p>}
+                    </div>
+                    {statusBadge(r.status, REPAIR_STATUS_MAP)}
+                  </div>
+                  <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-2 pl-[44px] text-[10px] text-muted-foreground">
+                    <span className="flex items-center gap-1"><Calendar className="size-3" />{formatDate(r.startDate)}</span>
+                    {r.cost != null && <span className="flex items-center gap-0.5 font-medium text-foreground"><span className="text-[9px]">₽</span>{new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 0 }).format(r.cost)}</span>}
+                    <span className={`flex items-center gap-1 font-medium ${r.status === 'in_progress' ? getDaysColor(repairDays) : ''}`}><Clock className="size-3" />{repairDays} дн.</span>
+                    {r.stages && r.stages.length > 0 && (
+                      <span className="flex items-center gap-1">
+                        <span>{r.stages.filter(s => s.status === 'completed').length}/{r.stages.length}</span>
+                        <Progress value={getStageProgress(r.stages)} className="h-1 w-12 inline-flex" />
+                      </span>
+                    )}
+                  </div>
+                </div>
+              )
+            })}
           </div>
-        </div>
+
+          {/* Desktop: table layout */}
+          <div className="hidden sm:block border rounded-lg overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="w-full text-[11px]">
+                <thead>
+                  <tr className="border-b bg-muted/50 text-muted-foreground">
+                    <th className="text-left py-1.5 px-2 font-medium w-8"></th>
+                    <th className="text-left py-1.5 px-2 font-medium">Описание</th>
+                    <th className="text-left py-1.5 px-2 font-medium hidden sm:table-cell">Техника</th>
+                    <th className="text-left py-1.5 px-2 font-medium">Статус</th>
+                    <th className="text-left py-1.5 px-2 font-medium hidden md:table-cell">Начало</th>
+                    <th className="text-left py-1.5 px-2 font-medium hidden md:table-cell">Стоимость</th>
+                    <th className="text-left py-1.5 px-2 font-medium hidden lg:table-cell">Дней</th>
+                    <th className="text-left py-1.5 px-2 font-medium hidden lg:table-cell">Подрядчик</th>
+                    <th className="text-left py-1.5 px-2 font-medium hidden sm:table-cell">Этапы</th>
+                    <th className="text-right py-1.5 px-2 font-medium w-16"></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filtered.map((r, idx) => {
+                    const borderColor = r.status === 'in_progress' ? 'border-l-amber-500' : r.status === 'completed' ? 'border-l-emerald-500' : 'border-l-red-500'
+                    const repairDays = getRepairDays(r.startDate, r.endDate)
+                    return (
+                      <tr key={r.id} className={`border-b last:border-0 cursor-pointer hover:bg-accent/50 transition-colors border-l-2 ${borderColor} ${idx % 2 === 1 ? 'bg-muted/20' : ''}`} onClick={() => onOpenDetail(r)}>
+                        <td className="py-1.5 px-2">
+                          <div className="flex items-center justify-center size-6 rounded bg-amber-100 dark:bg-amber-900/30">
+                            <Wrench className="size-3 text-amber-600 dark:text-amber-400" />
+                          </div>
+                        </td>
+                        <td className="py-1.5 px-2">
+                          <div className="font-medium truncate max-w-[200px]">{r.description}</div>
+                          <div className="flex flex-wrap items-center gap-1 mt-0.5">
+                            {r.reason && <span className="text-[9px] text-muted-foreground truncate max-w-[200px]">{r.reason}</span>}
+                            {r.masters && r.masters.length > 0 && <span className="inline-flex items-center gap-0.5 text-[9px] text-muted-foreground"><Users className="size-2" />{r.masters.length}</span>}
+                            {r.photos && r.photos.length > 0 && <span className="inline-flex items-center gap-0.5 text-[9px] text-muted-foreground"><Camera className="size-2" />{r.photos.length}</span>}
+                          </div>
+                        </td>
+                        <td className="py-1.5 px-2 hidden sm:table-cell text-muted-foreground truncate max-w-[120px]">{r.equipment?.name || '—'}</td>
+                        <td className="py-1.5 px-2">{statusBadge(r.status, REPAIR_STATUS_MAP)}</td>
+                        <td className="py-1.5 px-2 hidden md:table-cell">{formatDate(r.startDate)}</td>
+                        <td className="py-1.5 px-2 hidden md:table-cell">
+                          {r.cost != null ? <span className="inline-flex items-center gap-0.5 font-medium"><span className="text-[9px]">₽</span>{new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 0 }).format(r.cost)}</span> : '—'}
+                        </td>
+                        <td className="py-1.5 px-2 hidden lg:table-cell">
+                          <span className={`font-medium ${r.status === 'in_progress' ? getDaysColor(repairDays) : ''}`}>{repairDays} дн.</span>
+                        </td>
+                        <td className="py-1.5 px-2 hidden lg:table-cell">
+                          {r.contractor ? (
+                            <div className="truncate max-w-[100px]">
+                              <span className="text-muted-foreground">{r.contractor}</span>
+                              {r.contractorPhone && <span className="block text-[9px] text-muted-foreground"><Phone className="inline size-2 mr-0.5" />{r.contractorPhone}</span>}
+                            </div>
+                          ) : '—'}
+                        </td>
+                        <td className="py-1.5 px-2 hidden sm:table-cell">
+                          {r.stages && r.stages.length > 0 ? (
+                            <div className="space-y-0.5">
+                              <div className="flex items-center justify-between text-[10px] text-muted-foreground">
+                                <span>{r.stages.filter(s => s.status === 'completed').length}/{r.stages.length}</span>
+                                <span className="font-medium">{getStageProgress(r.stages)}%</span>
+                              </div>
+                              <Progress value={getStageProgress(r.stages)} className="h-1" />
+                            </div>
+                          ) : (
+                            <span className="text-muted-foreground">—</span>
+                          )}
+                        </td>
+                        <td className="py-1.5 px-2 text-right" onClick={e => e.stopPropagation()}>
+                          <div className="flex items-center justify-end gap-0.5">
+                            <Button size="sm" variant="ghost" className="size-6 p-0 text-destructive hover:text-destructive" onClick={() => onDelete(r)}><Trash2 className="size-3" /></Button>
+                          </div>
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </>
       )}
     </div>
   )
@@ -4600,100 +4638,134 @@ function TripsTab({ trips, equipment, crews, routeTemplates, onOpenDetail, onAdd
           </CardContent>
         </Card>
       ) : (
-        <div className="border rounded-lg overflow-hidden">
-          <div className="overflow-x-auto">
-            <table className="w-full text-[11px]">
-              <thead>
-                <tr className="border-b bg-muted/50 text-muted-foreground">
-                  <th className="text-left py-1.5 px-2 font-medium w-8"></th>
-                  <th className="text-left py-1.5 px-2 font-medium">Маршрут</th>
-                  <th className="text-left py-1.5 px-2 font-medium hidden sm:table-cell">Техника</th>
-                  <th className="text-left py-1.5 px-2 font-medium">Статус</th>
-                  <th className="text-left py-1.5 px-2 font-medium hidden md:table-cell">Начало</th>
-                  <th className="text-left py-1.5 px-2 font-medium hidden md:table-cell">Расст./Скор.</th>
-                  <th className="text-left py-1.5 px-2 font-medium hidden lg:table-cell">Топливо</th>
-                  <th className="text-left py-1.5 px-2 font-medium hidden xl:table-cell">Доп.</th>
-                  <th className="text-right py-1.5 px-2 font-medium w-12"></th>
-                </tr>
-              </thead>
-              <tbody>
-                {filtered.map((t, idx) => (
-                  <tr key={t.id} className={`border-b last:border-0 cursor-pointer hover:bg-accent/50 transition-colors border-l-2 ${TRIP_STATUS_MAP[t.status]?.border || ''} ${idx % 2 === 1 ? 'bg-muted/20' : ''}`} onClick={() => onOpenDetail(t)}>
-                    <td className="py-1.5 px-2">
-                      <div className="flex items-center justify-center size-6 rounded bg-sky-100 dark:bg-sky-900/30">
-                        <Route className="size-3 text-sky-600 dark:text-sky-400" />
-                      </div>
-                    </td>
-                    <td className="py-1.5 px-2">
-                      <div className="font-medium truncate max-w-[200px]">{t.route}</div>
-                      <div className="flex flex-wrap items-center gap-1 mt-0.5">
-                        {t.startPoint && <span className="inline-flex items-center gap-0.5 text-[9px] text-muted-foreground"><MapPin className="size-2 text-emerald-500" />{t.startPoint}</span>}
-                        {t.endPoint && <span className="inline-flex items-center gap-0.5 text-[9px] text-muted-foreground"><ArrowRight className="size-2" /><MapPin className="size-2 text-red-500" />{t.endPoint}</span>}
-                      </div>
-                      <div className="flex flex-wrap items-center gap-1 mt-0.5">
-                        {t.cargo && <span className="inline-flex items-center gap-0.5 text-[9px] text-muted-foreground"><Package className="size-2" />{t.cargo}{t.cargoWeight != null ? ` • ${t.cargoWeight} т` : ''}</span>}
-                        {t.crew && <span className="inline-flex items-center gap-0.5 text-[9px] text-muted-foreground"><Users className="size-2" />{t.crew.name}</span>}
-                      </div>
-                    </td>
-                    <td className="py-1.5 px-2 hidden sm:table-cell text-muted-foreground">
-                      <div className="truncate max-w-[120px]">{t.equipment?.name || '—'}</div>
-                      {t.equipment?.registrationNum && <div className="text-[10px] font-mono">{t.equipment.registrationNum}</div>}
-                    </td>
-                    <td className="py-1.5 px-2">{statusBadge(t.status, TRIP_STATUS_MAP)}</td>
-                    <td className="py-1.5 px-2 hidden md:table-cell">
-                      <div className="flex items-center gap-1">
-                        <span className="cursor-pointer hover:text-primary hover:underline" onClick={(e) => { e.stopPropagation(); onOpenDetail(t) }}>{formatDateTime(t.startDate)}</span>
-                        {t.startDate && t.equipmentId && (
-                          <Button size="sm" variant="ghost" className="size-5 p-0 shrink-0" onClick={(e) => { e.stopPropagation(); onOpenDetail(t, true) }} title="Показать трек">
-                            <Map className="size-3 text-sky-500" />
-                          </Button>
-                        )}
-                      </div>
-                      {t.tripDuration != null && <div className="text-[9px] text-muted-foreground"><Timer className="inline size-2 mr-0.5" />{formatDurationShort(t.tripDuration)}</div>}
-                    </td>
-                    <td className="py-1.5 px-2 hidden md:table-cell">
-                      {t.distance != null ? <span className="inline-flex items-center gap-0.5 font-medium"><Navigation className="size-2 text-sky-500" />{t.distance} км</span> : <span className="text-muted-foreground">—</span>}
-                      <div className="flex gap-1 mt-0.5">
-                        {t.avgSpeed != null && <span className="text-[9px] text-muted-foreground"><Gauge className="inline size-2 mr-0.5" />{t.avgSpeed} км/ч</span>}
-                        {t.maxSpeed != null && <span className={`text-[9px] ${t.maxSpeed > 90 ? 'text-red-500 font-medium' : 'text-muted-foreground'}`}>макс: {t.maxSpeed}</span>}
-                      </div>
-                    </td>
-                    <td className="py-1.5 px-2 hidden lg:table-cell">
-                      {t.fuelConsumed != null ? (
-                        <span className="inline-flex items-center gap-0.5 font-medium text-amber-600 dark:text-amber-400"><Fuel className="size-2" />{t.fuelConsumed} л</span>
-                      ) : '—'}
-                      <div className="flex gap-1 mt-0.5">
-                        {t.refuelVolume != null && t.refuelVolume > 0 && <span className="inline-flex items-center gap-0.5 text-[9px] text-emerald-600 dark:text-emerald-400"><ArrowUpFromLine className="size-2" />+{t.refuelVolume}л</span>}
-                        {t.plumVolume != null && t.plumVolume > 0 && <span className="inline-flex items-center gap-0.5 text-[9px] text-red-600 dark:text-red-400"><ArrowDownToLine className="size-2" />-{t.plumVolume}л</span>}
-                      </div>
-                    </td>
-                    <td className="py-1.5 px-2 hidden xl:table-cell">
-                      <div className="space-y-0.5">
-                        {t.idleTime != null && <span className="text-[9px] text-muted-foreground"><Clock className="inline size-2 mr-0.5" />Простой: {formatDurationShort(t.idleTime)}</span>}
-                        {(t.cost != null || t.revenue != null) && (
-                          <div className="flex gap-1">
-                            {t.cost != null && <span className="text-[9px] text-red-500">−{new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 0 }).format(t.cost)}₽</span>}
-                            {t.revenue != null && <span className="text-[9px] text-emerald-500">+{new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 0 }).format(t.revenue)}₽</span>}
-                          </div>
-                        )}
-                      </div>
-                    </td>
-                    <td className="py-1.5 px-2 text-right" onClick={e => e.stopPropagation()}>
-                      <div className="flex items-center justify-end gap-0.5">
-                        {t.startDate && t.equipmentId && (
-                          <Button size="sm" variant="ghost" className="size-6 p-0 text-sky-500 hover:text-sky-600" onClick={() => onOpenDetail(t, true)} title="Показать трек на карте">
-                            <MapPinned className="size-3" />
-                          </Button>
-                        )}
-                        <Button size="sm" variant="ghost" className="size-6 p-0 text-destructive hover:text-destructive" onClick={() => onDelete(t)}><Trash2 className="size-3" /></Button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+        <>
+          {/* Mobile: card layout */}
+          <div className="sm:hidden space-y-2">
+            {filtered.map(t => (
+              <div key={t.id} className="rounded-xl border p-3 cursor-pointer hover:bg-accent/50 transition-colors border-l-[3px]"
+                style={{ borderLeftColor: t.status === 'completed' ? '#10b981' : t.status === 'in_progress' ? '#3b82f6' : t.status === 'cancelled' ? '#ef4444' : '#f59e0b' }}
+                onClick={() => onOpenDetail(t)}>
+                <div className="flex items-start gap-2.5">
+                  <div className="size-9 rounded-lg bg-sky-100 dark:bg-sky-900/30 flex items-center justify-center shrink-0">
+                    <Route className="size-4 text-sky-600 dark:text-sky-400" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium truncate">{t.route}</p>
+                    <div className="flex flex-wrap items-center gap-1 mt-0.5">
+                      {t.startPoint && <span className="inline-flex items-center gap-0.5 text-[10px] text-muted-foreground"><MapPin className="size-2.5 text-emerald-500" />{t.startPoint}</span>}
+                      {t.endPoint && <span className="inline-flex items-center gap-0.5 text-[10px] text-muted-foreground"><ArrowRight className="size-2" /><MapPin className="size-2.5 text-red-500" />{t.endPoint}</span>}
+                    </div>
+                  </div>
+                  {statusBadge(t.status, TRIP_STATUS_MAP)}
+                </div>
+                <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-2 pl-[44px] text-[10px] text-muted-foreground">
+                  {t.equipment?.name && <span className="flex items-center gap-1"><Truck className="size-3" />{t.equipment.name}</span>}
+                  {t.startDate && <span className="flex items-center gap-1"><Calendar className="size-3" />{formatDate(t.startDate)}</span>}
+                  {t.distance != null && <span className="flex items-center gap-0.5 font-medium text-foreground"><Navigation className="size-3 text-sky-500" />{t.distance} км</span>}
+                  {t.fuelConsumed != null && <span className="flex items-center gap-0.5"><Fuel className="size-3 text-amber-500" />{t.fuelConsumed} л</span>}
+                  {t.cargo && <span className="flex items-center gap-1"><Package className="size-3" />{t.cargo}</span>}
+                  {t.crew && <span className="flex items-center gap-1"><Users className="size-3" />{t.crew.name}</span>}
+                </div>
+              </div>
+            ))}
           </div>
-        </div>
+
+          {/* Desktop: table layout */}
+          <div className="hidden sm:block border rounded-lg overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="w-full text-[11px]">
+                <thead>
+                  <tr className="border-b bg-muted/50 text-muted-foreground">
+                    <th className="text-left py-1.5 px-2 font-medium w-8"></th>
+                    <th className="text-left py-1.5 px-2 font-medium">Маршрут</th>
+                    <th className="text-left py-1.5 px-2 font-medium hidden sm:table-cell">Техника</th>
+                    <th className="text-left py-1.5 px-2 font-medium">Статус</th>
+                    <th className="text-left py-1.5 px-2 font-medium hidden md:table-cell">Начало</th>
+                    <th className="text-left py-1.5 px-2 font-medium hidden md:table-cell">Расст./Скор.</th>
+                    <th className="text-left py-1.5 px-2 font-medium hidden lg:table-cell">Топливо</th>
+                    <th className="text-left py-1.5 px-2 font-medium hidden xl:table-cell">Доп.</th>
+                    <th className="text-right py-1.5 px-2 font-medium w-12"></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filtered.map((t, idx) => (
+                    <tr key={t.id} className={`border-b last:border-0 cursor-pointer hover:bg-accent/50 transition-colors border-l-2 ${TRIP_STATUS_MAP[t.status]?.border || ''} ${idx % 2 === 1 ? 'bg-muted/20' : ''}`} onClick={() => onOpenDetail(t)}>
+                      <td className="py-1.5 px-2">
+                        <div className="flex items-center justify-center size-6 rounded bg-sky-100 dark:bg-sky-900/30">
+                          <Route className="size-3 text-sky-600 dark:text-sky-400" />
+                        </div>
+                      </td>
+                      <td className="py-1.5 px-2">
+                        <div className="font-medium truncate max-w-[200px]">{t.route}</div>
+                        <div className="flex flex-wrap items-center gap-1 mt-0.5">
+                          {t.startPoint && <span className="inline-flex items-center gap-0.5 text-[9px] text-muted-foreground"><MapPin className="size-2 text-emerald-500" />{t.startPoint}</span>}
+                          {t.endPoint && <span className="inline-flex items-center gap-0.5 text-[9px] text-muted-foreground"><ArrowRight className="size-2" /><MapPin className="size-2 text-red-500" />{t.endPoint}</span>}
+                        </div>
+                        <div className="flex flex-wrap items-center gap-1 mt-0.5">
+                          {t.cargo && <span className="inline-flex items-center gap-0.5 text-[9px] text-muted-foreground"><Package className="size-2" />{t.cargo}{t.cargoWeight != null ? ` • ${t.cargoWeight} т` : ''}</span>}
+                          {t.crew && <span className="inline-flex items-center gap-0.5 text-[9px] text-muted-foreground"><Users className="size-2" />{t.crew.name}</span>}
+                        </div>
+                      </td>
+                      <td className="py-1.5 px-2 hidden sm:table-cell text-muted-foreground">
+                        <div className="truncate max-w-[120px]">{t.equipment?.name || '—'}</div>
+                        {t.equipment?.registrationNum && <div className="text-[10px] font-mono">{t.equipment.registrationNum}</div>}
+                      </td>
+                      <td className="py-1.5 px-2">{statusBadge(t.status, TRIP_STATUS_MAP)}</td>
+                      <td className="py-1.5 px-2 hidden md:table-cell">
+                        <div className="flex items-center gap-1">
+                          <span className="cursor-pointer hover:text-primary hover:underline" onClick={(e) => { e.stopPropagation(); onOpenDetail(t) }}>{formatDateTime(t.startDate)}</span>
+                          {t.startDate && t.equipmentId && (
+                            <Button size="sm" variant="ghost" className="size-5 p-0 shrink-0" onClick={(e) => { e.stopPropagation(); onOpenDetail(t, true) }} title="Показать трек">
+                              <Map className="size-3 text-sky-500" />
+                            </Button>
+                          )}
+                        </div>
+                        {t.tripDuration != null && <div className="text-[9px] text-muted-foreground"><Timer className="inline size-2 mr-0.5" />{formatDurationShort(t.tripDuration)}</div>}
+                      </td>
+                      <td className="py-1.5 px-2 hidden md:table-cell">
+                        {t.distance != null ? <span className="inline-flex items-center gap-0.5 font-medium"><Navigation className="size-2 text-sky-500" />{t.distance} км</span> : <span className="text-muted-foreground">—</span>}
+                        <div className="flex gap-1 mt-0.5">
+                          {t.avgSpeed != null && <span className="text-[9px] text-muted-foreground"><Gauge className="inline size-2 mr-0.5" />{t.avgSpeed} км/ч</span>}
+                          {t.maxSpeed != null && <span className={`text-[9px] ${t.maxSpeed > 90 ? 'text-red-500 font-medium' : 'text-muted-foreground'}`}>макс: {t.maxSpeed}</span>}
+                        </div>
+                      </td>
+                      <td className="py-1.5 px-2 hidden lg:table-cell">
+                        {t.fuelConsumed != null ? (
+                          <span className="inline-flex items-center gap-0.5 font-medium text-amber-600 dark:text-amber-400"><Fuel className="size-2" />{t.fuelConsumed} л</span>
+                        ) : '—'}
+                        <div className="flex gap-1 mt-0.5">
+                          {t.refuelVolume != null && t.refuelVolume > 0 && <span className="inline-flex items-center gap-0.5 text-[9px] text-emerald-600 dark:text-emerald-400"><ArrowUpFromLine className="size-2" />+{t.refuelVolume}л</span>}
+                          {t.plumVolume != null && t.plumVolume > 0 && <span className="inline-flex items-center gap-0.5 text-[9px] text-red-600 dark:text-red-400"><ArrowDownToLine className="size-2" />-{t.plumVolume}л</span>}
+                        </div>
+                      </td>
+                      <td className="py-1.5 px-2 hidden xl:table-cell">
+                        <div className="space-y-0.5">
+                          {t.idleTime != null && <span className="text-[9px] text-muted-foreground"><Clock className="inline size-2 mr-0.5" />Простой: {formatDurationShort(t.idleTime)}</span>}
+                          {(t.cost != null || t.revenue != null) && (
+                            <div className="flex gap-1">
+                              {t.cost != null && <span className="text-[9px] text-red-500">−{new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 0 }).format(t.cost)}₽</span>}
+                              {t.revenue != null && <span className="text-[9px] text-emerald-500">+{new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 0 }).format(t.revenue)}₽</span>}
+                            </div>
+                          )}
+                        </div>
+                      </td>
+                      <td className="py-1.5 px-2 text-right" onClick={e => e.stopPropagation()}>
+                        <div className="flex items-center justify-end gap-0.5">
+                          {t.startDate && t.equipmentId && (
+                            <Button size="sm" variant="ghost" className="size-6 p-0 text-sky-500 hover:text-sky-600" onClick={() => onOpenDetail(t, true)} title="Показать трек на карте">
+                              <MapPinned className="size-3" />
+                            </Button>
+                          )}
+                          <Button size="sm" variant="ghost" className="size-6 p-0 text-destructive hover:text-destructive" onClick={() => onDelete(t)}><Trash2 className="size-3" /></Button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </>
       )}
     </div>
   )
