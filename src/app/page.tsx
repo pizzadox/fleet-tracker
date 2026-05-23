@@ -52,6 +52,8 @@ import {
 } from '@/components/ui/alert-dialog'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger, DropdownMenuLabel } from '@/components/ui/dropdown-menu'
+import { Skeleton } from '@/components/ui/skeleton'
+import { Checkbox } from '@/components/ui/checkbox'
 
 // ─── Lucide Icons ─────────────────────────────────────────────
 import {
@@ -71,7 +73,8 @@ import {
   Armchair, Anchor, TimerReset, MoveRight, Tag, BadgeCheck,
   ScanLine, Receipt, Truck as TruckIcon, Flame,
   ArrowUp, ArrowDown, GripVertical, MapPinned, ToggleRight,
-  LogOut, Globe, Database, Palette
+  LogOut, Globe, Database, Palette, LayoutGrid, List, FileDown, CheckCheck,
+  ArrowUpCircle, MousePointerClick, Layers
 } from 'lucide-react'
 
 // ═══════════════════════════════════════════════════════════════
@@ -584,6 +587,190 @@ function useDebounce<T>(value: T, delay: number): T {
 }
 
 // ═══════════════════════════════════════════════════════════════
+// API URL CONSTANTS
+// ═══════════════════════════════════════════════════════════════
+
+const API = {
+  equipment: '/api/equipment',
+  companies: '/api/companies',
+  repairs: '/api/repairs',
+  trips: '/api/trips',
+  crews: '/api/crews',
+  employees: '/api/employees',
+  routeTemplates: '/api/route-templates',
+  glonass: '/api/glonass',
+  sync: '/api/glonass/sync',
+  settings: '/api/glonass/settings',
+  users: '/api/users',
+  auth: {
+    login: '/api/auth/login',
+    logout: '/api/auth/logout',
+    me: '/api/auth/me',
+    users: '/api/auth/users',
+  },
+  notifications: {
+    rules: '/api/notifications/rules',
+    check: '/api/notifications/check',
+  },
+  permissions: '/api/permissions',
+} as const
+
+// ═══════════════════════════════════════════════════════════════
+// UTILITY FUNCTIONS
+// ═══════════════════════════════════════════════════════════════
+
+// Centralized error handler
+function handleApiError(error: unknown, message: string = 'Ошибка') {
+  console.error(message, error)
+  toast.error(message)
+}
+
+// CSV Export utility
+function downloadCSV(data: Record<string, unknown>[], filename: string) {
+  if (data.length === 0) return
+  const headers = Object.keys(data[0])
+  const csv = [
+    headers.join(','),
+    ...data.map(row => headers.map(h => {
+      const val = String(row[h] ?? '')
+      return val.includes(',') || val.includes('"') ? `"${val.replace(/"/g, '""')}"` : val
+    }).join(','))
+  ].join('\n')
+  const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url; a.download = `${filename}.csv`; a.click()
+  URL.revokeObjectURL(url)
+}
+
+// Copy to clipboard helper
+async function copyToClipboard(text: string): Promise<boolean> {
+  try {
+    await navigator.clipboard.writeText(text)
+    toast.success('Скопировано')
+    return true
+  } catch {
+    toast.error('Ошибка копирования')
+    return false
+  }
+}
+
+// Section divider component
+function SectionDivider({ label }: { label: string }) {
+  return (
+    <div className="flex items-center gap-2 my-3">
+      <Separator className="flex-1" />
+      <span className="text-xs text-muted-foreground font-medium">{label}</span>
+      <Separator className="flex-1" />
+    </div>
+  )
+}
+
+// Pagination component
+function PaginationControls({ page, totalPages, total, pageSize, onPageChange }: {
+  page: number; totalPages: number; total: number; pageSize: number; onPageChange: (p: number) => void
+}) {
+  const start = (page - 1) * pageSize + 1
+  const end = Math.min(page * pageSize, total)
+  return (
+    <div className="flex items-center justify-between py-2">
+      <span className="text-xs text-muted-foreground">
+        {total > 0 ? `Показано ${start}–${end} из ${total}` : 'Нет данных'}
+      </span>
+      <div className="flex items-center gap-1">
+        <Button variant="outline" size="sm" className="h-7 text-xs px-2" disabled={page <= 1} onClick={() => onPageChange(page - 1)} aria-label="Предыдущая страница">
+          <ChevronLeft className="size-3.5" />
+        </Button>
+        <span className="text-xs text-muted-foreground px-1">{page} / {Math.max(totalPages, 1)}</span>
+        <Button variant="outline" size="sm" className="h-7 text-xs px-2" disabled={page >= totalPages} onClick={() => onPageChange(page + 1)} aria-label="Следующая страница">
+          <ChevronRight className="size-3.5" />
+        </Button>
+      </div>
+    </div>
+  )
+}
+
+// ═══════════════════════════════════════════════════════════════
+// CUSTOM HOOKS
+// ═══════════════════════════════════════════════════════════════
+
+// Online/offline hook
+function useOnlineStatus() {
+  const [online, setOnline] = useState(true)
+  useEffect(() => {
+    setOnline(navigator.onLine)
+    const on = () => setOnline(true)
+    const off = () => setOnline(false)
+    window.addEventListener('online', on)
+    window.addEventListener('offline', off)
+    return () => {
+      window.removeEventListener('online', on)
+      window.removeEventListener('offline', off)
+    }
+  }, [])
+  return online
+}
+
+// Scroll position hook (for scroll-to-top button)
+function useScrollPosition() {
+  const [scrolledDown, setScrolledDown] = useState(false)
+  useEffect(() => {
+    const handler = () => {
+      setScrolledDown(window.scrollY > 300)
+    }
+    window.addEventListener('scroll', handler, { passive: true })
+    return () => window.removeEventListener('scroll', handler)
+  }, [])
+  return scrolledDown
+}
+
+// Reduced motion hook
+function useReducedMotion() {
+  const [reduced, setReduced] = useState(false)
+  useEffect(() => {
+    setReduced(window.matchMedia('(prefers-reduced-motion: reduce)').matches)
+    const mql = window.matchMedia('(prefers-reduced-motion: reduce)')
+    const handler = (e: MediaQueryListEvent) => setReduced(e.matches)
+    mql.addEventListener('change', handler)
+    return () => mql.removeEventListener('change', handler)
+  }, [])
+  return reduced
+}
+
+// Filter persistence hook
+function usePersistedFilter<T>(key: string, defaultValue: T): [T, (v: T) => void] {
+  const [value, setValue] = useState<T>(() => {
+    if (typeof window === 'undefined') return defaultValue
+    try {
+      const stored = localStorage.getItem(`fleet_filter_${key}`)
+      return stored ? JSON.parse(stored) : defaultValue
+    } catch { return defaultValue }
+  })
+  const setAndPersist = (v: T) => {
+    setValue(v)
+    try { localStorage.setItem(`fleet_filter_${key}`, JSON.stringify(v)) } catch {}
+  }
+  return [value, setAndPersist]
+}
+
+// Auto-refresh countdown hook
+function useAutoRefreshCountdown(intervalMs: number, enabled: boolean) {
+  const [secondsLeft, setSecondsLeft] = useState(intervalMs / 1000)
+  useEffect(() => {
+    if (!enabled) { setSecondsLeft(intervalMs / 1000); return }
+    setSecondsLeft(intervalMs / 1000)
+    const timer = setInterval(() => {
+      setSecondsLeft(prev => {
+        if (prev <= 1) { setSecondsLeft(intervalMs / 1000); return intervalMs / 1000 }
+        return prev - 1
+      })
+    }, 1000)
+    return () => clearInterval(timer)
+  }, [intervalMs, enabled])
+  return secondsLeft
+}
+
+// ═══════════════════════════════════════════════════════════════
 // PIN LOGIN SCREEN
 // ═══════════════════════════════════════════════════════════════
 
@@ -799,6 +986,10 @@ export default function Home() {
   const [repairs, setRepairs] = useState<Repair[]>([])
   const [loading, setLoading] = useState(true)
   const [loadingProgress, setLoadingProgress] = useState(0)
+  const isOnline = useOnlineStatus()
+  const scrolledDown = useScrollPosition()
+  const reducedMotion = useReducedMotion()
+  const [topLoadingBar, setTopLoadingBar] = useState(false)
 
   // Equipment filters with debounce
   const [eqSearch, setEqSearch] = useState('')
@@ -827,6 +1018,7 @@ export default function Home() {
   const [deleteDialog, setDeleteDialog] = useState<{ open: boolean; type: 'equipment' | 'repair' | 'company' | 'trip' | 'crew' | 'employee'; id: string; name: string }>({
     open: false, type: 'equipment', id: '', name: ''
   })
+  const [deleteConfirmText, setDeleteConfirmText] = useState('')
   const [photoUploadEq, setPhotoUploadEq] = useState<string | null>(null)
   const [photoUploadRepair, setPhotoUploadRepair] = useState<string | null>(null)
   const [stageFormOpen, setStageFormOpen] = useState(false)
@@ -879,6 +1071,7 @@ export default function Home() {
   const [autoRefreshEnabled, setAutoRefreshEnabled] = useState(true)
   const [globalSearchOpen, setGlobalSearchOpen] = useState(false)
   const [globalSearchQuery, setGlobalSearchQuery] = useState('')
+  const [globalSearchIndex, setGlobalSearchIndex] = useState(-1)
 
   // ─── Auth state ─────────────────────────────────────────────
   const [currentUser, setCurrentUser] = useState<AppUserType | null>(null)
@@ -894,6 +1087,7 @@ export default function Home() {
 
   const fetchEquipment = useCallback(async () => {
     try {
+      setTopLoadingBar(true)
       const params = new URLSearchParams()
       if (debouncedSearch) params.set('search', debouncedSearch)
       if (eqStatusFilter && eqStatusFilter !== 'all') params.set('status', eqStatusFilter)
@@ -902,59 +1096,60 @@ export default function Home() {
       if (!res.ok) throw new Error()
       const data = await res.json()
       setEquipment(data)
-    } catch { toast.error('Ошибка загрузки техники') }
+    } catch (e) { handleApiError(e, 'Ошибка загрузки техники') }
+    finally { setTopLoadingBar(false) }
   }, [debouncedSearch, eqStatusFilter, eqTypeFilter])
 
   const fetchCompanies = useCallback(async () => {
     try {
-      const res = await fetch('/api/companies')
+      const res = await fetch(API.companies)
       if (!res.ok) throw new Error()
       const data = await res.json()
       setCompanies(data)
-    } catch { toast.error('Ошибка загрузки компаний') }
+    } catch (e) { handleApiError(e, 'Ошибка загрузки компаний') }
   }, [])
 
   const fetchRepairs = useCallback(async () => {
     try {
-      const res = await fetch('/api/repairs')
+      const res = await fetch(API.repairs)
       if (!res.ok) throw new Error()
       const data = await res.json()
       setRepairs(data)
-    } catch { toast.error('Ошибка загрузки ремонтов') }
+    } catch (e) { handleApiError(e, 'Ошибка загрузки ремонтов') }
   }, [])
 
   const fetchTrips = useCallback(async () => {
     try {
-      const res = await fetch('/api/trips')
+      const res = await fetch(API.trips)
       if (!res.ok) throw new Error()
       const data = await res.json()
       setTrips(data)
-    } catch { toast.error('Ошибка загрузки рейсов') }
+    } catch (e) { handleApiError(e, 'Ошибка загрузки рейсов') }
   }, [])
 
   const fetchCrews = useCallback(async () => {
     try {
-      const res = await fetch('/api/crews')
+      const res = await fetch(API.crews)
       if (!res.ok) throw new Error()
       const data = await res.json()
       setCrews(data)
-    } catch { toast.error('Ошибка загрузки экипажей') }
+    } catch (e) { handleApiError(e, 'Ошибка загрузки экипажей') }
   }, [])
 
   const fetchRouteTemplates = useCallback(async () => {
     try {
-      const res = await fetch('/api/route-templates')
+      const res = await fetch(API.routeTemplates)
       if (res.ok) { const data = await res.json(); setRouteTemplates(data) }
     } catch {}
   }, [])
 
   const fetchEmployees = useCallback(async () => {
     try {
-      const res = await fetch('/api/employees')
+      const res = await fetch(API.employees)
       if (!res.ok) throw new Error()
       const data = await res.json()
       setEmployees(data)
-    } catch { toast.error('Ошибка загрузки сотрудников') }
+    } catch (e) { handleApiError(e, 'Ошибка загрузки сотрудников') }
   }, [])
 
   const fetchAll = useCallback(async () => {
@@ -1044,7 +1239,7 @@ export default function Home() {
     }
   }, [mainTab, currentUser])
 
-  // Global search shortcut (Ctrl+K)
+  // Global search shortcut (Ctrl+K) with keyboard navigation
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
@@ -1057,34 +1252,34 @@ export default function Home() {
     return () => window.removeEventListener('keydown', handler)
   }, [])
 
-  // Global search results
+  // Global search results with type color coding
   const globalSearchResults = useMemo(() => {
     if (!globalSearchQuery.trim()) return []
     const q = globalSearchQuery.toLowerCase()
-    const results: Array<{ type: string; id: string; label: string; sub: string; icon: React.ReactNode; action: () => void }> = []
+    const results: Array<{ type: string; id: string; label: string; sub: string; icon: React.ReactNode; color: string; action: () => void }> = []
     for (const eq of equipment) {
       if (eq.name.toLowerCase().includes(q) || (eq.registrationNum || '').toLowerCase().includes(q) || (eq.vin || '').toLowerCase().includes(q)) {
-        results.push({ type: 'Техника', id: eq.id, label: eq.name, sub: [eq.registrationNum, eq.brand, eq.model].filter(Boolean).join(' • '), icon: <Truck className="size-3.5" />, action: () => { setGlobalSearchOpen(false); openEquipmentDetail(eq) } })
+        results.push({ type: 'Техника', id: eq.id, label: eq.name, sub: [eq.registrationNum, eq.brand, eq.model].filter(Boolean).join(' • '), icon: <Truck className="size-3.5" />, color: 'text-amber-600', action: () => { setGlobalSearchOpen(false); openEquipmentDetail(eq) } })
       }
     }
     for (const r of repairs) {
       if (r.description.toLowerCase().includes(q) || (r.equipment?.name || '').toLowerCase().includes(q)) {
-        results.push({ type: 'Ремонт', id: r.id, label: r.description, sub: `${r.equipment?.name || ''} • ${formatDate(r.startDate)}`, icon: <Wrench className="size-3.5" />, action: () => { setGlobalSearchOpen(false); openRepairDetail(r) } })
+        results.push({ type: 'Ремонт', id: r.id, label: r.description, sub: `${r.equipment?.name || ''} • ${formatDate(r.startDate)}`, icon: <Wrench className="size-3.5" />, color: 'text-orange-600', action: () => { setGlobalSearchOpen(false); openRepairDetail(r) } })
       }
     }
     for (const t of trips) {
       if (t.route.toLowerCase().includes(q) || (t.cargo || '').toLowerCase().includes(q)) {
-        results.push({ type: 'Рейс', id: t.id, label: t.route, sub: `${t.equipment?.name || ''} • ${formatDate(t.startDate)}`, icon: <Route className="size-3.5" />, action: () => { setGlobalSearchOpen(false); openTripDetail(t) } })
+        results.push({ type: 'Рейс', id: t.id, label: t.route, sub: `${t.equipment?.name || ''} • ${formatDate(t.startDate)}`, icon: <Route className="size-3.5" />, color: 'text-violet-600', action: () => { setGlobalSearchOpen(false); openTripDetail(t) } })
       }
     }
     for (const emp of employees) {
       if (emp.fullName.toLowerCase().includes(q) || (emp.phone || '').toLowerCase().includes(q)) {
-        results.push({ type: 'Сотрудник', id: emp.id, label: emp.fullName, sub: `${EMPLOYEE_POSITION_MAP[emp.position]?.label || emp.position} • ${emp.phone || ''}`, icon: <Users className="size-3.5" />, action: () => { setGlobalSearchOpen(false); openEmployeeDetail(emp) } })
+        results.push({ type: 'Сотрудник', id: emp.id, label: emp.fullName, sub: `${EMPLOYEE_POSITION_MAP[emp.position]?.label || emp.position} • ${emp.phone || ''}`, icon: <Users className="size-3.5" />, color: 'text-sky-600', action: () => { setGlobalSearchOpen(false); openEmployeeDetail(emp) } })
       }
     }
     for (const c of companies) {
       if (c.name.toLowerCase().includes(q) || (c.inn || '').toLowerCase().includes(q)) {
-        results.push({ type: 'Компания', id: c.id, label: c.name, sub: `${COMPANY_TYPES[c.type] || c.type} • ИНН: ${c.inn || '—'}`, icon: <Building2 className="size-3.5" />, action: () => { setGlobalSearchOpen(false); setMainTab('companies') } })
+        results.push({ type: 'Компания', id: c.id, label: c.name, sub: `${COMPANY_TYPES[c.type] || c.type} • ИНН: ${c.inn || '—'}`, icon: <Building2 className="size-3.5" />, color: 'text-slate-600', action: () => { setGlobalSearchOpen(false); setMainTab('companies') } })
       }
     }
     return results.slice(0, 12)
@@ -1251,12 +1446,17 @@ export default function Home() {
   const handleDelete = async () => {
     const { type, id } = deleteDialog
     try {
-      let apiUrl = `/api/${type}s/${id}`
-      if (type === 'crew') apiUrl = `/api/crews/${id}`
-      if (type === 'trip') apiUrl = `/api/trips/${id}`
-      if (type === 'employee') apiUrl = `/api/employees/${id}`
-      if (type === 'routeTemplate') apiUrl = `/api/route-templates/${id}`
-      const res = await fetch(apiUrl, { method: 'DELETE' })
+      setTopLoadingBar(true)
+      const urlMap: Record<string, string> = {
+        equipment: `/api/equipment/${id}`,
+        repair: `/api/repairs/${id}`,
+        company: `/api/companies/${id}`,
+        trip: `/api/trips/${id}`,
+        crew: `/api/crews/${id}`,
+        employee: `/api/employees/${id}`,
+        routeTemplate: `/api/route-templates/${id}`,
+      }
+      const res = await fetch(urlMap[type] || `/api/${type}s/${id}`, { method: 'DELETE' })
       if (!res.ok) throw new Error()
       toast.success('Удалено успешно')
       if (type === 'equipment') { setEqDetailOpen(false); setSelectedEq(null) }
@@ -1265,7 +1465,8 @@ export default function Home() {
       if (type === 'employee') { setEmpDetailOpen(false); setSelectedEmp(null) }
       if (type === 'routeTemplate') fetchRouteTemplates()
       fetchAll()
-    } catch { toast.error('Ошибка удаления') }
+    } catch (e) { handleApiError(e, 'Ошибка удаления') }
+    finally { setTopLoadingBar(false) }
     setDeleteDialog({ open: false, type: 'equipment', id: '', name: '' })
   }
 
@@ -1352,13 +1553,25 @@ export default function Home() {
   // ═══════════════════════════════════════════════════════════════
 
   return (
-    <div className="min-h-screen flex flex-col bg-background pb-16 md:pb-0">
+    <div className="min-h-screen flex flex-col bg-background pb-16 md:pb-0" role="application" aria-label="Система учёта техники">
+      {/* Skip to content link */}
+      <a href="#main-content" className="skip-to-content">Перейти к содержимому</a>
+
+      {/* Top loading bar */}
+      {topLoadingBar && (
+        <div className="fixed top-0 left-0 right-0 z-50 h-0.5 bg-primary/20">
+          <div className="h-full bg-primary animate-loading-bar" />
+        </div>
+      )}
+
       {/* ─── HEADER ──────────────────────────────────────────── */}
-      <header className="border-b bg-card/80 backdrop-blur-sm sticky top-0 z-30">
+      <header className="border-b bg-card/80 backdrop-blur-sm sticky top-0 z-30" role="banner">
         <div className="max-w-7xl mx-auto px-2 sm:px-6 h-12 sm:h-11 flex items-center justify-between gap-1 sm:gap-2">
           {/* Left: logo + title + stats */}
           <div className="flex items-center gap-2 min-w-0">
             <div className="size-7 rounded-lg bg-primary text-primary-foreground flex items-center justify-center shrink-0"><Truck className="size-3.5" /></div>
+            {/* Online/Offline indicator */}
+            <span className={`size-2 rounded-full shrink-0 ${isOnline ? 'bg-emerald-500 animate-online-ring' : 'bg-red-500'}`} title={isOnline ? 'Онлайн' : 'Офлайн'} aria-label={isOnline ? 'Подключено к сети' : 'Нет подключения к сети'} />
             <h1 className="text-sm font-bold tracking-tight shrink-0 hidden sm:block">Учёт техники</h1>
             <div className="hidden md:flex items-center gap-1 ml-1">
               <button onClick={() => setMainTab('equipment')} className="inline-flex items-center gap-1 rounded-md bg-muted px-1.5 py-0.5 text-[10px] font-medium text-primary hover:bg-muted/80 transition-colors" title={`Всего техники: ${stats.total} (Активна: ${stats.active}, Ремонт: ${stats.repair}, Аренда: ${stats.rented})`}><Truck className="size-3" />{stats.total}<TrendingUp className="size-2 text-emerald-500" /></button>
@@ -1502,7 +1715,7 @@ export default function Home() {
       </header>
 
       {/* ─── MAIN CONTENT ─────────────────────────────────────── */}
-      <main className="flex-1 max-w-7xl mx-auto w-full px-2 sm:px-6 py-3 sm:py-4">
+      <main id="main-content" role="main" className="flex-1 max-w-7xl mx-auto w-full px-2 sm:px-6 py-3 sm:py-4">
         {/* Desktop tabs */}
         <Tabs value={mainTab} onValueChange={(v) => { setMainTab(v); if (v === 'management') setMgmtSubTab('companies'); if (v === 'settings') setSettingsSubTab('users'); }} className="hidden md:block">
           <TabsList className="mb-4">
@@ -1515,17 +1728,17 @@ export default function Home() {
             {hasPermission(currentUser.role, 'map') && <TabsTrigger value="map" className="gap-1.5"><Map className="size-4" />Карта</TabsTrigger>}
           </TabsList>
           {hasPermission(currentUser.role, 'equipment') && (
-            <TabsContent value="equipment">
+            <TabsContent value="equipment" className="animate-in fade-in duration-200">
               <EquipmentTab equipment={equipment} companies={companies} eqSearch={eqSearch} setEqSearch={setEqSearch} eqStatusFilter={eqStatusFilter} setEqStatusFilter={setEqStatusFilter} eqTypeFilter={eqTypeFilter} setEqTypeFilter={setEqTypeFilter} onOpenDetail={openEquipmentDetail} onAdd={() => { setEqFormEdit(null); setEqFormStep(0); setEqFormOpen(true) }} onEdit={(eq) => { setEqFormEdit(eq); setEqFormStep(0); setEqFormOpen(true) }} onDelete={(eq) => setDeleteDialog({ open: true, type: 'equipment', id: eq.id, name: eq.name })} onGoToMap={(eq) => openEquipmentDetail(eq, 'glonass')} onCreateTrip={(eq) => { setTripFormEdit(null); setTripFormEquipmentId(eq.id); setTripFormOpen(true) }} readOnly={!hasPermission(currentUser.role, 'equipment')} />
             </TabsContent>
           )}
           {hasPermission(currentUser.role, 'repairs') && (
-            <TabsContent value="repairs">
+            <TabsContent value="repairs" className="animate-in fade-in duration-200">
               <RepairsTab repairs={repairs} equipment={equipment} onOpenDetail={openRepairDetail} onAdd={(eqId) => { setRepairFormEdit(null); setRepairFormEquipmentId(eqId || ''); setRepairFormOpen(true) }} onDelete={(r) => setDeleteDialog({ open: true, type: 'repair', id: r.id, name: r.description })} readOnly={!hasPermission(currentUser.role, 'repairs')} />
             </TabsContent>
           )}
           {hasPermission(currentUser.role, 'trips') && (
-            <TabsContent value="trips">
+            <TabsContent value="trips" className="animate-in fade-in duration-200">
               <TripsTab trips={trips} equipment={equipment} crews={crews} routeTemplates={routeTemplates} onOpenDetail={openTripDetail} onAdd={(eqId) => { setTripFormEdit(null); setTripFormEquipmentId(eqId || ''); setTripFormOpen(true) }} onDelete={(t) => setDeleteDialog({ open: true, type: 'trip', id: t.id, name: t.route })} onAddCrew={() => { setCrewFormEdit(null); setCrewFormOpen(true) }} onEditCrew={(c) => { setCrewFormEdit(c); setCrewFormOpen(true) }} onDeleteCrew={(c) => setDeleteDialog({ open: true, type: 'crew', id: c.id, name: c.name })} onAddRouteTemplate={() => { setRouteTemplateFormEdit(null); setRouteTemplateFormOpen(true) }} onEditRouteTemplate={(rt) => { setRouteTemplateFormEdit(rt); setRouteTemplateFormOpen(true) }} onDeleteRouteTemplate={(rt) => setDeleteDialog({ open: true, type: 'routeTemplate', id: rt.id, name: rt.name })} readOnly={!hasPermission(currentUser.role, 'trips')} />
             </TabsContent>
           )}
@@ -1605,7 +1818,7 @@ export default function Home() {
       </main>
 
       {/* ─── MOBILE BOTTOM NAV ────────────────────────────────── */}
-      <nav className="md:hidden fixed bottom-0 left-0 right-0 z-40 border-t bg-card/95 backdrop-blur-md safe-bottom">
+      <nav className="md:hidden fixed bottom-0 left-0 right-0 z-40 border-t bg-card/95 backdrop-blur-md safe-bottom" role="navigation" aria-label="Основная навигация">
         <div className="grid h-14 grid-cols-5">
           {[
             ...(hasPermission(currentUser.role, 'equipment') ? [{ value: 'equipment', icon: <Truck className="size-5" />, label: 'Техника' }] : []),
@@ -1615,9 +1828,10 @@ export default function Home() {
             ...(hasPermission(currentUser.role, 'map') ? [{ value: 'map', icon: <Map className="size-5" />, label: 'Карта' }] : []),
           ].map(tab => (
             <button key={tab.value} onClick={() => setMainTab(tab.value)}
-              className={`flex flex-col items-center justify-center gap-0.5 relative transition-colors ${mainTab === tab.value ? 'text-primary' : 'text-muted-foreground active:text-foreground'}`}>
+              className={`flex flex-col items-center justify-center gap-0.5 relative transition-all duration-200 min-h-[44px] min-w-[44px] ${mainTab === tab.value ? 'text-primary' : 'text-muted-foreground active:text-foreground'}`}
+              role="tab" aria-selected={mainTab === tab.value} aria-label={tab.label}>
               {mainTab === tab.value && (
-                <span className="absolute top-0 left-1/2 -translate-x-1/2 w-8 h-0.5 rounded-full bg-primary" />
+                <span className="absolute top-0 left-1/2 -translate-x-1/2 w-8 h-0.5 rounded-full bg-primary transition-all duration-200" />
               )}
               {tab.icon}
               <span className="text-[10px] font-medium leading-none">{tab.label}</span>
@@ -1625,6 +1839,33 @@ export default function Home() {
           ))}
         </div>
       </nav>
+
+      {/* Scroll-to-top button */}
+      {scrolledDown && (
+        <button
+          onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
+          className="fixed bottom-20 right-4 md:bottom-6 md:right-6 z-30 size-10 rounded-full bg-primary text-primary-foreground shadow-lg hover:shadow-xl hover:-translate-y-0.5 active:scale-95 transition-all duration-200 flex items-center justify-center"
+          aria-label="Наверх"
+          title="Наверх"
+        >
+          <ArrowUp className="size-4" />
+        </button>
+      )}
+
+      {/* FAB button on mobile - primary action for current tab */}
+      <button
+        onClick={() => {
+          if (mainTab === 'equipment') { setEqFormEdit(null); setEqFormStep(0); setEqFormOpen(true) }
+          else if (mainTab === 'repairs') { setRepairFormEdit(null); setRepairFormEquipmentId(''); setRepairFormOpen(true) }
+          else if (mainTab === 'trips') { setTripFormEdit(null); setTripFormEquipmentId(''); setTripFormOpen(true) }
+          else if (mainTab === 'management') { setCompanyFormEdit(null); setCompanyFormOpen(true) }
+        }}
+        className="md:hidden fixed bottom-20 right-4 z-30 size-12 rounded-full bg-primary text-primary-foreground shadow-lg hover:shadow-xl active:scale-95 transition-all duration-200 flex items-center justify-center"
+        aria-label="Добавить"
+        title="Добавить"
+      >
+        <Plus className="size-5" />
+      </button>
 
       {/* ─── DIALOGS ──────────────────────────────────────────── */}
       {/* Settings Sheet */}
@@ -1690,25 +1931,47 @@ export default function Home() {
       {/* Axenta settings dialog - kept for backward compat, now accessible from Settings tab */}
 
       {/* Delete confirm */}
-      <AlertDialog open={deleteDialog.open} onOpenChange={(open) => setDeleteDialog({ ...deleteDialog, open })}>
-        <AlertDialogContent>
+      {/* Delete confirm with name input for critical items */}
+      <AlertDialog open={deleteDialog.open} onOpenChange={(open) => { setDeleteDialog({ ...deleteDialog, open }); if (!open) setDeleteConfirmText('') }}>
+        <AlertDialogContent className="w-[95vw] sm:max-w-lg">
           <AlertDialogHeader>
             <AlertDialogTitle>Подтверждение удаления</AlertDialogTitle>
-            <AlertDialogDescription>Удалить &laquo;{deleteDialog.name}&raquo;? Это действие нельзя отменить.</AlertDialogDescription>
+            <AlertDialogDescription>
+              {['equipment', 'trip'].includes(deleteDialog.type) ? (
+                <>Для удаления введите <strong>&laquo;{deleteDialog.name}&raquo;</strong> в поле ниже:</>
+              ) : (
+                <>Удалить &laquo;{deleteDialog.name}&raquo;? Это действие нельзя отменить.</>
+              )}
+            </AlertDialogDescription>
           </AlertDialogHeader>
+          {['equipment', 'trip'].includes(deleteDialog.type) && (
+            <Input
+              placeholder={`Введите "${deleteDialog.name}"`}
+              value={deleteConfirmText}
+              onChange={e => setDeleteConfirmText(e.target.value)}
+              className="h-9 text-sm"
+              autoFocus
+            />
+          )}
           <AlertDialogFooter>
             <AlertDialogCancel>Отмена</AlertDialogCancel>
-            <AlertDialogAction onClick={handleDelete} className="bg-destructive text-white hover:bg-destructive/90">Удалить</AlertDialogAction>
+            <AlertDialogAction
+              onClick={handleDelete}
+              className="bg-destructive text-white hover:bg-destructive/90 active:scale-95 transition-transform"
+              disabled={(['equipment', 'trip'].includes(deleteDialog.type)) && deleteConfirmText !== deleteDialog.name}
+            >
+              Удалить
+            </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
 
       {/* Global Search Dialog (Ctrl+K) */}
       <Dialog open={globalSearchOpen} onOpenChange={setGlobalSearchOpen}>
-        <DialogContent className="sm:max-w-lg p-0 gap-0">
+        <DialogContent className="sm:max-w-lg p-0 gap-0 w-[95vw]">
           <div className="flex items-center border-b px-3">
             <Search className="size-4 text-muted-foreground shrink-0" />
-            <Input value={globalSearchQuery} onChange={e => setGlobalSearchQuery(e.target.value)} placeholder="Поиск по всей системе..." className="border-0 focus-visible:ring-0 h-10 text-sm" autoFocus />
+            <Input value={globalSearchQuery} onChange={e => { setGlobalSearchQuery(e.target.value); setGlobalSearchIndex(-1) }} placeholder="Поиск по всей системе..." className="border-0 focus-visible:ring-0 h-10 text-sm" autoFocus />
             <kbd className="hidden sm:inline-flex items-center gap-0.5 rounded border bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground shrink-0">ESC</kbd>
           </div>
           <div className="max-h-[50vh] overflow-y-auto">
@@ -1716,7 +1979,7 @@ export default function Home() {
               <div className="p-6 text-center text-muted-foreground">
                 <Search className="size-8 mx-auto mb-2 opacity-30" />
                 <p className="text-xs">Введите запрос для поиска по технике, ремонтам, рейсам, сотрудникам и компаниям</p>
-                <p className="text-[10px] mt-1">Ctrl+K для быстрого доступа</p>
+                <p className="text-[10px] mt-1"><kbd className="rounded border bg-muted px-1 py-0.5">Ctrl+K</kbd> для быстрого доступа • <kbd className="rounded border bg-muted px-1 py-0.5">↑↓</kbd> навигация • <kbd className="rounded border bg-muted px-1 py-0.5">Enter</kbd> выбор</p>
               </div>
             ) : globalSearchResults.length === 0 ? (
               <div className="p-6 text-center text-muted-foreground">
@@ -1725,14 +1988,14 @@ export default function Home() {
               </div>
             ) : (
               <div className="py-1">
-                {globalSearchResults.map(r => (
-                  <button key={`${r.type}-${r.id}`} className="w-full flex items-center gap-2.5 px-3 py-2 hover:bg-accent transition-colors text-left" onClick={r.action}>
-                    <div className="size-7 rounded-md bg-muted flex items-center justify-center shrink-0 text-muted-foreground">{r.icon}</div>
+                {globalSearchResults.map((r, i) => (
+                  <button key={`${r.type}-${r.id}`} className={`w-full flex items-center gap-2.5 px-3 py-2 hover:bg-accent transition-colors text-left ${i === globalSearchIndex ? 'bg-accent' : ''}`} onClick={r.action}>
+                    <div className={`size-7 rounded-md bg-muted flex items-center justify-center shrink-0 ${r.color}`}>{r.icon}</div>
                     <div className="flex-1 min-w-0">
                       <p className="text-xs font-medium truncate">{r.label}</p>
                       <p className="text-[10px] text-muted-foreground truncate">{r.sub}</p>
                     </div>
-                    <span className="text-[9px] text-muted-foreground shrink-0 rounded bg-muted px-1 py-0.5">{r.type}</span>
+                    <span className={`text-[9px] shrink-0 rounded bg-muted px-1 py-0.5 font-medium ${r.color}`}>{r.type}</span>
                   </button>
                 ))}
               </div>
@@ -1748,25 +2011,25 @@ export default function Home() {
 // STAT CARD (compact)
 // ═══════════════════════════════════════════════════════════════
 
-function StatCard({ icon, label, value, color }: { icon: React.ReactNode; label: string; value: number; color: string }) {
+const StatCard = React.memo(function StatCard({ icon, label, value, color }: { icon: React.ReactNode; label: string; value: number; color: string }) {
   return (
-    <Card className="py-2 gap-0">
+    <Card className="py-2 gap-0 shadow-sm hover:shadow-md hover:-translate-y-0.5 transition-all duration-200">
       <CardContent className="flex items-center gap-2 px-3 pt-0">
         <div className={`flex items-center justify-center size-7 rounded-md bg-muted ${color}`}>{icon}</div>
         <div>
-          <p className="text-lg sm:text-xl font-bold leading-none">{value}</p>
+          <p className="text-lg sm:text-xl font-bold leading-none animate-counter">{value}</p>
           <p className="text-[10px] text-muted-foreground leading-tight">{label}</p>
         </div>
       </CardContent>
     </Card>
   )
-}
+})
 
 // ═══════════════════════════════════════════════════════════════
 // EQUIPMENT TAB
 // ═══════════════════════════════════════════════════════════════
 
-function EquipmentTab({ equipment, companies, eqSearch, setEqSearch, eqStatusFilter, setEqStatusFilter, eqTypeFilter, setEqTypeFilter, onOpenDetail, onAdd, onEdit, onDelete, onGoToMap, onCreateTrip, readOnly }: {
+const EquipmentTab = React.memo(function EquipmentTab({ equipment, companies, eqSearch, setEqSearch, eqStatusFilter, setEqStatusFilter, eqTypeFilter, setEqTypeFilter, onOpenDetail, onAdd, onEdit, onDelete, onGoToMap, onCreateTrip, readOnly }: {
   equipment: Equipment[]; companies: Company[];
   eqSearch: string; setEqSearch: (v: string) => void;
   eqStatusFilter: string; setEqStatusFilter: (v: string) => void;
@@ -1780,6 +2043,11 @@ function EquipmentTab({ equipment, companies, eqSearch, setEqSearch, eqStatusFil
   const [copiedId, setCopiedId] = useState<string | null>(null)
   const containerRef = useRef<HTMLDivElement>(null)
   const [expandedId, setExpandedId] = useState<string | null>(null)
+  const [page, setPage] = useState(1)
+  const [viewMode, setViewMode] = useState<'cards' | 'table'>('cards')
+  const [bulkMode, setBulkMode] = useState(false)
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
+  const PAGE_SIZE = 20
 
   const daysUntil = (d?: string | null) => {
     if (!d) return null
@@ -1812,11 +2080,9 @@ function EquipmentTab({ equipment, companies, eqSearch, setEqSearch, eqStatusFil
   }
 
   const copyRegNum = (regNum: string, eqId: string) => {
-    navigator.clipboard.writeText(regNum).then(() => {
-      setCopiedId(eqId)
-      toast.success('Номер скопирован')
-      setTimeout(() => setCopiedId(null), 1500)
-    }).catch(() => {})
+    copyToClipboard(regNum).then(ok => {
+      if (ok) { setCopiedId(eqId); setTimeout(() => setCopiedId(null), 1500) }
+    })
   }
 
   // Группировка по статусу для визуальной организации
@@ -1837,17 +2103,17 @@ function EquipmentTab({ equipment, companies, eqSearch, setEqSearch, eqStatusFil
       <div className="flex flex-col sm:flex-row gap-2">
         <div className="relative flex-1">
           <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 size-3.5 text-muted-foreground" />
-          <Input placeholder="Поиск по названию, номеру, VIN..." value={eqSearch} onChange={e => setEqSearch(e.target.value)} className="pl-8 h-9 text-sm" />
+          <Input placeholder="Поиск по названию, номеру, VIN..." value={eqSearch} onChange={e => { setEqSearch(e.target.value); setPage(1) }} className="pl-8 h-9 text-sm" />
         </div>
         <div className="flex gap-2">
-          <Select value={eqStatusFilter} onValueChange={setEqStatusFilter}>
+          <Select value={eqStatusFilter} onValueChange={v => { setEqStatusFilter(v); setPage(1) }}>
             <SelectTrigger className="w-full sm:w-[140px] h-9 text-sm"><SelectValue placeholder="Статус" /></SelectTrigger>
             <SelectContent>
               <SelectItem value="all">Все статусы</SelectItem>
               {Object.entries(EQUIPMENT_STATUS_MAP).map(([k, v]) => <SelectItem key={k} value={k}>{v.label}</SelectItem>)}
             </SelectContent>
           </Select>
-          <Select value={eqTypeFilter} onValueChange={setEqTypeFilter}>
+          <Select value={eqTypeFilter} onValueChange={v => { setEqTypeFilter(v); setPage(1) }}>
             <SelectTrigger className="w-full sm:w-[160px] h-9 text-sm"><SelectValue placeholder="Тип" /></SelectTrigger>
             <SelectContent>
               <SelectItem value="all">Все типы</SelectItem>
@@ -1860,8 +2126,42 @@ function EquipmentTab({ equipment, companies, eqSearch, setEqSearch, eqStatusFil
             </SelectContent>
           </Select>
         </div>
-        <Button onClick={onAdd} size="sm" className="h-9 gap-1.5"><Plus className="size-3.5" />Добавить</Button>
+        <div className="flex gap-1">
+          <Button onClick={onAdd} size="sm" className="h-9 gap-1.5 active:scale-95 transition-transform"><Plus className="size-3.5" />Добавить</Button>
+          {/* View toggle */}
+          <Button variant="outline" size="sm" className="h-9 px-2" onClick={() => setViewMode(viewMode === 'cards' ? 'table' : 'cards')} title={viewMode === 'cards' ? 'Таблица' : 'Карточки'} aria-label={viewMode === 'cards' ? 'Переключить на таблицу' : 'Переключить на карточки'}>
+            {viewMode === 'cards' ? <List className="size-3.5" /> : <LayoutGrid className="size-3.5" />}
+          </Button>
+          {/* CSV Export */}
+          <Button variant="outline" size="sm" className="h-9 px-2" onClick={() => downloadCSV(equipment.map(eq => ({ Название: eq.name, Тип: eq.type, Госномер: eq.registrationNum || '', VIN: eq.vin || '', Бренд: eq.brand || '', Модель: eq.model || '', Статус: EQUIPMENT_STATUS_MAP[eq.status]?.label || eq.status, Владелец: eq.owner?.name || '', Арендатор: eq.renter?.name || '' })), 'equipment')} title="Экспорт CSV" aria-label="Экспорт CSV">
+            <FileDown className="size-3.5" />
+          </Button>
+          {/* Bulk select */}
+          {!readOnly && (
+            <Button variant={bulkMode ? 'default' : 'outline'} size="sm" className="h-9 px-2" onClick={() => { setBulkMode(!bulkMode); setSelectedIds(new Set()) }} title="Выделение" aria-label="Выделение">
+              <CheckCheck className="size-3.5" />
+            </Button>
+          )}
+        </div>
       </div>
+
+      {/* Bulk actions bar */}
+      {bulkMode && selectedIds.size > 0 && (
+        <div className="flex items-center gap-2 p-2 rounded-lg bg-muted animate-in fade-in duration-200">
+          <span className="text-xs font-medium">Выбрано: {selectedIds.size}</span>
+          <Button variant="destructive" size="sm" className="h-7 text-xs gap-1 active:scale-95 transition-transform" onClick={async () => {
+            for (const id of selectedIds) {
+              try { await fetch(`/api/equipment/${id}`, { method: 'DELETE' }) } catch {}
+            }
+            toast.success(`Удалено: ${selectedIds.size}`)
+            setSelectedIds(new Set())
+            setBulkMode(false)
+          }}>
+            <Trash2 className="size-3" />Удалить выбранное
+          </Button>
+          <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => { setSelectedIds(new Set()); setBulkMode(false) }}>Отмена</Button>
+        </div>
+      )}
 
       <div className="flex items-center justify-between">
         <p className="text-xs text-muted-foreground">Найдено: {equipment.length}</p>
@@ -1883,14 +2183,15 @@ function EquipmentTab({ equipment, companies, eqSearch, setEqSearch, eqStatusFil
       {equipment.length === 0 ? (
         <Card className="py-8 animate-in fade-in duration-300">
           <CardContent className="flex flex-col items-center text-center p-4 pt-0">
-            <Truck className="size-10 text-muted-foreground/40 mb-2" />
-            <p className="text-sm text-muted-foreground">Техника не найдена</p>
+            <Truck className="size-12 text-muted-foreground/30 mb-3" />
+            <p className="text-sm font-medium text-muted-foreground">Техника не найдена</p>
             <p className="text-xs text-muted-foreground mt-1">Измените фильтры или добавьте новую технику</p>
+            {!readOnly && <Button variant="outline" size="sm" className="mt-3 gap-1.5 active:scale-95 transition-transform" onClick={onAdd}><Plus className="size-3.5" />Добавить технику</Button>}
           </CardContent>
         </Card>
       ) : (
         <div className="space-y-1">
-          {equipment.map(eq => {
+          {equipment.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE).map((eq, idx) => {
             const typeInfo = getTypeInfo(eq.type)
             const statusInfo = EQUIPMENT_STATUS_MAP[eq.status]
             const insDays = daysUntil(eq.insuranceExpiry)
@@ -1906,12 +2207,23 @@ function EquipmentTab({ equipment, companies, eqSearch, setEqSearch, eqStatusFil
             return (
               <Card
                 key={eq.id}
-                className={`group relative transition-all duration-200 overflow-hidden border-l-[3px] ${statusInfo?.border || ''} ${isExpanded ? 'shadow-md border-primary/30' : 'hover:shadow-sm hover:border-primary/20'}`}
+                className={`group relative transition-all duration-200 overflow-hidden border-l-[3px] animate-card-in ${statusInfo?.border || ''} ${isExpanded ? 'shadow-md border-primary/30' : 'hover:shadow-sm hover:border-primary/20'}`}
+                style={{ animationDelay: `${idx * 50}ms` }}
               >
+                {/* Bulk checkbox */}
+                {bulkMode && (
+                  <div className="absolute left-0 top-0 bottom-0 w-8 flex items-center justify-center z-10">
+                    <Checkbox checked={selectedIds.has(eq.id)} onCheckedChange={() => {
+                      const next = new Set(selectedIds)
+                      if (next.has(eq.id)) next.delete(eq.id); else next.add(eq.id)
+                      setSelectedIds(next)
+                    }} aria-label={`Выбрать ${eq.name}`} />
+                  </div>
+                )}
                 {/* ── Шапка (всегда видна) — клик раскрывает/сворачивает ── */}
                 <div
-                  className="flex items-center gap-2.5 px-3 pt-2 pb-0.5 cursor-pointer select-none"
-                  onClick={() => setExpandedId(isExpanded ? null : eq.id)}
+                  className={`flex items-center gap-2.5 px-3 pt-2 pb-0.5 cursor-pointer select-none ${bulkMode ? 'pl-10' : ''}`}
+                  onClick={() => { if (!bulkMode) setExpandedId(isExpanded ? null : eq.id) }}
                 >
                   <div className={`flex items-center justify-center size-9 rounded-lg shrink-0 ${typeInfo.color} ${typeInfo.darkColor}`}>
                     {typeInfo.icon}
@@ -1921,12 +2233,12 @@ function EquipmentTab({ equipment, companies, eqSearch, setEqSearch, eqStatusFil
                     <div className="flex items-center gap-1.5">
                       <div className="flex items-center gap-1.5 min-w-0 flex-1">
                         {tracker && (
-                          <span className={`size-3 rounded-full shrink-0 ${trackerOnline ? 'bg-emerald-500 animate-pulse' : 'bg-red-400'}`} title={trackerOnline ? 'Онлайн' : 'Офлайн'} />
+                          <span className={`size-3 rounded-full shrink-0 ${trackerOnline ? 'bg-emerald-500 animate-pulse animate-online-ring' : 'bg-red-400'}`} title={trackerOnline ? 'Онлайн' : 'Офлайн'} />
                         )}
                         <span className="font-semibold text-sm truncate">{eq.name}</span>
                         {hasWarnings && <AlertTriangle className="size-3.5 text-amber-500 shrink-0" />}
                       </div>
-                      <Badge variant="secondary" className={`text-[10px] px-1.5 py-0 h-4 shrink-0 ${statusInfo?.color || ''}`}>
+                      <Badge variant="secondary" className={`text-[10px] px-1.5 py-0 h-4 shrink-0 ${statusInfo?.color || ''} ${eq.status === 'repair' ? 'animate-status-pulse' : ''}`}>
                         {statusInfo?.label || eq.status}
                       </Badge>
                     </div>
@@ -1935,7 +2247,7 @@ function EquipmentTab({ equipment, companies, eqSearch, setEqSearch, eqStatusFil
                       {eq.registrationNum && (
                         <span className="font-mono text-xs text-muted-foreground cursor-pointer hover:text-primary shrink-0 inline-flex items-center gap-0.5"
                           onClick={(e) => { e.stopPropagation(); copyRegNum(eq.registrationNum!, eq.id) }}
-                          title={copiedId === eq.id ? 'Скопировано!' : 'Копировать номер'}>
+                          title={copiedId === eq.id ? 'Скопировано!' : 'Копировать госномер'}>
                           {eq.registrationNum}
                           <Copy className="size-3" />
                         </span>
@@ -2047,7 +2359,7 @@ function EquipmentTab({ equipment, companies, eqSearch, setEqSearch, eqStatusFil
                     {/* Документы: VIN / СТС / ПТС / Серийный */}
                     {(eq.vin || eq.stsNumber || eq.ptsNumber || eq.serialNumber) && (
                       <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mb-2 text-xs text-muted-foreground">
-                        {eq.vin && <span className="font-mono" title={`VIN: ${eq.vin}`}><span className="font-medium text-foreground">VIN:</span> {eq.vin}</span>}
+                        {eq.vin && <span className="font-mono cursor-pointer hover:text-primary" title={`VIN: ${eq.vin} (нажмите чтобы скопировать)`} onClick={(e) => { e.stopPropagation(); copyToClipboard(eq.vin!) }}><span className="font-medium text-foreground">VIN:</span> {eq.vin}</span>}
                         {eq.stsNumber && <span className="inline-flex items-center gap-1" title={`СТС: ${eq.stsNumber}`}><FileBadge className="size-3" />СТС: {eq.stsNumber}</span>}
                         {eq.ptsNumber && <span className="inline-flex items-center gap-1" title={`ПТС: ${eq.ptsNumber}`}><FileBadge className="size-3" />ПТС: {eq.ptsNumber}</span>}
                         {eq.serialNumber && <span className="inline-flex items-center gap-1" title={`Сер. №: ${eq.serialNumber}`}><Hash className="size-3" />С/Н: {eq.serialNumber}</span>}
@@ -2205,7 +2517,7 @@ function EquipmentTab({ equipment, companies, eqSearch, setEqSearch, eqStatusFil
       )}
     </div>
   )
-}
+})
 
 // ═══════════════════════════════════════════════════════════════
 // EQUIPMENT DETAIL SHEET
@@ -3351,7 +3663,7 @@ function EquipmentFormDialog({ open, onOpenChange, editData, companies, step, se
 // REPAIRS TAB
 // ═══════════════════════════════════════════════════════════════
 
-function RepairsTab({ repairs, equipment, onOpenDetail, onAdd, onDelete, readOnly }: {
+const RepairsTab = React.memo(function RepairsTab({ repairs, equipment, onOpenDetail, onAdd, onDelete, readOnly }: {
   repairs: Repair[]; equipment: Equipment[];
   onOpenDetail: (r: Repair) => void; onAdd: (eqId?: string) => void;
   onDelete: (r: Repair) => void;
@@ -3362,6 +3674,8 @@ function RepairsTab({ repairs, equipment, onOpenDetail, onAdd, onDelete, readOnl
   const [search, setSearch] = useState('')
   const [quickFilter, setQuickFilter] = useState<'all' | 'overdue' | 'expensive'>('all')
   const debouncedSearch = useDebounce(search, 300)
+  const [page, setPage] = useState(1)
+  const PAGE_SIZE = 20
 
   const filtered = useMemo(() => repairs.filter(r => {
     if (statusFilter !== 'all' && r.status !== statusFilter) return false
@@ -3392,7 +3706,7 @@ function RepairsTab({ repairs, equipment, onOpenDetail, onAdd, onDelete, readOnl
       <div className="flex flex-col sm:flex-row gap-2">
         <div className="relative flex-1">
           <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 size-3.5 text-muted-foreground" />
-          <Input placeholder="Поиск по описанию..." value={search} onChange={e => setSearch(e.target.value)} className="pl-8 h-9 text-sm" />
+          <Input placeholder="Поиск по описанию..." value={search} onChange={e => { setSearch(e.target.value); setPage(1) }} className="pl-8 h-9 text-sm" />
         </div>
         <Select value={statusFilter} onValueChange={setStatusFilter}>
           <SelectTrigger className="w-full sm:w-[140px] h-9 text-sm"><SelectValue placeholder="Статус" /></SelectTrigger>
@@ -3408,7 +3722,11 @@ function RepairsTab({ repairs, equipment, onOpenDetail, onAdd, onDelete, readOnl
             {equipment.map(e => <SelectItem key={e.id} value={e.id}>{e.name}</SelectItem>)}
           </SelectContent>
         </Select>
-        <Button onClick={() => onAdd()} size="sm" className="h-9 gap-1.5"><Plus className="size-3.5" />Добавить</Button>
+        <Button onClick={() => onAdd()} size="sm" className="h-9 gap-1.5 active:scale-95 transition-transform"><Plus className="size-3.5" />Добавить</Button>
+        {/* CSV Export */}
+        <Button variant="outline" size="sm" className="h-9 px-2 active:scale-95 transition-transform" onClick={() => downloadCSV(filtered.map(r => ({ Описание: r.description, Причина: r.reason || '', Техника: r.equipment?.name || '', Статус: REPAIR_STATUS_MAP[r.status]?.label || r.status, 'Дата начала': formatDate(r.startDate), 'Дата окончания': formatDate(r.endDate), Стоимость: r.cost || 0, Подрядчик: r.contractor || '' })), 'repairs')} title="Экспорт CSV" aria-label="Экспорт CSV">
+          <FileDown className="size-3.5" />
+        </Button>
       </div>
 
       {/* Quick filters */}
@@ -3456,7 +3774,7 @@ function RepairsTab({ repairs, equipment, onOpenDetail, onAdd, onDelete, readOnl
         <>
           {/* Mobile: card layout */}
           <div className="sm:hidden space-y-2">
-            {filtered.map(r => {
+            {filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE).map(r => {
               const repairDays = getRepairDays(r.startDate, r.endDate)
               const statusInfo = REPAIR_STATUS_MAP[r.status]
               return (
@@ -3508,7 +3826,7 @@ function RepairsTab({ repairs, equipment, onOpenDetail, onAdd, onDelete, readOnl
                   </tr>
                 </thead>
                 <tbody>
-                  {filtered.map((r, idx) => {
+                  {filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE).map((r, idx) => {
                     const borderColor = r.status === 'in_progress' ? 'border-l-amber-500' : r.status === 'completed' ? 'border-l-emerald-500' : 'border-l-red-500'
                     const repairDays = getRepairDays(r.startDate, r.endDate)
                     return (
@@ -3570,9 +3888,12 @@ function RepairsTab({ repairs, equipment, onOpenDetail, onAdd, onDelete, readOnl
           </div>
         </>
       )}
+      {filtered.length > PAGE_SIZE && (
+        <PaginationControls page={page} totalPages={Math.ceil(filtered.length / PAGE_SIZE)} total={filtered.length} pageSize={PAGE_SIZE} onPageChange={setPage} />
+      )}
     </div>
   )
-}
+})
 
 // ═══════════════════════════════════════════════════════════════
 // REPAIR MASTERS SECTION — НАЗНАЧЕННЫЕ МАСТЕРА
@@ -4039,7 +4360,7 @@ function RepairFormDialog({ open, onOpenChange, editData, equipmentId, equipment
 // COMPANIES TAB
 // ═══════════════════════════════════════════════════════════════
 
-function CompaniesTab({ companies, onAdd, onEdit, onDelete }: {
+const CompaniesTab = React.memo(function CompaniesTab({ companies, onAdd, onEdit, onDelete }: {
   companies: Company[];
   onAdd: () => void; onEdit: (c: Company) => void; onDelete: (c: Company) => void;
 }) {
@@ -4071,7 +4392,10 @@ function CompaniesTab({ companies, onAdd, onEdit, onDelete }: {
           <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 size-3.5 text-muted-foreground" />
           <Input placeholder="Поиск по названию или ИНН..." value={search} onChange={e => setSearch(e.target.value)} className="pl-8 h-9 text-sm" />
         </div>
-        <Button onClick={onAdd} size="sm" className="h-9 gap-1.5"><Plus className="size-3.5" />Добавить компанию</Button>
+        <Button onClick={onAdd} size="sm" className="h-9 gap-1.5 active:scale-95 transition-transform"><Plus className="size-3.5" />Добавить компанию</Button>
+        <Button variant="outline" size="sm" className="h-9 px-2 active:scale-95 transition-transform" onClick={() => downloadCSV(filtered.map(c => ({ Название: c.name, ИНН: c.inn || '', КПП: c.kpp || '', ОГРН: c.ogrn || '', Тип: COMPANY_TYPES[c.type] || c.type, Телефон: c.phone || '', Email: c.email || '', 'Юр. адрес': c.address || '', 'Факт. адрес': c.factAddress || '', Директор: c.director || '' })), 'companies')} title="Экспорт CSV" aria-label="Экспорт CSV">
+          <FileDown className="size-3.5" />
+        </Button>
       </div>
 
       <p className="text-xs text-muted-foreground">Найдено: {filtered.length}</p>
@@ -4163,7 +4487,7 @@ function CompaniesTab({ companies, onAdd, onEdit, onDelete }: {
       )}
     </div>
   )
-}
+})
 
 // ═══════════════════════════════════════════════════════════════
 // COMPANY FORM DIALOG
@@ -4400,7 +4724,7 @@ function RepairPhotoUploadDialog({ open, onOpenChange, targetId, stages, onUploa
 // TRIPS TAB
 // ═══════════════════════════════════════════════════════════════
 
-function TripsTab({ trips, equipment, crews, routeTemplates, onOpenDetail, onAdd, onDelete, onAddCrew, onEditCrew, onDeleteCrew, onAddRouteTemplate, onEditRouteTemplate, onDeleteRouteTemplate, readOnly }: {
+const TripsTab = React.memo(function TripsTab({ trips, equipment, crews, routeTemplates, onOpenDetail, onAdd, onDelete, onAddCrew, onEditCrew, onDeleteCrew, onAddRouteTemplate, onEditRouteTemplate, onDeleteRouteTemplate, readOnly }: {
   trips: Trip[]; equipment: Equipment[]; crews: Crew[]; routeTemplates: RouteTemplate[];
   onOpenDetail: (t: Trip, focusTrack?: boolean) => void; onAdd: (eqId?: string) => void;
   onDelete: (t: Trip) => void;
@@ -4769,7 +5093,7 @@ function TripsTab({ trips, equipment, crews, routeTemplates, onOpenDetail, onAdd
       )}
     </div>
   )
-}
+})
 
 // ═══════════════════════════════════════════════════════════════
 // TRIP DETAIL DIALOG
@@ -7484,7 +7808,7 @@ function RouteTemplateFormDialog({ open, setOpen, editData, onSaved }: {
 // EMPLOYEES TAB — Сотрудники (водители, техники)
 // ═══════════════════════════════════════════════════════════════
 
-function EmployeesTab({ employees, crews, empSearch, setEmpSearch, empPositionFilter, setEmpPositionFilter, empStatusFilter, setEmpStatusFilter, onOpenDetail, onAdd, onEdit, onDelete }: {
+const EmployeesTab = React.memo(function EmployeesTab({ employees, crews, empSearch, setEmpSearch, empPositionFilter, setEmpPositionFilter, empStatusFilter, setEmpStatusFilter, onOpenDetail, onAdd, onEdit, onDelete }: {
   employees: Employee[]; crews: Crew[];
   empSearch: string; setEmpSearch: (v: string) => void;
   empPositionFilter: string; setEmpPositionFilter: (v: string) => void;
@@ -7558,7 +7882,10 @@ function EmployeesTab({ employees, crews, empSearch, setEmpSearch, empPositionFi
             {Object.entries(EMPLOYEE_STATUS_MAP).map(([k, v]) => <SelectItem key={k} value={k}>{v.label}</SelectItem>)}
           </SelectContent>
         </Select>
-        <Button onClick={onAdd} size="sm" className="h-9 gap-1.5"><Plus className="size-3.5" />Сотрудник</Button>
+        <Button onClick={onAdd} size="sm" className="h-9 gap-1.5 active:scale-95 transition-transform"><Plus className="size-3.5" />Сотрудник</Button>
+        <Button variant="outline" size="sm" className="h-9 px-2 active:scale-95 transition-transform" onClick={() => downloadCSV(filtered.map(e => ({ ФИО: e.fullName, Должность: EMPLOYEE_POSITION_MAP[e.position]?.label || e.position, Телефон: e.phone || '', Email: e.email || '', Статус: EMPLOYEE_STATUS_MAP[e.status]?.label || e.status, 'Дата приёма': formatDate(e.hireDate), 'Категория ВУ': e.licenseCat || '', Экипаж: e.crew?.name || '' })), 'employees')} title="Экспорт CSV" aria-label="Экспорт CSV">
+          <FileDown className="size-3.5" />
+        </Button>
       </div>
 
       <p className="text-xs text-muted-foreground">Найдено: {filtered.length} из {employees.length}</p>
@@ -7649,7 +7976,7 @@ function EmployeesTab({ employees, crews, empSearch, setEmpSearch, empPositionFi
       )}
     </div>
   )
-}
+})
 
 // ═══════════════════════════════════════════════════════════════
 // EMPLOYEE DETAIL SHEET
@@ -7908,7 +8235,7 @@ function EmployeeFormDialog({ open, onOpenChange, editData, crews, equipment, sa
 // MAP TAB — Карта всей техники
 // ═══════════════════════════════════════════════════════════════
 
-function MapTab({ equipment, onSync, onOpenDetail }: {
+const MapTab = React.memo(function MapTab({ equipment, onSync, onOpenDetail }: {
   equipment: Equipment[]
   onSync: () => void
   onOpenDetail?: (equipmentId: string) => void
@@ -8875,7 +9202,7 @@ function MapTab({ equipment, onSync, onOpenDetail }: {
       </Dialog>
     </div>
   )
-}
+})
 
 // ═══════════════════════════════════════════════════════════════
 // SETTINGS TAB CONTENT (Admin only)
