@@ -51,6 +51,7 @@ import {
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle
 } from '@/components/ui/alert-dialog'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger, DropdownMenuLabel } from '@/components/ui/dropdown-menu'
 
 // ─── Lucide Icons ─────────────────────────────────────────────
 import {
@@ -69,7 +70,8 @@ import {
   Hash, Calculator, StickyNote, CircleDot, FileBadge, Fuel as FuelIcon,
   Armchair, Anchor, TimerReset, MoveRight, Tag, BadgeCheck,
   ScanLine, Receipt, Truck as TruckIcon, Flame,
-  ArrowUp, ArrowDown, GripVertical, MapPinned, ToggleRight
+  ArrowUp, ArrowDown, GripVertical, MapPinned, ToggleRight,
+  LogOut
 } from 'lucide-react'
 
 // ═══════════════════════════════════════════════════════════════
@@ -949,6 +951,13 @@ export default function Home() {
   useEffect(() => {
     const checkAuth = async () => {
       try {
+        // Always fetch public user list for login screen
+        const usersRes = await fetch('/api/auth/users')
+        if (usersRes.ok) {
+          const usersData = await usersRes.json()
+          setUsers(usersData)
+        }
+
         const res = await fetch('/api/auth/me')
         if (res.ok) {
           const data = await res.json()
@@ -966,13 +975,16 @@ export default function Home() {
   // Fetch users list (for admin settings and login screen)
   const fetchUsers = useCallback(async () => {
     try {
-      const res = await fetch('/api/users')
+      // Use public endpoint (works without auth) for login screen
+      // Falls back to admin endpoint if already authenticated
+      const endpoint = currentUser ? '/api/users' : '/api/auth/users'
+      const res = await fetch(endpoint)
       if (res.ok) {
         const data = await res.json()
         setUsers(data)
       }
     } catch {}
-  }, [])
+  }, [currentUser])
 
   // Fetch users when authenticated as admin
   useEffect(() => {
@@ -1387,30 +1399,61 @@ export default function Home() {
                 </div>
               )}
             </div>
-            <Button variant="ghost" size="icon" className="size-7" onClick={() => setSettingsOpen(true)} aria-label="Настройки"><Cog className="size-3.5" /></Button>
             {mounted && (
               <Button variant="ghost" size="icon" className="size-7" onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')} aria-label="Тема">
                 {theme === 'dark' ? <Sun className="size-3.5" /> : <Moon className="size-3.5" />}
               </Button>
             )}
-            {/* Current user avatar + logout */}
-            <div className="flex items-center gap-1.5 ml-1 pl-2 border-l">
-              <div
-                className="size-6 rounded-full flex items-center justify-center text-white text-[10px] font-bold cursor-pointer shrink-0"
-                style={{ backgroundColor: currentUser.avatar || '#6366f1' }}
-                title={`${currentUser.name} (${ROLE_LABELS[currentUser.role as RoleKey] || currentUser.role})`}
-              >
-                {getInitials(currentUser.name)}
-              </div>
-              <span className="text-[11px] font-medium hidden sm:inline max-w-[80px] truncate">{currentUser.name}</span>
-              <Button variant="ghost" size="icon" className="size-6 text-muted-foreground hover:text-destructive" onClick={async () => {
-                try { await fetch('/api/auth/logout', { method: 'POST' }) } catch {}
-                setCurrentUser(null)
-                localStorage.removeItem('fleet_lastUserId')
-              }} aria-label="Выход" title="Выйти">
-                <X className="size-3" />
-              </Button>
-            </div>
+            {/* Profile dropdown */}
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button className="flex items-center gap-1.5 ml-1 pl-2 border-l focus:outline-none" aria-label="Профиль">
+                  <div
+                    className="size-6 rounded-full flex items-center justify-center text-white text-[10px] font-bold shrink-0"
+                    style={{ backgroundColor: currentUser.avatar || '#6366f1' }}
+                  >
+                    {getInitials(currentUser.name)}
+                  </div>
+                  <span className="text-[11px] font-medium hidden sm:inline max-w-[80px] truncate">{currentUser.name}</span>
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-56">
+                <DropdownMenuLabel>
+                  <div className="flex flex-col gap-1">
+                    <div className="flex items-center gap-2">
+                      <div
+                        className="size-8 rounded-full flex items-center justify-center text-white text-xs font-bold shrink-0"
+                        style={{ backgroundColor: currentUser.avatar || '#6366f1' }}
+                      >
+                        {getInitials(currentUser.name)}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium truncate">{currentUser.name}</p>
+                        <p className="text-[11px] text-muted-foreground">{ROLE_LABELS[currentUser.role as RoleKey] || currentUser.role}</p>
+                      </div>
+                    </div>
+                  </div>
+                </DropdownMenuLabel>
+                <DropdownMenuSeparator />
+                {hasPermission(currentUser.role, 'settings') && (
+                  <DropdownMenuItem onClick={() => setSettingsOpen(true)} className="gap-2 cursor-pointer">
+                    <Cog className="size-4" />Настройки
+                  </DropdownMenuItem>
+                )}
+                <DropdownMenuItem onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')} className="gap-2 cursor-pointer">
+                  {theme === 'dark' ? <Sun className="size-4" /> : <Moon className="size-4" />}
+                  {theme === 'dark' ? 'Светлая тема' : 'Тёмная тема'}
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onClick={async () => {
+                  try { await fetch('/api/auth/logout', { method: 'POST' }) } catch {}
+                  setCurrentUser(null)
+                  localStorage.removeItem('fleet_lastUserId')
+                }} className="gap-2 cursor-pointer text-destructive focus:text-destructive">
+                  <LogOut className="size-4" />Выйти
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
         </div>
       </header>
@@ -1427,7 +1470,6 @@ export default function Home() {
               <TabsTrigger value="management" className="gap-1.5"><ClipboardCheck className="size-4" />Управление</TabsTrigger>
             )}
             {hasPermission(currentUser.role, 'map') && <TabsTrigger value="map" className="gap-1.5"><Map className="size-4" />Карта</TabsTrigger>}
-            {hasPermission(currentUser.role, 'settings') && <TabsTrigger value="settings" className="gap-1.5"><Cog className="size-4" />Настройки</TabsTrigger>}
           </TabsList>
           {hasPermission(currentUser.role, 'equipment') && (
             <TabsContent value="equipment">
@@ -1487,23 +1529,6 @@ export default function Home() {
               <MapTab equipment={equipment} onOpenDetail={openEquipmentDetailById} onSync={async () => { try { const res = await fetch('/api/glonass/sync', { method: 'POST' }); const data = await res.json(); if (data.synced !== undefined) toast.success(`Синхронизация: ${data.synced} из ${data.totalTrackers}`); else toast.error(data.error || 'Ошибка'); fetchEquipment() } catch { toast.error('Ошибка синхронизации') } }} />
             </TabsContent>
           )}
-          {hasPermission(currentUser.role, 'settings') && (
-            <TabsContent value="settings">
-              <SettingsTabContent
-                users={users}
-                fetchUsers={fetchUsers}
-                axentaSettings={axentaSettings}
-                setAxentaSettings={setAxentaSettings}
-                settingsSaving={settingsSaving}
-                setSettingsSaving={setSettingsSaving}
-                syncing={syncing}
-                setSyncing={setSyncing}
-                settingsSubTab={settingsSubTab}
-                setSettingsSubTab={setSettingsSubTab}
-                onRefreshAll={fetchAll}
-              />
-            </TabsContent>
-          )}
         </Tabs>
 
         {/* Mobile: show active tab content directly */}
@@ -1533,22 +1558,18 @@ export default function Home() {
             </div>
           )}
           {mainTab === 'map' && hasPermission(currentUser.role, 'map') && <MapTab equipment={equipment} onOpenDetail={openEquipmentDetailById} onSync={async () => { try { const res = await fetch('/api/glonass/sync', { method: 'POST' }); const data = await res.json(); if (data.synced !== undefined) toast.success(`Синхронизация: ${data.synced} из ${data.totalTrackers}`); else toast.error(data.error || 'Ошибка'); fetchEquipment() } catch { toast.error('Ошибка синхронизации') } }} />}
-          {mainTab === 'settings' && hasPermission(currentUser.role, 'settings') && (
-            <SettingsTabContent users={users} fetchUsers={fetchUsers} axentaSettings={axentaSettings} setAxentaSettings={setAxentaSettings} settingsSaving={settingsSaving} setSettingsSaving={setSettingsSaving} syncing={syncing} setSyncing={setSyncing} settingsSubTab={settingsSubTab} setSettingsSubTab={setSettingsSubTab} onRefreshAll={fetchAll} />
-          )}
         </div>
       </main>
 
       {/* ─── MOBILE BOTTOM NAV ────────────────────────────────── */}
       <nav className="md:hidden fixed bottom-0 left-0 right-0 z-40 border-t bg-card/95 backdrop-blur-sm">
-        <div className={`grid h-14 ${hasPermission(currentUser.role, 'settings') ? 'grid-cols-5' : 'grid-cols-4'}`}>
+        <div className="grid h-14 grid-cols-5">
           {[
             ...(hasPermission(currentUser.role, 'equipment') ? [{ value: 'equipment', icon: <Truck className="size-5" />, label: 'Техника' }] : []),
             ...(hasPermission(currentUser.role, 'repairs') ? [{ value: 'repairs', icon: <Wrench className="size-5" />, label: 'Ремонты' }] : []),
             ...(hasPermission(currentUser.role, 'trips') ? [{ value: 'trips', icon: <Route className="size-5" />, label: 'Рейсы' }] : []),
             ...(hasPermission(currentUser.role, 'employees') && hasPermission(currentUser.role, 'companies') ? [{ value: 'management', icon: <ClipboardCheck className="size-5" />, label: 'Управление' }] : []),
             ...(hasPermission(currentUser.role, 'map') ? [{ value: 'map', icon: <Map className="size-5" />, label: 'Карта' }] : []),
-            ...(hasPermission(currentUser.role, 'settings') ? [{ value: 'settings', icon: <Cog className="size-5" />, label: 'Настройки' }] : []),
           ].map(tab => (
             <button key={tab.value} onClick={() => setMainTab(tab.value)}
               className={`flex flex-col items-center justify-center gap-0.5 transition-colors ${mainTab === tab.value ? 'text-primary' : 'text-muted-foreground'}`}>
@@ -1560,6 +1581,46 @@ export default function Home() {
       </nav>
 
       {/* ─── DIALOGS ──────────────────────────────────────────── */}
+      {/* Settings Sheet */}
+      <Sheet open={settingsOpen} onOpenChange={setSettingsOpen}>
+        <SheetContent side="right" className="w-full sm:max-w-lg overflow-y-auto">
+          <SheetHeader>
+            <SheetTitle>Настройки</SheetTitle>
+            <SheetDescription>Профиль и параметры системы</SheetDescription>
+          </SheetHeader>
+          <div className="mt-4 space-y-4">
+            {/* Profile section */}
+            <Card className="p-4">
+              <div className="flex items-center gap-3">
+                <div
+                  className="size-12 rounded-full flex items-center justify-center text-white font-bold text-lg shrink-0"
+                  style={{ backgroundColor: currentUser.avatar || '#6366f1' }}
+                >
+                  {getInitials(currentUser.name)}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-semibold truncate">{currentUser.name}</p>
+                  <p className="text-xs text-muted-foreground">{ROLE_LABELS[currentUser.role as RoleKey] || currentUser.role}</p>
+                </div>
+                <Button variant="ghost" size="icon" className="size-8 text-muted-foreground hover:text-destructive" onClick={async () => {
+                  try { await fetch('/api/auth/logout', { method: 'POST' }) } catch {}
+                  setCurrentUser(null)
+                  setSettingsOpen(false)
+                  localStorage.removeItem('fleet_lastUserId')
+                }} aria-label="Выход" title="Выйти">
+                  <LogOut className="size-4" />
+                </Button>
+              </div>
+            </Card>
+
+            {/* Settings tabs (admin only) */}
+            {hasPermission(currentUser.role, 'settings') && (
+              <SettingsTabContent users={users} fetchUsers={fetchUsers} axentaSettings={axentaSettings} setAxentaSettings={setAxentaSettings} settingsSaving={settingsSaving} setSettingsSaving={setSettingsSaving} syncing={syncing} setSyncing={setSyncing} settingsSubTab={settingsSubTab} setSettingsSubTab={setSettingsSubTab} onRefreshAll={fetchAll} />
+            )}
+          </div>
+        </SheetContent>
+      </Sheet>
+
       <EquipmentDetailSheet open={eqDetailOpen} onOpenChange={setEqDetailOpen} equipment={selectedEq} loading={eqDetailLoading} detailTab={eqDetailTab} setDetailTab={setEqDetailTab} companies={companies} photoCategoryFilter={photoCategoryFilter} setPhotoCategoryFilter={setPhotoCategoryFilter} fullPhoto={fullPhoto} setFullPhoto={setFullPhoto} onEdit={(eq) => { setEqDetailOpen(false); setEqFormEdit(eq); setEqFormStep(0); setEqFormOpen(true) }} onDelete={(eq) => { setEqDetailOpen(false); setDeleteDialog({ open: true, type: 'equipment', id: eq.id, name: eq.name }) }} onAddRepair={(eqId) => { setRepairFormEdit(null); setRepairFormEquipmentId(eqId); setRepairFormOpen(true) }} onUploadPhoto={(eqId) => setPhotoUploadEq(eqId)} onRefresh={() => selectedEq && fetchEquipmentDetail(selectedEq.id)} onOpenRepairDetail={(r) => openRepairDetail(r)} onAddTrip={(eqId) => { setTripFormEdit(null); setTripFormEquipmentId(eqId); setTripFormOpen(true) }} onOpenTripDetail={openTripDetail} allEquipment={equipment} onRefreshAll={fetchEquipment} />
       <EquipmentFormDialog open={eqFormOpen} onOpenChange={setEqFormOpen} editData={eqFormEdit} companies={companies} step={eqFormStep} setStep={setEqFormStep} saving={eqFormSaving} setSaving={setEqFormSaving} onSaved={() => { setEqFormOpen(false); fetchAll() }} />
       <RepairDetailDialog open={repairDetailOpen} onOpenChange={setRepairDetailOpen} repair={selectedRepair} loading={repairDetailLoading} fullPhoto={fullPhoto} setFullPhoto={setFullPhoto} onEdit={(r) => { setRepairDetailOpen(false); setRepairFormEdit(r); setRepairFormEquipmentId(r.equipmentId); setRepairFormOpen(true) }} onDelete={(r) => { setRepairDetailOpen(false); setDeleteDialog({ open: true, type: 'repair', id: r.id, name: r.description }) }} onComplete={async (r) => { try { const res = await fetch(`/api/repairs/${r.id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...r, status: 'completed', endDate: new Date().toISOString() }) }); if (!res.ok) throw new Error(); toast.success('Ремонт завершён'); fetchRepairDetail(r.id); fetchAll() } catch { toast.error('Ошибка завершения ремонта') } }} onAddStage={(repairId) => { setStageFormRepairId(repairId); setStageFormEdit(null); setStageFormOpen(true) }} onEditStage={(stage, repairId) => { setStageFormRepairId(repairId); setStageFormEdit(stage); setStageFormOpen(true) }} onDeleteStage={async (stageId, repairId) => { try { const res = await fetch(`/api/repairs/${repairId}/stages?stageId=${stageId}`, { method: 'DELETE' }); if (!res.ok) throw new Error(); toast.success('Этап удалён'); fetchRepairDetail(repairId); fetchRepairs(); if (selectedEq) fetchEquipmentDetail(selectedEq.id) } catch { toast.error('Ошибка удаления этапа') } }} onUploadPhoto={(repairId) => setPhotoUploadRepair(repairId)} onRefresh={() => { if (selectedRepair) { fetchRepairDetail(selectedRepair.id); fetchRepairs(); if (selectedEq) fetchEquipmentDetail(selectedEq.id) } }} employees={employees} />
