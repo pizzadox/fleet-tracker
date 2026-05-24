@@ -9,11 +9,12 @@ import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import {
   Users, Plus, Search, Edit, Trash2, Phone, Mail, Car, Wrench,
-  UserCircle, Weight, User
+  UserCircle, Weight, User,
+  AlertTriangle, Clock, FileDown, Truck
 } from 'lucide-react'
 import type { Employee, Crew } from '@/lib/types'
 import { EMPLOYEE_POSITION_MAP, EMPLOYEE_STATUS_MAP } from '@/lib/constants'
-import { formatDate, formatPrice, statusBadge, TypeBadge, PaginationControls, downloadCSV } from '@/lib/utils'
+import { formatDate, formatPrice, statusBadge, TypeBadge, PaginationControls, downloadCSV, useDebounce } from '@/lib/utils'
 
 // ═══════════════════════════════════════════════════════════════
 // EMPLOYEES TAB — Сотрудники (водители, техники)

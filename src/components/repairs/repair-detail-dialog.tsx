@@ -12,17 +12,23 @@ import { Badge } from '@/components/ui/badge'
 import { Separator } from '@/components/ui/separator'
 import { Progress } from '@/components/ui/progress'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog'
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog'
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import {
   Wrench, Edit, Trash2, ChevronDown, ChevronUp, Clock, XCircle,
   CheckCircle2, AlertTriangle, Activity, Camera, Upload,
-  Plus, MoreVertical, CopyPlus, Pause, Play, MessageSquare, UserPlus, Save
+  Plus, MoreVertical, CopyPlus, Pause, Play, MessageSquare, UserPlus, Save,
+  Building2, CalendarDays, ChevronLeft, ChevronRight, ClipboardCheck, ClipboardList,
+  Copy, Eye, Gauge, Loader2, Mail, MapPin, PauseCircle, Phone, Printer, RefreshCw,
+  Send, Settings2, Shield, ShieldCheck, StickyNote, User, Users, X
 } from 'lucide-react'
 import type { Repair, RepairStage, RepairPhoto, RepairEmployee, RepairComment, Employee } from '@/lib/types'
-import { REPAIR_STATUS_MAP, STAGE_STATUS_MAP, REPAIR_PRIORITY_MAP, REPAIR_TYPE_MAP, REPAIR_PHOTO_CATEGORY_MAP, REPAIR_MASTER_ROLE_MAP, STAGE_TEMPLATES, hasPermission } from '@/lib/constants'
-import { formatDate, formatDateTime, formatPrice, formatTime, statusBadge, getStageProgress, SectionDivider, formatDaysUntil, formatDurationShort } from '@/lib/utils'
+import { REPAIR_STATUS_MAP, STAGE_STATUS_MAP, REPAIR_PRIORITY_MAP, REPAIR_TYPE_MAP, REPAIR_PHOTO_CATEGORY_MAP, REPAIR_MASTER_ROLE_MAP, STAGE_TEMPLATES, EMPLOYEE_POSITION_MAP, hasPermission } from '@/lib/constants'
+import { formatDate, formatDateTime, formatPrice, formatTime, statusBadge, getStageProgress, SectionDivider, formatDaysUntil, formatDurationShort, getTypeInfo } from '@/lib/utils'
+import { DetailSection, DetailRow } from '@/components/equipment/equipment-detail-sheet'
 
 // ═══════════════════════════════════════════════════════════════
 // REPAIR MASTERS SECTION — НАЗНАЧЕННЫЕ МАСТЕРА

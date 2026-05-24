@@ -14,11 +14,19 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Checkbox } from '@/components/ui/checkbox'
 import {
   Plus, ChevronRight, ChevronLeft, Loader2, Calendar,
-  Save, Truck, Wrench, Settings2
+  Save, Truck, Wrench, Settings2, HeartPulse, ScanLine,
+  Hash, FileBadge, Fuel as FuelIcon,
+  Activity, AlertTriangle, Bus, Car, Clock, Cog, DollarSign, Droplets, Edit, Gauge,
+  IdCard, MapPin, Navigation, Package, Palette, Route, Satellite, Search, Shield, Ship,
+  StickyNote, Tractor, TrendingDown, User, Users, Weight, XCircle, Zap,
+  CheckCircle2, ClipboardCheck, Building2, FileText
 } from 'lucide-react'
+import { AnimatePresence, motion } from 'framer-motion'
 import type { Equipment, Company } from '@/lib/types'
+import { Card, CardContent } from '@/components/ui/card'
+import { Progress } from '@/components/ui/progress'
 import { EQUIPMENT_STATUS_MAP, EQUIPMENT_TYPE_MAP, EQUIPMENT_TYPE_GROUPS, EQUIPMENT_CONDITION_MAP, FUEL_TYPE_MAP, ENGINE_TYPE_MAP, COMPANY_TYPES, API } from '@/lib/constants'
-import { toLocalDatetime, localDatetimeToISO, toLocalDate, formatDate, handleApiError } from '@/lib/utils'
+import { toLocalDatetime, localDatetimeToISO, toLocalDate, formatDate, formatDateTime, handleApiError } from '@/lib/utils'
 
 // ═══════════════════════════════════════════════════════════════
 // EQUIPMENT FORM DIALOG (Multi-Step)

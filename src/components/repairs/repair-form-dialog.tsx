@@ -8,14 +8,18 @@ import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Badge } from '@/components/ui/badge'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog'
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Checkbox } from '@/components/ui/checkbox'
 import {
-  Wrench, Save, Loader2, Plus, Truck
+  Wrench, Save, Loader2, Plus, Truck,
+  Edit, ClipboardList, CalendarDays, CheckCircle2, ClipboardCheck,
+  Building2, Copy, Gauge, Settings2, Shield, StickyNote, User, Users,
+  BookmarkCheck, X, Separator
 } from 'lucide-react'
 import type { Repair, Equipment, Employee } from '@/lib/types'
-import { REPAIR_STATUS_MAP, REPAIR_PRIORITY_MAP, REPAIR_TYPE_MAP, STAGE_TEMPLATES, API } from '@/lib/constants'
-import { toLocalDatetime, localDatetimeToISO, formatDate, handleApiError } from '@/lib/utils'
+import { REPAIR_STATUS_MAP, REPAIR_PRIORITY_MAP, REPAIR_TYPE_MAP, STAGE_TEMPLATES, REPAIR_MASTER_ROLE_MAP, EMPLOYEE_POSITION_MAP, API } from '@/lib/constants'
+import { toLocalDatetime, localDatetimeToISO, toLocalDate, formatDate, handleApiError } from '@/lib/utils'
 
 // ═══════════════════════════════════════════════════════════════
 // REPAIR FORM DIALOG

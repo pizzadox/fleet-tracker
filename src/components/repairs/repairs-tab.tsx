@@ -3,17 +3,21 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { toast } from 'sonner'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Checkbox } from '@/components/ui/checkbox'
+import { Progress } from '@/components/ui/progress'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import {
   Wrench, Plus, Search, Clock, XCircle, CheckCircle2, AlertTriangle,
-  Truck, ArrowRight, ClipboardList, Filter, ListFilter, ArrowUp, ArrowDown
+  Truck, ArrowRight, ClipboardList, Filter, ListFilter, ArrowUp, ArrowDown,
+  Calendar, Camera, DollarSign, FileDown, Flag, LayoutGrid, List, Pause, Phone,
+  ShieldCheck, Trash2, Users
 } from 'lucide-react'
 import type { Repair, Equipment } from '@/lib/types'
 import { REPAIR_STATUS_MAP, REPAIR_PRIORITY_MAP, REPAIR_TYPE_MAP } from '@/lib/constants'
-import { formatDate, formatDateTime, formatPrice, statusBadge, getStageProgress } from '@/lib/utils'
+import { formatDate, formatDateTime, formatPrice, statusBadge, getStageProgress, downloadCSV, PaginationControls, useDebounce } from '@/lib/utils'
 
 // ═══════════════════════════════════════════════════════════════
 // REPAIRS TAB

@@ -11,6 +11,8 @@ import { Textarea } from '@/components/ui/textarea'
 import { Badge } from '@/components/ui/badge'
 import { Separator } from '@/components/ui/separator'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog'
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog'
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Progress } from '@/components/ui/progress'
@@ -19,11 +21,17 @@ import {
   AlertTriangle, Fuel, Truck, Users, Package, Weight, Calendar, Play, Pause,
   ChevronDown, ChevronUp, Copy, Timer, Download, Save, Printer, FileText,
   ArrowRight, Activity, Gauge, Thermometer, Cpu, BarChart3, Compass,
-  Droplets, Zap, RefreshCw, ExternalLink, Info
+  Droplets, Zap, RefreshCw, ExternalLink, Info,
+  ArrowDownToLine, ArrowUpFromLine, ChevronRight, ClipboardList, Cog,
+  DollarSign, Flame, Fuel as FuelIcon, Loader2, Map, MapPinned, StickyNote,
+  UserCheck, UserCircle, Sofa, X
 } from 'lucide-react'
 import type { Trip, Crew, RoutePoint, RouteTemplatePoint, GlonassTracker, GlonassSensorData } from '@/lib/types'
 import { TRIP_STATUS_MAP, CREW_TYPE_MAP, MEMBER_ROLE_MAP, EQUIPMENT_TYPE_MAP, API, hasPermission, getInitials } from '@/lib/constants'
 import { formatDate, formatDateTime, formatPrice, formatTime, statusBadge, SectionDivider, fmtDuration, formatDurationShort, handleApiError, copyToClipboard, toLocalDatetime, localDatetimeToISO } from '@/lib/utils'
+import { DetailSection, DetailRow } from '@/components/equipment/equipment-detail-sheet'
+import dynamic from 'next/dynamic'
+const TrackerMap = dynamic(() => import('@/components/tracker-map'), { ssr: false })
 
 // ═══════════════════════════════════════════════════════════════
 // TRIP DETAIL DIALOG
@@ -644,7 +652,7 @@ export function TripDetailDialog({ open, onOpenChange, trip, loading, crews, onE
                 {t.avgFuelRate != null && t.avgFuelRate > 0 && t.avgFuelRate < 200 && <Card className="border-0 shadow-none bg-orange-50 dark:bg-orange-950/20 py-2"><CardContent className="p-2 text-center"><Droplets className="size-4 text-orange-500 mx-auto mb-0.5" /><p className="text-xs font-bold text-orange-700 dark:text-orange-400">{t.avgFuelRate.toFixed(1)} л/100км</p><p className="text-[9px] text-muted-foreground">Ср. расход</p></CardContent></Card>}
                 {t.refuelVolume != null && t.refuelVolume > 0 && <Card className="border-0 shadow-none bg-emerald-50 dark:bg-emerald-950/20 py-2"><CardContent className="p-2 text-center"><ArrowUpFromLine className="size-4 text-emerald-500 mx-auto mb-0.5" /><p className="text-xs font-bold text-emerald-700 dark:text-emerald-400">+{t.refuelVolume.toFixed(1)} л</p><p className="text-[9px] text-muted-foreground">Заправки</p></CardContent></Card>}
                 {t.engineHours != null && t.engineHours > 0 && t.engineHours < 50000 && <Card className="border-0 shadow-none bg-sky-50 dark:bg-sky-950/20 py-2"><CardContent className="p-2 text-center"><Cog className="size-4 text-sky-500 mx-auto mb-0.5" /><p className="text-xs font-bold text-sky-700 dark:text-sky-400">{fmtDur(t.engineHours)}</p><p className="text-[9px] text-muted-foreground">Моточасы</p></CardContent></Card>}
-                {t.parkingsDuration != null && t.parkingsDuration > 0 && t.parkingsDuration < 8640000 && <Card className="border-0 shadow-none bg-rose-50 dark:bg-rose-950/20 py-2"><CardContent className="p-2 text-center"><Armchair className="size-4 text-rose-500 mx-auto mb-0.5" /><p className="text-xs font-bold text-rose-700 dark:text-rose-400">{fmtDur(t.parkingsDuration)}</p><p className="text-[9px] text-muted-foreground">Время стоянок</p></CardContent></Card>}
+                {t.parkingsDuration != null && t.parkingsDuration > 0 && t.parkingsDuration < 8640000 && <Card className="border-0 shadow-none bg-rose-50 dark:bg-rose-950/20 py-2"><CardContent className="p-2 text-center"><Sofa className="size-4 text-rose-500 mx-auto mb-0.5" /><p className="text-xs font-bold text-rose-700 dark:text-rose-400">{fmtDur(t.parkingsDuration)}</p><p className="text-[9px] text-muted-foreground">Время стоянок</p></CardContent></Card>}
               </div>
               {/* Speed profile bar */}
               {t.avgSpeed != null && t.maxSpeed != null && t.avgSpeed > 0 && t.avgSpeed < 200 && t.maxSpeed > 0 && t.maxSpeed < 300 && (
@@ -722,7 +730,7 @@ export function TripDetailDialog({ open, onOpenChange, trip, loading, crews, onE
               {/* ── ПОДРОБНЫЕ ПОКАЗАНИЯ (collapsible) ── */}
               <Collapsible>
                 <CollapsibleTrigger className="flex items-center gap-1.5 w-full text-xs font-semibold hover:text-foreground transition-colors py-1.5 px-2 rounded hover:bg-muted/50">
-                  <CircuitBoard className="size-3.5 text-muted-foreground" />
+                  <Cpu className="size-3.5 text-muted-foreground" />
                   <span>Подробные показания</span>
                   <ChevronRight className="size-3 text-muted-foreground transition-transform [[data-state=open]>&]:rotate-90" />
                 </CollapsibleTrigger>
@@ -837,7 +845,7 @@ export function TripDetailDialog({ open, onOpenChange, trip, loading, crews, onE
                     {/* ── СРАВНЕНИЕ ДАТЧИКОВ СТАРТ/ФИНИШ ── */}
                     <div className="space-y-2">
                       <div className="flex items-center justify-between">
-                        <h4 className="text-xs font-semibold flex items-center gap-1.5"><CircuitBoard className="size-3.5" />Датчики (старт / финиш)</h4>
+                        <h4 className="text-xs font-semibold flex items-center gap-1.5"><Cpu className="size-3.5" />Датчики (старт / финиш)</h4>
                       </div>
 
                       {compareError && (
@@ -1089,7 +1097,7 @@ export function TripDetailDialog({ open, onOpenChange, trip, loading, crews, onE
                         </span>
                       )}
                       <Button variant="outline" size="sm" className="h-7 text-[10px] gap-1" onClick={reloadSensors} disabled={compareLoading} title="Загрузить показания датчиков">
-                        <CircuitBoard className="size-3" />
+                        <Cpu className="size-3" />
                         {compareLoading ? <Loader2 className="size-3 animate-spin" /> : null}
                         Датчики
                       </Button>

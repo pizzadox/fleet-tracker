@@ -10,7 +10,9 @@ import { Progress } from '@/components/ui/progress'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Checkbox } from '@/components/ui/checkbox'
+import { Table, TableHeader, TableRow, TableHead, TableBody, TableCell } from '@/components/ui/table'
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog'
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import {
   Truck, Wrench, Plus, Search, Edit, Trash2,
   CheckCircle2, Clock, XCircle, AlertTriangle, Activity, Gauge,
@@ -18,11 +20,12 @@ import {
   ArrowUp, ArrowDown, LayoutGrid, List, Kanban,
   Users, Shield, WifiOff, ClipboardCheck, Eye, Phone, MapPin,
   BookmarkCheck, Camera, Droplets, Flame, Zap, Hash, StickyNote,
-  FileBadge, Building2, Route, Weight, FileText
+  FileBadge, Building2, Route, Weight, FileText, ChevronDown,
+  Thermometer, MapPinned, Fuel as FuelIcon
 } from 'lucide-react'
 import type { Equipment, Company } from '@/lib/types'
-import { EQUIPMENT_STATUS_MAP, EQUIPMENT_TYPE_MAP, EQUIPMENT_TYPE_GROUPS, EQUIPMENT_CONDITION_MAP, MAINTENANCE_WARN_DAYS, CREW_TYPE_MAP } from '@/lib/constants'
-import { formatDate, formatPrice, statusBadge, downloadCSV, copyToClipboard, TypeBadge, PaginationControls, handleApiError } from '@/lib/utils'
+import { EQUIPMENT_STATUS_MAP, EQUIPMENT_TYPE_MAP, EQUIPMENT_TYPE_GROUPS, EQUIPMENT_CONDITION_MAP, MAINTENANCE_WARN_DAYS, CREW_TYPE_MAP, EMPLOYEE_POSITION_MAP } from '@/lib/constants'
+import { formatDate, formatDateTime, formatPrice, statusBadge, downloadCSV, copyToClipboard, TypeBadge, PaginationControls, handleApiError, getTypeInfo } from '@/lib/utils'
 
 // ═══════════════════════════════════════════════════════════════
 // STAT CARD (compact)

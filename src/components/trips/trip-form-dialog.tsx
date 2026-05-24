@@ -12,7 +12,8 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, Di
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import {
   Route, Plus, Trash2, Save, Loader2, MapPin, GripVertical, Truck,
-  Navigation, ArrowUp, ArrowDown, Calendar, Clock, Package, Weight
+  Navigation, ArrowUp, ArrowDown, Calendar, Clock, Package, Weight,
+  CheckCircle2, Edit, Fuel, MapPinned, ToggleRight
 } from 'lucide-react'
 import type { Trip, Equipment, Crew, RouteTemplate, RouteTemplatePoint } from '@/lib/types'
 import { TRIP_STATUS_MAP, CREW_TYPE_MAP, API } from '@/lib/constants'

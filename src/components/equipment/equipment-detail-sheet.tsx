@@ -3,6 +3,9 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { toast } from 'sonner'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import dynamic from 'next/dynamic'
+const TrackerMap = dynamic(() => import('@/components/tracker-map'), { ssr: false })
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -31,10 +34,11 @@ import {
   Hash, Calculator, StickyNote, CircleDot, FileBadge, Fuel as FuelIcon,
   Anchor, Tag, BadgeCheck, ScanLine, Receipt, Truck as TruckIcon, Flame,
   ArrowUp, ArrowDown, MapPinned, Globe, Cpu,
-  Layers, ExternalLink, ImageOff, Plus, Search
+  Layers, ExternalLink, ImageOff, Plus, Search, HeartPulse,
+  ArrowLeft, Building2, CheckCheck, Send, Settings2, Terminal, Upload, User, Loader2, X
 } from 'lucide-react'
-import type { Equipment, Company, EquipmentPhoto, Repair, RepairStage, GlonassTracker, GlonassSensorData, EquipmentHistory, EquipmentDocument, Employee } from '@/lib/types'
-import { EQUIPMENT_STATUS_MAP, REPAIR_STATUS_MAP, STAGE_STATUS_MAP, EQUIPMENT_TYPE_MAP, EQUIPMENT_CONDITION_MAP, FUEL_TYPE_MAP, ENGINE_TYPE_MAP, PHOTO_CATEGORIES, MAINTENANCE_WARN_DAYS, COMPANY_TYPES, CREW_TYPE_MAP, MEMBER_ROLE_MAP, TRIP_STATUS_MAP, hasPermission, getInitials } from '@/lib/constants'
+import type { Equipment, Company, EquipmentPhoto, Repair, RepairStage, GlonassTracker, GlonassSensorData, EquipmentHistory, EquipmentDocument, Employee, Trip } from '@/lib/types'
+import { EQUIPMENT_STATUS_MAP, REPAIR_STATUS_MAP, STAGE_STATUS_MAP, EQUIPMENT_TYPE_MAP, EQUIPMENT_CONDITION_MAP, FUEL_TYPE_MAP, ENGINE_TYPE_MAP, PHOTO_CATEGORIES, MAINTENANCE_WARN_DAYS, COMPANY_TYPES, CREW_TYPE_MAP, MEMBER_ROLE_MAP, TRIP_STATUS_MAP, EMPLOYEE_POSITION_MAP, EMPLOYEE_STATUS_MAP, REPAIR_MASTER_ROLE_MAP, hasPermission, getInitials } from '@/lib/constants'
 import { formatDate, formatDateTime, formatPrice, formatTime, statusBadge, getEventIcon, getStageProgress, formatDaysUntil, SectionDivider, TypeBadge, getTypeInfo, toLocalDatetime, localDatetimeToISO, toLocalDate, copyToClipboard, handleApiError } from '@/lib/utils'
 
 // ═══════════════════════════════════════════════════════════════

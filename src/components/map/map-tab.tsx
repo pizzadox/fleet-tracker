@@ -3,6 +3,8 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { toast } from 'sonner'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { Label } from '@/components/ui/label'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
@@ -18,12 +20,13 @@ import {
   CheckCircle2, XCircle, AlertTriangle, Search, Eye, Download,
   Cpu, Copy, ExternalLink, Bell, Settings2, Plus, Save,
   ChevronDown, ChevronUp, ArrowRight, Info, MapPinned, Globe,
-  Layers, BarChart3, Compass
+  Layers, BarChart3, Compass,
+  FileText, Loader2, MapPin, Route, Trash2, X
 } from 'lucide-react'
 import dynamic from 'next/dynamic'
 import type { Equipment, GlonassTracker, GlonassSensorData } from '@/lib/types'
 import { EQUIPMENT_STATUS_MAP, EQUIPMENT_TYPE_MAP, REFRESH_OPTIONS, API } from '@/lib/constants'
-import { formatDate, formatDateTime, formatTime, formatPrice, statusBadge, TypeBadge, useAutoRefreshCountdown, handleApiError, copyToClipboard, fmtDuration, formatDurationShort } from '@/lib/utils'
+import { formatDate, formatDateTime, formatTime, formatPrice, statusBadge, TypeBadge, useAutoRefreshCountdown, handleApiError, copyToClipboard, fmtDuration, formatDurationShort, getTypeInfo, toLocalDatetime } from '@/lib/utils'
 
 const TrackerMap = dynamic(() => import('@/components/tracker-map'), { ssr: false })
 

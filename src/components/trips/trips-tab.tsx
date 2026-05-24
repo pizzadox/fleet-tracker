@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { toast } from 'sonner'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Separator } from '@/components/ui/separator'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
@@ -10,11 +11,15 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import {
   Route, Plus, Search, Truck, Clock, XCircle, CheckCircle2, AlertTriangle,
   Users, Wrench, Edit, Trash2, Navigation, Map, Calendar, Package, Weight,
-  ChevronDown, ChevronUp, Filter, ListFilter, ArrowUp, ArrowDown, ClipboardList
+  ChevronDown, ChevronUp, Filter, ListFilter, ArrowUp, ArrowDown, ClipboardList,
+  ArrowDownToLine, ArrowRight, ArrowUpFromLine, Fuel, Gauge, Loader2, MapPin,
+  MapPinned, Timer, UserCheck, UserCircle, X
 } from 'lucide-react'
 import type { Trip, Equipment, Crew, RouteTemplate } from '@/lib/types'
-import { TRIP_STATUS_MAP, CREW_TYPE_MAP, EQUIPMENT_STATUS_MAP } from '@/lib/constants'
-import { formatDate, formatDateTime, formatPrice, statusBadge, fmtDuration, handleApiError, downloadCSV, copyToClipboard, PaginationControls } from '@/lib/utils'
+import { TRIP_STATUS_MAP, CREW_TYPE_MAP, EQUIPMENT_STATUS_MAP, MEMBER_ROLE_MAP } from '@/lib/constants'
+import { formatDate, formatDateTime, formatPrice, statusBadge, fmtDuration, handleApiError, downloadCSV, copyToClipboard, PaginationControls, formatDurationShort, useDebounce } from '@/lib/utils'
+import dynamic from 'next/dynamic'
+const TrackerMap = dynamic(() => import('@/components/tracker-map'), { ssr: false })
 
 // ═══════════════════════════════════════════════════════════════
 // TRIPS TAB

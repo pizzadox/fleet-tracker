@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { toast } from 'sonner'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -18,7 +19,9 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import {
   Settings2, Save, Loader2, RefreshCw, Shield, Users, User, Plus, Edit,
   Trash2, CheckCircle2, XCircle, Database, Palette, Globe, LogOut,
-  Cog, Activity, Bell, Info, UserPlus, Copy, Eye, Key
+  Cog, Activity, Bell, Info, UserPlus, Copy, Eye, Key,
+  ArrowLeft, Cpu, Map, Route, Satellite, Tag, Truck, Wrench,
+  ChevronRight, Clock
 } from 'lucide-react'
 import type { AppUserType, AxentaSettings, RoleKey } from '@/lib/types'
 import { ROLE_LABELS, DEFAULT_ROLE_PERMISSIONS, ALL_PERMISSIONS, AVATAR_COLORS, getInitials, hasPermission, API } from '@/lib/constants'
@@ -143,7 +146,7 @@ export function SettingsTabContent({
     'Рейсы': <Route className="size-3.5" />,
     'Управление': <Users className="size-3.5" />,
     'Мониторинг': <Map className="size-3.5" />,
-    'Система': <Settings className="size-3.5" />,
+    'Система': <Settings2 className="size-3.5" />,
   }
 
   const activeUsers = users.filter(u => u.isActive).length
@@ -311,7 +314,7 @@ export function SettingsTabContent({
                   </div>
                 ) : (
                   Object.entries(PERM_CATEGORIES).map(([category, perms]) => {
-                    const catIcon = PERM_CATEGORY_ICONS[category] || <Settings className="size-3.5" />
+                    const catIcon = PERM_CATEGORY_ICONS[category] || <Settings2 className="size-3.5" />
                     // Count active perms in this category
                     const activeCount = perms.filter(p => editPerms.includes(p.key) || (p.key.endsWith('_read') && editPerms.includes(p.key.replace('_read', '')))).length
                     return (

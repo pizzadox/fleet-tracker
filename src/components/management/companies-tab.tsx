@@ -3,15 +3,18 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { toast } from 'sonner'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Separator } from '@/components/ui/separator'
+import { Table, TableHeader, TableRow, TableHead, TableBody, TableCell } from '@/components/ui/table'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
 import {
-  Building2, Plus, Search, Edit, Trash2, Phone, Mail, FileText
+  Building2, Plus, Search, Edit, Trash2, Phone, Mail, FileText,
+  FileDown, Shield, Users
 } from 'lucide-react'
 import type { Company } from '@/lib/types'
 import { COMPANY_TYPES } from '@/lib/constants'
-import { formatDate } from '@/lib/utils'
+import { formatDate, downloadCSV, useDebounce } from '@/lib/utils'
 
 // ═══════════════════════════════════════════════════════════════
 // COMPANIES TAB
