@@ -302,7 +302,7 @@ export function RepairDetailDialog({ open, onOpenChange, repair, loading, fullPh
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-3xl max-h-[90vh] flex flex-col">
+      <DialogContent className="sm:max-w-3xl max-h-[90dvh] flex flex-col">
         {/* Header with status bar */}
         <DialogHeader className={`border-l-4 ${statusBorderColor} pl-3`}>
           <DialogTitle className="flex items-center gap-2 flex-wrap">
@@ -683,7 +683,7 @@ export function RepairDetailDialog({ open, onOpenChange, repair, loading, fullPh
             <button className="absolute top-4 right-4 text-white size-8 hover:bg-white/20 rounded-full flex items-center justify-center" onClick={() => setLightboxIdx(-1)}><X className="size-5" /></button>
             {lightboxIdx > 0 && <button className="absolute left-4 top-1/2 -translate-y-1/2 text-white size-10 hover:bg-white/20 rounded-full flex items-center justify-center" onClick={e => { e.stopPropagation(); setLightboxIdx(lightboxIdx - 1) }}><ChevronLeft className="size-6" /></button>}
             {lightboxIdx < (r.photos || []).length - 1 && <button className="absolute right-4 top-1/2 -translate-y-1/2 text-white size-10 hover:bg-white/20 rounded-full flex items-center justify-center" onClick={e => { e.stopPropagation(); setLightboxIdx(lightboxIdx + 1) }}><ChevronRight className="size-6" /></button>}
-            <img src={r.photos![lightboxIdx]?.url} alt="" className="max-h-[85vh] max-w-[90vw] object-contain" onClick={e => e.stopPropagation()} />
+            <img src={r.photos![lightboxIdx]?.url} alt="" className="max-h-[85dvh] max-w-[90vw] object-contain" onClick={e => e.stopPropagation()} />
             <div className="absolute bottom-4 left-1/2 -translate-x-1/2 text-white text-xs">{lightboxIdx + 1} / {(r.photos || []).length}</div>
           </div>
         )}

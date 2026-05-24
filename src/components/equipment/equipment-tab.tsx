@@ -439,7 +439,7 @@ export const EquipmentTab = React.memo(function EquipmentTab({ equipment, compan
                   <span className="text-xs font-semibold">{info?.label || status}</span>
                   <span className="ml-auto text-[10px] font-medium">{items.length}</span>
                 </div>
-                <div className="space-y-1.5 max-h-[60vh] overflow-y-auto">
+                <div className="space-y-1.5 max-h-[60dvh] overflow-y-auto">
                   {items.map(eq => {
                     const typeInfo = getTypeInfo(eq.type)
                     const condInfo = EQUIPMENT_CONDITION_MAP[eq.condition || '']

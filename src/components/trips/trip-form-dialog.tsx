@@ -314,7 +314,7 @@ export function TripFormDialog({ open, onOpenChange, editData, equipmentId, equi
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-2xl flex flex-col max-h-[90vh]">
+      <DialogContent className="sm:max-w-2xl flex flex-col max-h-[90dvh]">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">{editData ? <Edit className="size-4" /> : <Plus className="size-4" />}{editData ? 'Редактирование рейса' : 'Новый рейс'}</DialogTitle>
         </DialogHeader>

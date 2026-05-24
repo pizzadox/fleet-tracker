@@ -414,7 +414,7 @@ export function EquipmentFormDialog({ open, onOpenChange, editData, companies, s
 
         {/* Axenta object selection */}
         {!editData && createMode === 'axenta' ? (
-          <div className="space-y-3 px-6 overflow-y-auto flex-1 min-h-0 py-3 max-h-[60vh]">
+          <div className="space-y-3 px-6 overflow-y-auto flex-1 min-h-0 py-3 max-h-[60dvh]">
             {/* #18 Search/filter for Axenta */}
             {unlinkedAxentaObjects.length > 0 && (
               <div className="relative">
@@ -598,7 +598,7 @@ export function EquipmentFormDialog({ open, onOpenChange, editData, companies, s
             )}
           </div>
         ) : (
-        <div className="px-6 overflow-y-auto flex-1 min-h-0 py-3 max-h-[55vh]" key={step}>
+        <div className="px-6 overflow-y-auto flex-1 min-h-0 py-3 max-h-[55dvh]" key={step}>
           {/* #15 Animate step transitions */}
           <AnimatePresence mode="wait" custom={stepDirection}>
             <motion.div

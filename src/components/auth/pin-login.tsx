@@ -78,7 +78,7 @@ export function PinLoginScreen({ onLogin, users: allUsers, fetchUsers }: {
   if (!selectedUser) {
     // User selection screen
     return (
-      <div className="min-h-screen flex flex-col items-center justify-center bg-background p-4">
+      <div className="min-h-[100dvh] flex flex-col items-center justify-center bg-background p-4">
         <div className="w-full max-w-md">
           <div className="text-center mb-8">
             <div className="size-16 rounded-2xl bg-primary text-primary-foreground flex items-center justify-center mx-auto mb-4">
@@ -118,7 +118,7 @@ export function PinLoginScreen({ onLogin, users: allUsers, fetchUsers }: {
 
   // PIN entry screen
   return (
-    <div className="min-h-screen flex flex-col items-center justify-center bg-background p-4">
+    <div className="min-h-[100dvh] flex flex-col items-center justify-center bg-background p-4">
       <div className="w-full max-w-xs">
         <button
           onClick={() => { setSelectedUser(null); setPin(''); setError('') }}

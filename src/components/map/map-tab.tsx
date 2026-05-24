@@ -667,7 +667,7 @@ export const MapTab = React.memo(function MapTab({ equipment, onSync, onOpenDeta
           ) : (
             <Card>
               <CardContent className="p-0">
-                <div className="h-[calc(100vh-220px)] min-h-[400px] rounded-lg overflow-hidden relative z-0">
+                <div className="h-[calc(100dvh-220px)] min-h-[400px] rounded-lg overflow-hidden relative z-0">
                   {trackersForMap.length === 0 ? (
                     <div className="flex flex-col items-center justify-center h-full text-muted-foreground">
                       <Satellite className="size-12 mb-3 opacity-30" />

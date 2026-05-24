@@ -632,7 +632,7 @@ export function TripDetailDialog({ open, onOpenChange, trip, loading, crews, onE
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-3xl max-h-[90vh] flex flex-col">
+      <DialogContent className="sm:max-w-3xl max-h-[90dvh] flex flex-col">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2"><Route className="size-4" />{t.route}</DialogTitle>
           <DialogDescription className="flex items-center gap-2 flex-wrap">

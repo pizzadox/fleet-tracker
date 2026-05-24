@@ -1313,7 +1313,7 @@ export function EquipmentDetailSheet({ open, onOpenChange, equipment, loading, d
 
                     {/* Tracker picker dialog */}
                     <Dialog open={trackerPickerOpen} onOpenChange={setTrackerPickerOpen}>
-                      <DialogContent className="max-w-md max-h-[70vh]">
+                      <DialogContent className="max-w-md max-h-[70dvh]">
                         <DialogHeader>
                           <DialogTitle className="flex items-center gap-2"><Satellite className="size-4" />Подключить трекер</DialogTitle>
                           <DialogDescription>Выберите объект из Axenta.cloud для привязки</DialogDescription>
@@ -1327,7 +1327,7 @@ export function EquipmentDetailSheet({ open, onOpenChange, equipment, loading, d
                             <p className="text-xs text-muted-foreground mt-1">Проверьте настройки Axenta и выполните синхронизацию</p>
                           </div>
                         ) : (
-                          <div className="space-y-1.5 overflow-y-auto max-h-[50vh]">
+                          <div className="space-y-1.5 overflow-y-auto max-h-[50dvh]">
                             {availableObjects.map(obj => (
                               <div key={obj.id} className={`flex items-center justify-between p-2.5 rounded-lg border cursor-pointer transition-colors hover:bg-accent ${obj.isLinked ? 'opacity-50 cursor-not-allowed' : ''}`}
                                 onClick={async () => {

@@ -251,7 +251,7 @@ export const RepairsTab = React.memo(function RepairsTab({ repairs, equipment, o
                   <span className={`inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-medium ${info?.color || ''}`}>{info?.label || status}</span>
                   <span className="text-[10px] text-muted-foreground">{items.length}</span>
                 </div>
-                <div className="space-y-1.5 max-h-[60vh] overflow-y-auto">
+                <div className="space-y-1.5 max-h-[60dvh] overflow-y-auto">
                   {items.map(r => (
                     <div key={r.id} className="rounded-lg border p-2.5 cursor-pointer hover:bg-accent/50 transition-colors" onClick={() => onOpenDetail(r)}>
                       <div className="flex items-start gap-1.5 mb-1">

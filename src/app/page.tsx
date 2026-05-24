@@ -588,7 +588,7 @@ export default function Home() {
 
   if (authLoading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-background">
+      <div className="min-h-[100dvh] flex items-center justify-center bg-background">
         <Loader2 className="size-8 animate-spin text-primary" />
       </div>
     )
@@ -610,7 +610,7 @@ export default function Home() {
 
   if (loading) {
     return (
-      <div className="min-h-screen flex flex-col bg-background">
+      <div className="min-h-[100dvh] flex flex-col bg-background">
         <header className="border-b bg-card/80 backdrop-blur-sm sticky top-0 z-30">
           <div className="max-w-7xl mx-auto px-3 sm:px-6 h-11 flex items-center gap-2">
             <div className="size-7 rounded-lg bg-primary text-primary-foreground flex items-center justify-center shrink-0 animate-pulse"><Truck className="size-3.5" /></div>
@@ -665,7 +665,7 @@ export default function Home() {
   // ═══════════════════════════════════════════════════════════════
 
   return (
-    <div className="min-h-screen flex flex-col bg-background pb-16 md:pb-0" role="application" aria-label="Система учёта техники">
+    <div className="min-h-[100dvh] flex flex-col bg-background pb-16 md:pb-0" role="application" aria-label="Система учёта техники">
       {/* Skip to content link */}
       <a href="#main-content" className="skip-to-content">Перейти к содержимому</a>
 
@@ -1036,7 +1036,7 @@ export default function Home() {
       {/* Full photo view */}
       <Dialog open={!!fullPhoto} onOpenChange={() => setFullPhoto(null)}>
         <DialogContent className="sm:max-w-3xl p-2" showCloseButton>
-          {fullPhoto && <img src={fullPhoto} alt="Фото" className="w-full h-auto rounded-md object-contain max-h-[70vh]" loading="lazy" />}
+          {fullPhoto && <img src={fullPhoto} alt="Фото" className="w-full h-auto rounded-md object-contain max-h-[70dvh]" loading="lazy" />}
         </DialogContent>
       </Dialog>
 
@@ -1086,7 +1086,7 @@ export default function Home() {
             <Input value={globalSearchQuery} onChange={e => { setGlobalSearchQuery(e.target.value); setGlobalSearchIndex(-1) }} placeholder="Поиск по всей системе..." className="border-0 focus-visible:ring-0 h-10 text-sm" autoFocus />
             <kbd className="hidden sm:inline-flex items-center gap-0.5 rounded border bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground shrink-0">ESC</kbd>
           </div>
-          <div className="max-h-[50vh] overflow-y-auto">
+          <div className="max-h-[50dvh] overflow-y-auto">
             {globalSearchQuery.trim() === '' ? (
               <div className="p-6 text-center text-muted-foreground">
                 <Search className="size-8 mx-auto mb-2 opacity-30" />

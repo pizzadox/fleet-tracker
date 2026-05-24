@@ -152,7 +152,7 @@ export function SettingsTabContent({
   const activeUsers = users.filter(u => u.isActive).length
 
   return (
-    <div className="flex flex-col h-[calc(100vh-140px)]">
+    <div className="flex flex-col h-[calc(100dvh-140px)]">
       {/* Tabs navigation */}
       <div className="px-4 pt-3 border-b bg-muted/20">
         <Tabs value={settingsSubTab} onValueChange={(v) => setSettingsSubTab(v as 'users' | 'permissions' | 'axenta' | 'about')}>
