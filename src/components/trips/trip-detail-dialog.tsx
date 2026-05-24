@@ -1014,7 +1014,7 @@ export function TripDetailDialog({ open, onOpenChange, trip, loading, crews, onE
                     <Map className="size-3" />{showRouteMap ? 'Скрыть карту маршрута' : 'Показать маршрут на карте'}
                   </Button>
                   {showRouteMap && (
-                    <div className="h-64 rounded-lg overflow-hidden border">
+                    <div className="h-64 rounded-lg overflow-hidden border isolate">
                       {routeMapLoading ? (
                         <div className="h-full flex items-center justify-center bg-muted/30">
                           <Loader2 className="size-5 animate-spin text-muted-foreground" />
@@ -1137,7 +1137,7 @@ export function TripDetailDialog({ open, onOpenChange, trip, loading, crews, onE
                   )}
                   {trackData && !trackLoading && (
                     <>
-                      <div className="h-64 rounded-lg overflow-hidden border">
+                      <div className="h-64 rounded-lg overflow-hidden border isolate">
                         <TrackerMap trackers={[]} trackData={mapTrackData as any} focusPoint={focusedPoint} />
                       </div>
                       {/* Track summary badges */}
@@ -1282,7 +1282,7 @@ export function TripDetailDialog({ open, onOpenChange, trip, loading, crews, onE
           )}
 
           {/* Footer after content */}
-          <div className="sticky bottom-0 bg-card border-t pt-3 pb-2 -mx-4 sm:-mx-5 px-4 sm:px-5 mt-4 z-10">
+          <div className="bg-card border-t pt-3 pb-2 -mx-4 sm:-mx-5 px-4 sm:px-5 mt-4">
             <div className="flex flex-wrap gap-1.5 sm:gap-0 justify-end">
               {t.status === 'planned' && (
                 <Button variant="outline" size="sm" className="h-8 gap-1 text-xs" onClick={() => onStart(t)}><Navigation className="size-3.5" />Начать</Button>

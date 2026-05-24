@@ -652,7 +652,7 @@ export function RepairDetailDialog({ open, onOpenChange, repair, loading, fullPh
           )}
 
           {/* Footer after content */}
-          <div className="sticky bottom-0 bg-card border-t pt-3 pb-2 -mx-4 sm:-mx-5 px-4 sm:px-5 mt-4 z-10">
+          <div className="bg-card border-t pt-3 pb-2 -mx-4 sm:-mx-5 px-4 sm:px-5 mt-4">
             <div className="flex flex-wrap gap-1.5 sm:gap-0 justify-end">
               {r.status === 'in_progress' && (
                 <Button variant="outline" size="sm" className="h-8 gap-1 text-xs" onClick={() => setConfirmDialog({ open: true, title: 'Завершить ремонт?', desc: 'Ремонт будет отмечен как завершённый. Это действие можно отменить через редактирование.', action: () => { onComplete(r); setConfirmDialog(prev => ({ ...prev, open: false })) } })}><CheckCircle2 className="size-3.5" />Завершить</Button>
