@@ -71,6 +71,8 @@ export function TripDetailDialog({ open, onOpenChange, trip, loading, crews, onE
   const [routeMapTrackData, setRouteMapTrackData] = useState<any>(null)
   const [focusedPoint, setFocusedPoint] = useState<{ lat: number; lng: number; type: 'parking' | 'stop' | 'refuel' | 'plum'; label?: string } | null>(null)
   const [routePointsCollapsed, setRoutePointsCollapsed] = useState(true)
+  const [routeAddressesOpen, setRouteAddressesOpen] = useState(false)
+  const [statsApplied, setStatsApplied] = useState<string | null>(null) // track which stats version was applied
 
   // ─── Complete trip dialog with refuel detection ─────────────
   const [completeDialog, setCompleteDialog] = useState<{
@@ -117,7 +119,6 @@ export function TripDetailDialog({ open, onOpenChange, trip, loading, crews, onE
   // ─── Auto-populate trip card fields from statistics when loaded ───
   // When tripStats is loaded/refreshed, compare with existing trip fields.
   // Null fields → auto-fill. Different values → show discrepancy dialog.
-  const [statsApplied, setStatsApplied] = useState<string | null>(null) // track which stats version was applied
   useEffect(() => {
     if (!compareData?.tripStats || !trip) return
     const stats = compareData.tripStats as Record<string, unknown>
