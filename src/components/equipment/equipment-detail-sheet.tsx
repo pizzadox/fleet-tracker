@@ -35,11 +35,16 @@ import {
   Anchor, Tag, BadgeCheck, ScanLine, Receipt, Truck as TruckIcon, Flame,
   ArrowUp, ArrowDown, MapPinned, Globe, Cpu,
   Layers, ExternalLink, ImageOff, Plus, Search, HeartPulse,
-  ArrowLeft, Building2, CheckCheck, Send, Settings2, Terminal, Upload, User, Loader2, X
+  ArrowLeft, Building2, CheckCheck, Send, Settings2, Terminal, Upload, User, Loader2, X,
+  LayoutGrid
 } from 'lucide-react'
 import type { Equipment, Company, EquipmentPhoto, Repair, RepairStage, GlonassTracker, GlonassSensorData, EquipmentHistory, EquipmentDocument, Employee, Trip } from '@/lib/types'
 import { EQUIPMENT_STATUS_MAP, REPAIR_STATUS_MAP, STAGE_STATUS_MAP, EQUIPMENT_TYPE_MAP, EQUIPMENT_CONDITION_MAP, FUEL_TYPE_MAP, ENGINE_TYPE_MAP, PHOTO_CATEGORIES, MAINTENANCE_WARN_DAYS, COMPANY_TYPES, CREW_TYPE_MAP, MEMBER_ROLE_MAP, TRIP_STATUS_MAP, EMPLOYEE_POSITION_MAP, EMPLOYEE_STATUS_MAP, REPAIR_MASTER_ROLE_MAP, hasPermission, getInitials } from '@/lib/constants'
 import { formatDate, formatDateTime, formatPrice, formatTime, statusBadge, getEventIcon, getStageProgress, formatDaysUntil, SectionDivider, TypeBadge, getTypeInfo, toLocalDatetime, localDatetimeToISO, toLocalDate, copyToClipboard, handleApiError } from '@/lib/utils'
+import { usePanelConfig } from '@/lib/use-panel-config'
+import { PanelConfigContext } from '@/components/panels/panel-section'
+import { PanelSection } from '@/components/panels/panel-section'
+import { PanelManagerDialog } from '@/components/panels/panel-manager-dialog'
 
 // ═══════════════════════════════════════════════════════════════
 // EQUIPMENT DETAIL SHEET
@@ -148,6 +153,10 @@ export function EquipmentDetailSheet({ open, onOpenChange, equipment, loading, d
   } | null>(null)
   const [axentaSensorsLoading, setAxentaSensorsLoading] = useState(false)
   const [showOnlyWithValues, setShowOnlyWithValues] = useState(true)
+
+  // Panel management for GLONASS tab
+  const glonassPanelConfig = usePanelConfig('glonass')
+  const [glonassPanelManagerOpen, setGlonassPanelManagerOpen] = useState(false)
 
   // Axenta tracker commands
   const [trackerCommands, setTrackerCommands] = useState<{
@@ -761,7 +770,27 @@ export function EquipmentDetailSheet({ open, onOpenChange, equipment, loading, d
                 )}
 
                 {detailTab === 'glonass' && (
+                  <PanelConfigContext.Provider value={glonassPanelConfig}>
                   <div className="px-4 sm:px-5 py-3 space-y-3">
+                    {/* Panel management toolbar */}
+                    <div className="flex items-center gap-1.5">
+                      <Button
+                        variant={glonassPanelConfig.editMode ? 'default' : 'outline'}
+                        size="sm"
+                        className="h-7 text-[10px] gap-1"
+                        onClick={() => setGlonassPanelManagerOpen(true)}
+                        title="Управление панелями"
+                      >
+                        <LayoutGrid className="size-3" />
+                        Панели
+                      </Button>
+                      {glonassPanelConfig.editMode && (
+                        <span className="text-[10px] text-muted-foreground">
+                          Режим редактирования панелей
+                        </span>
+                      )}
+                    </div>
+
                     {(!eq.trackers || eq.trackers.length === 0) ? (
                       <div className="text-center py-8">
                         <Satellite className="size-10 mx-auto mb-2 text-muted-foreground/40" />
@@ -786,7 +815,8 @@ export function EquipmentDetailSheet({ open, onOpenChange, equipment, loading, d
                       <>
                         {/* MAP */}
                         {eq.trackers.some(t => t.lastLatitude != null && t.lastLongitude != null) && (
-                          <Card>
+                          <PanelSection panelKey="gl_map">
+                          <Card className="gap-0">
                             <CardHeader className="pb-1.5 pt-3 px-3">
                               <div className="flex items-center justify-between">
                                 <CardTitle className="text-xs font-semibold flex items-center gap-1.5"><MapPin className="size-3.5" />Карта</CardTitle>
@@ -795,7 +825,7 @@ export function EquipmentDetailSheet({ open, onOpenChange, equipment, loading, d
                                 </Button>
                               </div>
                             </CardHeader>
-                            <CardContent className="px-3 pb-3 pt-0">
+                            <CardContent>
                               <div className="h-[300px] rounded-lg overflow-hidden border">
                                 <TrackerMap
                                   trackers={showAllTrackersMap
@@ -807,11 +837,12 @@ export function EquipmentDetailSheet({ open, onOpenChange, equipment, loading, d
                               </div>
                             </CardContent>
                           </Card>
+                          </PanelSection>
                         )}
 
                         {/* Tracker cards */}
                         {eq.trackers?.map(tracker => (
-                          <Card key={tracker.id}>
+                          <Card key={tracker.id} className="gap-0">
                             <CardHeader className="pb-1.5 pt-3 px-3">
                               <div className="flex items-center justify-between gap-2">
                                 <div className="flex items-center gap-2">
@@ -826,8 +857,9 @@ export function EquipmentDetailSheet({ open, onOpenChange, equipment, loading, d
                                 {statusBadge(tracker.isActive ? 'active' : 'repair', { active: { label: 'Активен', color: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-400' }, repair: { label: 'Неактивен', color: 'bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-400' } })}
                               </div>
                             </CardHeader>
-                            <CardContent className="px-3 pb-3 pt-0 space-y-2">
+                            <CardContent className="space-y-2">
                               <Separator />
+                              <PanelSection panelKey="gl_location">
                               <DetailSection title="Местоположение" icon={<MapPin className="size-3.5" />}>
                                 <DetailRow label="Широта" value={tracker.lastLatitude?.toFixed(6)} />
                                 <DetailRow label="Долгота" value={tracker.lastLongitude?.toFixed(6)} />
@@ -836,7 +868,9 @@ export function EquipmentDetailSheet({ open, onOpenChange, equipment, loading, d
                                 <DetailRow label="Высота" value={tracker.lastAltitude != null ? `${tracker.lastAltitude} м` : undefined} />
                                 {tracker.lastAddress && <DetailRow label="Адрес" value={tracker.lastAddress} />}
                               </DetailSection>
+                              </PanelSection>
                               {/* ── All sensors from Axenta ── */}
+                              <PanelSection panelKey="gl_sensors">
                               <div className="space-y-2">
                                 <div className="flex items-center justify-between gap-2">
                                   <div className="flex items-center gap-1.5">
@@ -975,7 +1009,9 @@ export function EquipmentDetailSheet({ open, onOpenChange, equipment, loading, d
                                   </div>
                                 )}
                               </div>
+                              </PanelSection>
                               {/* Tracker identification */}
+                              <PanelSection panelKey="gl_ident">
                               <DetailSection title="Идентификация" icon={<Cpu className="size-3.5" />}>
                                 {tracker.trackerName && <DetailRow label="Название" value={tracker.trackerName} />}
                                 <DetailRow label="ID трекера" value={tracker.trackerId} />
@@ -983,6 +1019,8 @@ export function EquipmentDetailSheet({ open, onOpenChange, equipment, loading, d
                                 {tracker.imei && <DetailRow label="IMEI" value={<span className="font-mono cursor-pointer hover:text-primary" onClick={() => copyToClipboard(tracker.imei!)} title="Копировать">{tracker.imei}</span> as any} />}
                                 {tracker.phoneNumber && <DetailRow label="Телефон" value={tracker.phoneNumber} />}
                               </DetailSection>
+                              </PanelSection>
+                              <PanelSection panelKey="gl_comm">
                               <DetailSection title="Связь" icon={<Clock className="size-3.5" />}>
                                 <DetailRow label="Выход на связь" value={formatDateTime(tracker.lastSeenAt)} />
                                 <DetailRow label="Позиция" value={formatDateTime(tracker.lastPositionAt)} />
@@ -999,8 +1037,10 @@ export function EquipmentDetailSheet({ open, onOpenChange, equipment, loading, d
                                   return <DetailRow label="Последняя активность" value={<span className={diffMin < 5 ? 'text-emerald-600 dark:text-emerald-400 font-medium' : diffHrs > 24 ? 'text-red-600 dark:text-red-400' : 'text-muted-foreground'}>{ago}</span> as any} />
                                 })()}
                               </DetailSection>
+                              </PanelSection>
 
                               {/* ── Tracker Commands ── */}
+                              <PanelSection panelKey="gl_commands">
                               <div className="space-y-2">
                                 <button className="flex items-center gap-1.5 text-xs font-semibold w-full text-left" onClick={() => {
                                   if (!commandsPanelOpen && !trackerCommands) {
@@ -1204,8 +1244,10 @@ export function EquipmentDetailSheet({ open, onOpenChange, equipment, loading, d
                                   </div>
                                 )}
                               </div>
+                              </PanelSection>
 
                               {/* Date range for historical data — collapsible */}
+                              <PanelSection panelKey="gl_history">
                               <div>
                                 <button className="flex items-center gap-1.5 text-xs font-semibold w-full text-left" onClick={() => setHistoryPanelOpen(prev => !prev)}>
                                   <Calendar className="size-3.5 text-muted-foreground" />
@@ -1236,8 +1278,10 @@ export function EquipmentDetailSheet({ open, onOpenChange, equipment, loading, d
                                   </div>
                                 )}
                               </div>
+                              </PanelSection>
 
                               {/* Stats display */}
+                              <PanelSection panelKey="gl_stats">
                               {trackerStats && (
                                 <DetailSection title="Статистика за период" icon={<Activity className="size-3.5" />}>
                                   <DetailRow label="Пробег" value={trackerStats.mileage ? `${Number(trackerStats.mileage).toFixed(1)} км` : undefined} />
@@ -1252,8 +1296,10 @@ export function EquipmentDetailSheet({ open, onOpenChange, equipment, loading, d
                                   <DetailRow label="Моточасы" value={trackerStats.engineHours ? `${Number(trackerStats.engineHours).toFixed(1)} ч` : undefined} />
                                 </DetailSection>
                               )}
+                              </PanelSection>
 
                               {/* Action buttons */}
+                              <PanelSection panelKey="gl_actions">
                               <div className="flex flex-wrap gap-1.5 pt-1">
                                 <Button size="sm" variant="outline" className="h-7 text-[11px] gap-1" onClick={async () => {
                                   try {
@@ -1277,6 +1323,7 @@ export function EquipmentDetailSheet({ open, onOpenChange, equipment, loading, d
                                   }
                                 }}><Trash2 className="size-3" /></Button>
                               </div>
+                              </PanelSection>
                             </CardContent>
                           </Card>
                         ))}
@@ -1342,7 +1389,17 @@ export function EquipmentDetailSheet({ open, onOpenChange, equipment, loading, d
                         )}
                       </DialogContent>
                     </Dialog>
+
+                    {/* Panel Manager Dialog */}
+                    <PanelManagerDialog
+                      open={glonassPanelManagerOpen}
+                      onOpenChange={setGlonassPanelManagerOpen}
+                      tabKey="glonass"
+                      tabLabel="ГЛОНАСС"
+                      panelConfig={glonassPanelConfig}
+                    />
                   </div>
+                  </PanelConfigContext.Provider>
                 )}
 
                 {detailTab === 'trips' && (

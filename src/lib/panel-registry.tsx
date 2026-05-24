@@ -10,7 +10,7 @@ import {
   Search, Activity, Fuel, Shield, ClipboardCheck,
   WifiOff, AlertTriangle, Eye, Gauge, TrendingUp,
   Package, MapPin, Bell, ChevronDown, Settings2,
-  Monitor, Cog, Box, Briefcase, Car
+  Monitor, Cog, Box, Briefcase, Car, Terminal, Calendar
 } from 'lucide-react'
 
 // ─── Panel types ──────────────────────────────────────────────
@@ -78,6 +78,17 @@ export const PANEL_REGISTRY: PanelDef[] = [
   { key: 'map_main', label: 'Карта', description: 'Интерактивная карта с трекерами и треками', icon: <Map className="size-3.5" />, tabKey: 'map', category: 'Данные', defaultVisible: true, defaultOrder: 2, scenarios: ['full', 'dispatcher', 'minimal'], required: true },
   { key: 'map_equipment_panel', label: 'Панель техники', description: 'Боковая панель со списком техники на карте', icon: <LayoutGrid className="size-3.5" />, tabKey: 'map', category: 'Данные', defaultVisible: true, defaultOrder: 3, scenarios: ['full', 'dispatcher'] },
   { key: 'map_track_viewer', label: 'Просмотр треков', description: 'Панель просмотра истории перемещений с аналитикой', icon: <Route className="size-3.5" />, tabKey: 'map', category: 'Данные', defaultVisible: true, defaultOrder: 4, scenarios: ['full', 'dispatcher'] },
+
+  // ═══ GLONASS (Equipment detail sub-tab) ═══
+  { key: 'gl_map', label: 'Карта', description: 'Карта с местоположением техники и треками', icon: <MapPin className="size-3.5" />, tabKey: 'glonass', category: 'Данные', defaultVisible: true, defaultOrder: 0, scenarios: ['full', 'dispatcher', 'mechanic', 'minimal'], required: true },
+  { key: 'gl_location', label: 'Местоположение', description: 'Координаты, скорость, курс, высота, адрес', icon: <MapPin className="size-3.5" />, tabKey: 'glonass', category: 'Данные', defaultVisible: true, defaultOrder: 1, scenarios: ['full', 'dispatcher', 'mechanic', 'minimal'] },
+  { key: 'gl_sensors', label: 'Датчики', description: 'Данные датчиков из Axenta: топливо, зажигание, температура, пробег и др.', icon: <Gauge className="size-3.5" />, tabKey: 'glonass', category: 'Данные', defaultVisible: true, defaultOrder: 2, scenarios: ['full', 'dispatcher', 'mechanic'] },
+  { key: 'gl_ident', label: 'Идентификация', description: 'Название трекера, ID, IMEI, телефон', icon: <Cog className="size-3.5" />, tabKey: 'glonass', category: 'Данные', defaultVisible: true, defaultOrder: 3, scenarios: ['full', 'mechanic'] },
+  { key: 'gl_comm', label: 'Связь', description: 'Время выхода на связь, последняя позиция, активность', icon: <WifiOff className="size-3.5" />, tabKey: 'glonass', category: 'Данные', defaultVisible: true, defaultOrder: 4, scenarios: ['full', 'dispatcher'] },
+  { key: 'gl_commands', label: 'Команды трекера', description: 'Отправка команд на трекер: перезагрузка, позиция, блокировка и др.', icon: <Terminal className="size-3.5" />, tabKey: 'glonass', category: 'Управление', defaultVisible: true, defaultOrder: 5, scenarios: ['full', 'mechanic'] },
+  { key: 'gl_history', label: 'Данные за период', description: 'Запрос исторических данных за выбранный период', icon: <Calendar className="size-3.5" />, tabKey: 'glonass', category: 'Аналитика', defaultVisible: true, defaultOrder: 6, scenarios: ['full', 'dispatcher'] },
+  { key: 'gl_stats', label: 'Статистика за период', description: 'Пробег, скорость, расход топлива, моточасы за выбранный период', icon: <Activity className="size-3.5" />, tabKey: 'glonass', category: 'Аналитика', defaultVisible: true, defaultOrder: 7, scenarios: ['full', 'manager'] },
+  { key: 'gl_actions', label: 'Действия', description: 'Синхронизация, обновление, отключение трекера', icon: <Settings2 className="size-3.5" />, tabKey: 'glonass', category: 'Управление', defaultVisible: true, defaultOrder: 8, scenarios: ['full', 'mechanic', 'minimal'], required: true },
 
   // ═══ COMPANIES (Management sub-tab) ═══
   { key: 'comp_stats', label: 'Статистика компаний', description: 'Карточки: своя техника, арендованная, всего компаний', icon: <BarChart3 className="size-3.5" />, tabKey: 'companies', category: 'Статистика', defaultVisible: true, defaultOrder: 0, scenarios: ['full', 'manager'] },
