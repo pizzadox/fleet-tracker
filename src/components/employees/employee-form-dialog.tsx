@@ -8,9 +8,11 @@ import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Badge } from '@/components/ui/badge'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog'
+import { Separator } from '@/components/ui/separator'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import {
-  Users, Save, Loader2, Phone, Mail, Calendar, IdCard, MapPin
+  Users, Save, Loader2, Phone, Mail, Calendar, IdCard, MapPin,
+  Edit, Plus, ClipboardCheck, User, CheckCircle2
 } from 'lucide-react'
 import type { Employee, Crew, Equipment } from '@/lib/types'
 import { EMPLOYEE_POSITION_MAP, EMPLOYEE_STATUS_MAP, API } from '@/lib/constants'

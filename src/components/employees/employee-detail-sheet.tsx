@@ -9,10 +9,11 @@ import { Separator } from '@/components/ui/separator'
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from '@/components/ui/sheet'
 import {
   Users, Edit, Trash2, Phone, Mail, Car, Wrench, UserCircle,
-  MapPin, Calendar, Shield, IdCard, RefreshCw, User, Loader2, Truck
+  MapPin, Calendar, Shield, IdCard, RefreshCw, User, Loader2, Truck,
+  ClipboardCheck, AlertTriangle, ClipboardList
 } from 'lucide-react'
 import type { Employee, Crew } from '@/lib/types'
-import { EMPLOYEE_POSITION_MAP, EMPLOYEE_STATUS_MAP, getInitials } from '@/lib/constants'
+import { EMPLOYEE_POSITION_MAP, EMPLOYEE_STATUS_MAP, REPAIR_MASTER_ROLE_MAP, REPAIR_STATUS_MAP, getInitials } from '@/lib/constants'
 import { formatDate, formatPrice, statusBadge, TypeBadge, SectionDivider, formatDaysUntil } from '@/lib/utils'
 import { DetailSection, DetailRow } from '@/components/equipment/equipment-detail-sheet'
 

@@ -15,7 +15,7 @@ import {
   Edit, X, CheckCircle2, UserCheck
 } from 'lucide-react'
 import type { Crew, Employee, CrewMember } from '@/lib/types'
-import { CREW_TYPE_MAP, MEMBER_ROLE_MAP, API } from '@/lib/constants'
+import { CREW_TYPE_MAP, MEMBER_ROLE_MAP, EMPLOYEE_POSITION_MAP, API } from '@/lib/constants'
 import { handleApiError } from '@/lib/utils'
 
 // ═══════════════════════════════════════════════════════════════

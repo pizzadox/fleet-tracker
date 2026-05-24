@@ -12,7 +12,9 @@ import { Separator } from '@/components/ui/separator'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog'
 import {
   Route, Plus, Trash2, Save, Loader2, MapPin, GripVertical, Navigation,
-  ArrowUp, ArrowDown, Clock, Package
+  ArrowUp, ArrowDown, Clock, Package,
+  Edit, FileText, MapPinned, CheckCircle2, StickyNote, Zap,
+  ChevronDown, ChevronUp, ArrowDownToLine, ArrowUpFromLine
 } from 'lucide-react'
 import type { RouteTemplate, RouteTemplatePoint } from '@/lib/types'
 import { API } from '@/lib/constants'

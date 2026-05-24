@@ -9,7 +9,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import {
-  Save, Loader2
+  Save, Loader2, CheckCircle2
 } from 'lucide-react'
 import type { RepairStage } from '@/lib/types'
 import { STAGE_STATUS_MAP, STAGE_TEMPLATES, API } from '@/lib/constants'
