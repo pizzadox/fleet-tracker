@@ -27,7 +27,7 @@ import {
   Camera, Printer, Share2, Filter, SortAsc, SortDesc,
   CircleParking, CircleStop, Timer, TrendingUp, TrendingDown,
   Leaf, Droplets, CircleDot, Scan, ScanLine, LayoutGrid,
-  LayoutList, ArrowUpDown, Crosshair, Move, Screenshot,
+  LayoutList, ArrowUpDown, Crosshair, Move, ImageDown,
   ZoomIn, ZoomOut, PanelTopClose, PanelTopOpen, GripVertical,
   Keyboard, Tag, Radio, Signal, Battery, BatteryLow, BatteryMedium,
   BatteryCharging, Power, CircleCheck, CircleX, CircleAlert,
@@ -159,8 +159,8 @@ export const MapTab = React.memo(function MapTab({ equipment, onSync, onOpenDeta
 }) {
   // ─── Core state (existing) ────────────────────────────────
   const [syncing, setSyncing] = useState(false)
-  const [refreshInterval, setRefreshInterval] = useState<ReturnType<typeof REFRESH_OPTIONS[number]['value']>>(loadPrefs('refreshInterval', 60))
-  const [filter, setFilter] = useState<'all' | 'online' | 'offline' | 'notracker'>(loadPrefs('filter', 'all'))
+  const [refreshInterval, setRefreshInterval] = useState<ReturnType<typeof REFRESH_OPTIONS[number]['value']>>(60)
+  const [filter, setFilter] = useState<'all' | 'online' | 'offline' | 'notracker'>('all')
   const [subTab, setSubTab] = useState<'map' | 'notifications'>('map')
   const [notifRules, setNotifRules] = useState<Array<{
     id: string; equipmentId: string; conditionType: string; thresholdValue: number | null;
@@ -211,15 +211,15 @@ export const MapTab = React.memo(function MapTab({ equipment, onSync, onOpenDeta
   const [typeFilter, setTypeFilter] = useState<string>('all')
 
   // ─── NEW: Sort state (#28) ────────────────────────────────
-  const [sortBy, setSortBy] = useState<'name' | 'status' | 'speed' | 'lastSeen'>(loadPrefs('sortBy', 'name'))
-  const [sortDir, setSortDir] = useState<'asc' | 'desc'>(loadPrefs('sortDir', 'asc'))
+  const [sortBy, setSortBy] = useState<'name' | 'status' | 'speed' | 'lastSeen'>('name')
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc')
 
   // ─── NEW: View mode (#10, #17) ────────────────────────────
-  const [viewMode, setViewMode] = useState<'compact' | 'expanded'>(loadPrefs('viewMode', 'expanded'))
-  const [showEquipmentList, setShowEquipmentList] = useState(loadPrefs('showList', true))
+  const [viewMode, setViewMode] = useState<'compact' | 'expanded'>('expanded')
+  const [showEquipmentList, setShowEquipmentList] = useState(true)
 
   // ─── NEW: Map options (#18, #34, #35, #96) ───────────────
-  const [mapHeight, setMapHeight] = useState<'small' | 'medium' | 'large' | 'fullscreen'>(loadPrefs('mapHeight', 'medium'))
+  const [mapHeight, setMapHeight] = useState<'small' | 'medium' | 'large' | 'fullscreen'>('medium')
   const [isFullscreen, setIsFullscreen] = useState(false) // #96
 
   // ─── NEW: Track playback (#36) ────────────────────────────
@@ -230,7 +230,7 @@ export const MapTab = React.memo(function MapTab({ equipment, onSync, onOpenDeta
   const [selectedEqId, setSelectedEqId] = useState<string | null>(null)
 
   // ─── NEW: Cluster toggle (#34) ────────────────────────────
-  const [clusterEnabled, setClusterEnabled] = useState(loadPrefs('clusterEnabled', true))
+  const [clusterEnabled, setClusterEnabled] = useState(true)
 
   // ─── NEW: Track panel minimize (#97) ──────────────────────
   const [trackPanelMinimized, setTrackPanelMinimized] = useState(false)
@@ -253,15 +253,30 @@ export const MapTab = React.memo(function MapTab({ equipment, onSync, onOpenDeta
   const equipmentListRef = useRef<HTMLDivElement>(null)
   const cardRefs = useRef<Map<string, HTMLDivElement>>(new Map())
 
+  // ─── Load preferences from localStorage after mount (#90) ──
+  // Track whether initial load has happened to avoid overwriting localStorage with defaults
+  const prefsLoadedRef = useRef(false)
+  useEffect(() => {
+    setRefreshInterval(loadPrefs('refreshInterval', 60) as any)
+    setFilter(loadPrefs('filter', 'all') as any)
+    setSortBy(loadPrefs('sortBy', 'name') as any)
+    setSortDir(loadPrefs('sortDir', 'asc') as any)
+    setViewMode(loadPrefs('viewMode', 'expanded') as any)
+    setShowEquipmentList(loadPrefs('showList', true))
+    setMapHeight(loadPrefs('mapHeight', 'medium') as any)
+    setClusterEnabled(loadPrefs('clusterEnabled', true))
+    prefsLoadedRef.current = true
+  }, [])
+
   // ─── Persist preferences to localStorage (#90) ────────────
-  useEffect(() => { savePrefs('filter', filter) }, [filter])
-  useEffect(() => { savePrefs('sortBy', sortBy) }, [sortBy])
-  useEffect(() => { savePrefs('sortDir', sortDir) }, [sortDir])
-  useEffect(() => { savePrefs('viewMode', viewMode) }, [viewMode])
-  useEffect(() => { savePrefs('showList', showEquipmentList) }, [showEquipmentList])
-  useEffect(() => { savePrefs('mapHeight', mapHeight) }, [mapHeight])
-  useEffect(() => { savePrefs('clusterEnabled', clusterEnabled) }, [clusterEnabled])
-  useEffect(() => { savePrefs('refreshInterval', refreshInterval) }, [refreshInterval])
+  useEffect(() => { if (prefsLoadedRef.current) savePrefs('filter', filter) }, [filter])
+  useEffect(() => { if (prefsLoadedRef.current) savePrefs('sortBy', sortBy) }, [sortBy])
+  useEffect(() => { if (prefsLoadedRef.current) savePrefs('sortDir', sortDir) }, [sortDir])
+  useEffect(() => { if (prefsLoadedRef.current) savePrefs('viewMode', viewMode) }, [viewMode])
+  useEffect(() => { if (prefsLoadedRef.current) savePrefs('showList', showEquipmentList) }, [showEquipmentList])
+  useEffect(() => { if (prefsLoadedRef.current) savePrefs('mapHeight', mapHeight) }, [mapHeight])
+  useEffect(() => { if (prefsLoadedRef.current) savePrefs('clusterEnabled', clusterEnabled) }, [clusterEnabled])
+  useEffect(() => { if (prefsLoadedRef.current) savePrefs('refreshInterval', refreshInterval) }, [refreshInterval])
 
   // ─── #91 URL state sync ───────────────────────────────────
   useEffect(() => {
