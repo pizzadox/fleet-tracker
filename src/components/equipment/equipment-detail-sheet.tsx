@@ -110,7 +110,7 @@ export function AssignEmployeeSelect({ eqId, assignedIds, onAssigned }: { eqId: 
   )
 }
 
-export function EquipmentDetailSheet({ open, onOpenChange, equipment, loading, detailTab, setDetailTab, companies, photoCategoryFilter, setPhotoCategoryFilter, fullPhoto, setFullPhoto, onEdit, onDelete, onAddRepair, onUploadPhoto, onRefresh, onOpenRepairDetail, onAddTrip, onOpenTripDetail, allEquipment, onRefreshAll }: {
+export function EquipmentDetailSheet({ open, onOpenChange, equipment, loading, detailTab, setDetailTab, companies, photoCategoryFilter, setPhotoCategoryFilter, fullPhoto, setFullPhoto, onEdit, onDelete, onAddRepair, onUploadPhoto, onRefresh, onRefreshSilent, onOpenRepairDetail, onAddTrip, onOpenTripDetail, allEquipment, onRefreshAll }: {
   open: boolean; onOpenChange: (v: boolean) => void;
   equipment: Equipment | null; loading: boolean;
   detailTab: string; setDetailTab: (v: string) => void;
@@ -119,7 +119,7 @@ export function EquipmentDetailSheet({ open, onOpenChange, equipment, loading, d
   fullPhoto: string | null; setFullPhoto: (v: string | null) => void;
   onEdit: (eq: Equipment) => void; onDelete: (eq: Equipment) => void;
   onAddRepair: (eqId: string) => void; onUploadPhoto: (eqId: string) => void;
-  onRefresh: () => void; onOpenRepairDetail: (r: Repair) => void;
+  onRefresh: () => void; onRefreshSilent?: () => void; onOpenRepairDetail: (r: Repair) => void;
   onAddTrip: (eqId: string) => void; onOpenTripDetail: (t: Trip, focusTrack?: boolean) => void;
   allEquipment: Equipment[]; onRefreshAll: () => void;
 }) {
@@ -1598,11 +1598,11 @@ export function EquipmentDetailSheet({ open, onOpenChange, equipment, loading, d
                                     const data = await res.json()
                                     if (data.synced !== undefined) toast.success(`Синхронизация: ${data.synced} из ${data.totalTrackers}`)
                                     else toast.error(data.error || 'Ошибка')
-                                    onRefresh()
+                                    ;(onRefreshSilent || onRefresh)()
                                     onRefreshAll()
                                   } catch { toast.error('Ошибка') }
                                 }}><RefreshCw className="size-3" />Синхронизировать</Button>
-                                <Button size="sm" variant="outline" className="h-7 text-[11px] gap-1" onClick={() => { onRefresh(); onRefreshAll() }}><Activity className="size-3" />Обновить</Button>
+                                <Button size="sm" variant="outline" className="h-7 text-[11px] gap-1" onClick={() => { (onRefreshSilent || onRefresh)(); onRefreshAll() }}><Activity className="size-3" />Обновить</Button>
                                 <div className="flex-1" />
                                 <Button size="icon" variant="ghost" className="size-6 text-muted-foreground hover:text-destructive" onClick={() => {
                                   if (confirm('Отключить трекер от этой техники?')) {
