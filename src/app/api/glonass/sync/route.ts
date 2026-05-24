@@ -1,10 +1,13 @@
 import { db } from '@/lib/db'
-import { NextResponse } from 'next/server'
+import { NextRequest, NextResponse } from 'next/server'
 
 // ═══════════════════════════════════════════════════════════════
 // Axenta.cloud API Integration
 // Documentation: https://axenta.cloud/api-docs/
 // OpenAPI spec: https://axenta.cloud/api-docs/openapi.yaml
+//
+// OPTIMIZED: Parallel tracker processing, bulk createMany,
+// optional fast mode (skip geocode/stats), returns updated data.
 // ═══════════════════════════════════════════════════════════════
 
 // Get a valid token — re-login if needed
@@ -15,7 +18,6 @@ async function getValidToken(settings: {
   username: string | null
   password: string | null
 }): Promise<string | null> {
-  // First try the existing token via /api/current_user/
   try {
     const testUrl = `${settings.apiUrl}/api/current_user/`
     const testResponse = await fetch(testUrl, {
@@ -30,7 +32,6 @@ async function getValidToken(settings: {
       return settings.apiKey
     }
 
-    // If token is invalid, try to re-login
     if ((testResponse.status === 401 || testResponse.status === 403) && settings.username && settings.password) {
       console.log('[GLONASS Sync] Token expired, re-logging in...')
       const loginUrl = `${settings.apiUrl}/api/auth/login/`
@@ -47,7 +48,6 @@ async function getValidToken(settings: {
       if (loginResponse.ok) {
         const loginData = await loginResponse.json()
         const newToken = loginData.token || ''
-
         if (newToken) {
           await db.axentaSettings.update({
             where: { id: settings.id },
@@ -67,7 +67,6 @@ async function getValidToken(settings: {
 }
 
 // Fetch monitoring data from Axenta for all trackers
-// Uses: GET /api/objects/monitoring/
 async function fetchMonitoringData(apiUrl: string, token: string, objectIds?: number[]) {
   const url = new URL(`${apiUrl}/api/objects/monitoring/`)
   if (objectIds && objectIds.length > 0) {
@@ -91,7 +90,6 @@ async function fetchMonitoringData(apiUrl: string, token: string, objectIds?: nu
 }
 
 // Fetch object details from Axenta
-// Uses: GET /api/objects/{id}/?full=true
 async function fetchObjectDetails(apiUrl: string, token: string, objectId: number) {
   const url = `${apiUrl}/api/objects/${objectId}/?full=true`
   const response = await fetch(url, {
@@ -110,7 +108,6 @@ async function fetchObjectDetails(apiUrl: string, token: string, objectId: numbe
 }
 
 // Fetch sensors for an object
-// Uses: GET /api/objects/{id}/sensors/
 async function fetchObjectSensors(apiUrl: string, token: string, objectId: number) {
   const url = `${apiUrl}/api/objects/${objectId}/sensors/`
   const response = await fetch(url, {
@@ -129,7 +126,6 @@ async function fetchObjectSensors(apiUrl: string, token: string, objectId: numbe
 }
 
 // Fetch stats for an object
-// Uses: POST /api/objects/stats/
 async function fetchObjectStats(apiUrl: string, token: string, objectId: number, startDate: string, endDate: string) {
   const url = `${apiUrl}/api/objects/stats/`
   const response = await fetch(url, {
@@ -154,7 +150,6 @@ async function fetchObjectStats(apiUrl: string, token: string, objectId: number,
 }
 
 // Reverse geocode coordinates
-// Uses: POST /api/geocoding/reverse/
 async function reverseGeocode(apiUrl: string, token: string, lat: number, lng: number): Promise<string | null> {
   try {
     const url = `${apiUrl}/api/geocoding/reverse/`
@@ -186,28 +181,43 @@ async function reverseGeocode(apiUrl: string, token: string, lat: number, lng: n
 const ONLINE_THRESHOLD_MINUTES = 30
 
 // Update tracker data from Axenta monitoring/web response
-// Uses fetchObjectDetails (full=true) to get sensor values from lastMessage.sensors
-async function updateTrackerFromAxenta(trackerDbId: string, axentaObject: Record<string, unknown>, token: string, apiUrl: string) {
+// OPTIMIZED: Parallel details+sensors fetch, bulk createMany for sensors
+async function updateTrackerFromAxenta(
+  trackerDbId: string,
+  axentaObject: Record<string, unknown>,
+  token: string,
+  apiUrl: string,
+  fastMode: boolean = false
+) {
   const updateData: Record<string, unknown> = {}
-
   const axentaId = axentaObject.id as number
 
-  // ── Step 1: Fetch FULL object details to get sensor values ──
-  // The monitoring API only has position data, but /api/objects/{id}/?full=true
-  // includes lastMessage.sensors with actual sensor values like:
-  // { "sensor_2287338": 486.06, "sensor_2287340": 28.07 }
+  // ── Step 1: Fetch FULL object details + sensors IN PARALLEL ──
   let fullObjectData: Record<string, unknown> | null = null
   let sensorValuesMap: Record<string, number | null> = {}
+  let sensorsRaw: unknown[] = []
 
   if (axentaId != null) {
-    try {
-      fullObjectData = await fetchObjectDetails(apiUrl, token, axentaId)
+    // PARALLEL: fetch details and sensors at the same time
+    const [detailsResult, sensorsResult] = await Promise.allSettled([
+      fetchObjectDetails(apiUrl, token, axentaId),
+      fetchObjectSensors(apiUrl, token, axentaId),
+    ])
+
+    if (detailsResult.status === 'fulfilled') {
+      fullObjectData = detailsResult.value
       const fullLastMsg = fullObjectData?.lastMessage as Record<string, unknown> | undefined
       if (fullLastMsg?.sensors && typeof fullLastMsg.sensors === 'object') {
         sensorValuesMap = fullLastMsg.sensors as Record<string, number | null>
       }
-    } catch (err) {
-      console.error(`[GLONASS Sync] Error fetching full details for object ${axentaId}:`, err)
+    } else {
+      console.error(`[GLONASS Sync] Error fetching details for object ${axentaId}:`, detailsResult.reason)
+    }
+
+    if (sensorsResult.status === 'fulfilled') {
+      sensorsRaw = Array.isArray(sensorsResult.value) ? sensorsResult.value : []
+    } else {
+      console.error(`[GLONASS Sync] Error fetching sensors for object ${axentaId}:`, sensorsResult.reason)
     }
   }
 
@@ -218,25 +228,20 @@ async function updateTrackerFromAxenta(trackerDbId: string, axentaObject: Record
   const lastMessage = dataSource.lastMessage as Record<string, unknown> | undefined
   const pos = lastMessage?.pos as Record<string, unknown> | undefined
 
-  // Position: pos.x = longitude, pos.y = latitude (Axenta convention)
   if (pos) {
     if (pos.y != null) updateData.lastLatitude = Number(pos.y)
     if (pos.x != null) updateData.lastLongitude = Number(pos.x)
     if (pos.z != null) updateData.lastAltitude = Number(pos.z)
-    if (pos.s != null) updateData.lastSpeed = Number(pos.s)  // speed in km/h
-    if (pos.c != null) updateData.lastCourse = Number(pos.c)  // course in degrees
+    if (pos.s != null) updateData.lastSpeed = Number(pos.s)
+    if (pos.c != null) updateData.lastCourse = Number(pos.c)
   }
 
-  // Time fields from lastMessage
   if (lastMessage) {
     if (lastMessage.t) updateData.lastPositionAt = new Date(lastMessage.t as string)
     if (lastMessage.tpos) updateData.lastSeenAt = new Date(lastMessage.tpos as string)
   }
 
   // ── Step 3: Determine online/offline status ──
-  // Use time-based logic: if the tracker sent data within the threshold, it's online.
-  // connectedStatus only reflects real-time TCP connection, which is often false
-  // even for actively moving vehicles (GSM trackers don't maintain persistent connections).
   const lastPositionTime = lastMessage?.tpos ? new Date(lastMessage.tpos as string) : null
   const lastMessageTime = lastMessage?.t ? new Date(lastMessage.t as string) : null
   const mostRecentTime = lastPositionTime && lastMessageTime
@@ -247,118 +252,112 @@ async function updateTrackerFromAxenta(trackerDbId: string, axentaObject: Record
     const minutesSinceLastSeen = (Date.now() - mostRecentTime.getTime()) / 60000
     updateData.isActive = minutesSinceLastSeen < ONLINE_THRESHOLD_MINUTES
   } else if (dataSource.connectedStatus != null) {
-    // Fallback: use connectedStatus if no time data available
     updateData.isActive = Boolean(dataSource.connectedStatus)
   }
 
   // ── Step 4: Parse isIgnition / isMotion from monitoring data ──
-  // These fields come from the monitoring API, not from full details
   if (axentaObject.isIgnition != null) {
     updateData.lastIgnition = Boolean(axentaObject.isIgnition)
   }
 
-  // ── Step 5: Fetch sensor metadata and map values ──
-  if (axentaId != null) {
-    try {
-      const sensors = await fetchObjectSensors(apiUrl, token, axentaId)
-      if (Array.isArray(sensors)) {
-        // Delete old sensor data before saving new ones (avoid duplicates)
-        await db.glonassSensorData.deleteMany({
-          where: { trackerId: trackerDbId }
-        })
+  // ── Step 5: Process sensor data with BULK createMany ──
+  if (sensorsRaw.length > 0) {
+    // Delete old sensor data before saving new ones
+    await db.glonassSensorData.deleteMany({
+      where: { trackerId: trackerDbId }
+    })
 
-        let totalFuel = 0
-        let hasFuelSensor = false
+    let totalFuel = 0
+    let hasFuelSensor = false
+    const sensorCreates: Array<{
+      trackerId: string
+      sensorType: string
+      sensorName: string | null
+      value: number | null
+      stringValue: string | null
+      unit: string | null
+      timestamp: Date
+    }> = []
 
-        for (const sensor of sensors) {
-          const s = sensor as Record<string, unknown>
-          const sensorType = String(s.type || '').toLowerCase()
-          const sensorName = String(s.name || '')
-          const sensorApiId = s.id as number | undefined
+    for (const sensor of sensorsRaw) {
+      const s = sensor as Record<string, unknown>
+      const sensorType = String(s.type || '').toLowerCase()
+      const sensorName = String(s.name || '')
+      const sensorApiId = s.id as number | undefined
 
-          // Look up the actual value from sensorValuesMap
-          // The map uses keys like "sensor_2287338" where 2287338 is the sensor ID
-          let sensorValue: number | null = null
-          if (sensorApiId != null && sensorValuesMap[`sensor_${sensorApiId}`] != null) {
-            sensorValue = sensorValuesMap[`sensor_${sensorApiId}`]
-          }
+      let sensorValue: number | null = null
+      if (sensorApiId != null && sensorValuesMap[`sensor_${sensorApiId}`] != null) {
+        sensorValue = sensorValuesMap[`sensor_${sensorApiId}`]
+      }
 
-          // Build display string
-          let sensorStringValue: string | null = null
-          if (sensorValue != null) {
-            const unit = s.unit ? String(s.unit) : ''
-            sensorStringValue = unit ? `${sensorValue} ${unit}` : String(sensorValue)
-          }
+      let sensorStringValue: string | null = null
+      if (sensorValue != null) {
+        const unit = s.unit ? String(s.unit) : ''
+        sensorStringValue = unit ? `${sensorValue} ${unit}` : String(sensorValue)
+      }
 
-          // Map Axenta sensor types to our tracker fields
-          // IMPORTANT: Only use fuel_level_sensor and custom_sensor(бак) for tank fuel level
-          // absolute_fuel_impulse_sensor gives total consumed since manufacture — NOT tank level
-          if ((sensorType === 'fuel_level_sensor' || (sensorType === 'custom_sensor' && sensorName.toLowerCase().includes('бак')) || (sensorType.includes('fuel') && !sensorType.includes('impulse') && !sensorType.includes('absolute')))) {
-            // Fuel level sensor (tank level)
-            if (sensorValue != null) {
-              totalFuel += sensorValue
-              hasFuelSensor = true
-            }
-          } else if (sensorType.includes('ignition') || sensorName.toLowerCase().includes('зажиган')) {
-            // Ignition sensor — use value to determine state
-            if (sensorValue != null) {
-              updateData.lastIgnition = sensorValue > 0
-            }
-          } else if (sensorType.includes('temperature') || sensorType.includes('temp') || sensorName.toLowerCase().includes('темпер')) {
-            if (sensorValue != null) {
-              updateData.lastEngineTemp = sensorValue
-            }
-          } else if (sensorType.includes('odometer') || sensorType.includes('mileage') || sensorName.toLowerCase().includes('пробег')) {
-            if (sensorValue != null) {
-              updateData.lastMileage = sensorValue
-            }
-          } else if (sensorType.includes('voltage') || sensorName.toLowerCase().includes('напряжен')) {
-            // Voltage sensor — just save as sensor data, no special tracker field
-          }
-
-          // Save sensor data with actual values
-          await db.glonassSensorData.create({
-            data: {
-              trackerId: trackerDbId,
-              sensorType: String(s.type || 'custom'),
-              sensorName: s.name ? String(s.name) : null,
-              value: sensorValue,
-              stringValue: sensorStringValue,
-              unit: s.unit ? String(s.unit) : null,
-              timestamp: new Date(),
-            }
-          }).catch(() => { /* ignore duplicate errors */ })
+      // Map Axenta sensor types to our tracker fields
+      if ((sensorType === 'fuel_level_sensor' || (sensorType === 'custom_sensor' && sensorName.toLowerCase().includes('бак')) || (sensorType.includes('fuel') && !sensorType.includes('impulse') && !sensorType.includes('absolute')))) {
+        if (sensorValue != null) {
+          totalFuel += sensorValue
+          hasFuelSensor = true
         }
-
-        // Set total fuel level if any fuel sensors reported values
-        if (hasFuelSensor) {
-          updateData.lastFuelLevel = totalFuel
+      } else if (sensorType.includes('ignition') || sensorName.toLowerCase().includes('зажиган')) {
+        if (sensorValue != null) {
+          updateData.lastIgnition = sensorValue > 0
+        }
+      } else if (sensorType.includes('temperature') || sensorType.includes('temp') || sensorName.toLowerCase().includes('темпер')) {
+        if (sensorValue != null) {
+          updateData.lastEngineTemp = sensorValue
+        }
+      } else if (sensorType.includes('odometer') || sensorType.includes('mileage') || sensorName.toLowerCase().includes('пробег')) {
+        if (sensorValue != null) {
+          updateData.lastMileage = sensorValue
         }
       }
-    } catch (err) {
-      console.error(`[GLONASS Sync] Error fetching sensors for object ${axentaId}:`, err)
+
+      // Collect for bulk insert
+      sensorCreates.push({
+        trackerId: trackerDbId,
+        sensorType: String(s.type || 'custom'),
+        sensorName: s.name ? String(s.name) : null,
+        value: sensorValue,
+        stringValue: sensorStringValue,
+        unit: s.unit ? String(s.unit) : null,
+        timestamp: new Date(),
+      })
+    }
+
+    // BULK insert all sensors at once — much faster than individual creates
+    if (sensorCreates.length > 0) {
+      await db.glonassSensorData.createMany({
+        data: sensorCreates,
+        skipDuplicates: true,
+      })
+    }
+
+    if (hasFuelSensor) {
+      updateData.lastFuelLevel = totalFuel
     }
   }
 
-  // ── Step 6: Try to get object stats for today ──
-  if (axentaId != null) {
+  // ── Step 6: Stats (SKIP in fast mode) ──
+  if (!fastMode && axentaId != null) {
     try {
       const now = new Date()
       const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate()).toISOString()
       const stats = await fetchObjectStats(apiUrl, token, axentaId, startOfDay, now.toISOString())
       if (stats) {
-        // Only use stats if we don't already have values from sensors
         if (stats.mileage != null && updateData.lastMileage == null) updateData.lastMileage = Number(stats.mileage)
         if (stats.avgSpeed != null && updateData.lastSpeed == null) updateData.lastSpeed = Number(stats.avgSpeed)
-        // Do NOT use stats.fuelConsumption as fuelLevel — it's total consumed, not tank level
       }
     } catch {
       // Stats are optional, continue
     }
   }
 
-  // ── Step 7: Try reverse geocoding for current position ──
-  if (updateData.lastLatitude != null && updateData.lastLongitude != null) {
+  // ── Step 7: Reverse geocoding (SKIP in fast mode) ──
+  if (!fastMode && updateData.lastLatitude != null && updateData.lastLongitude != null) {
     const address = await reverseGeocode(
       apiUrl, token,
       Number(updateData.lastLatitude),
@@ -394,9 +393,14 @@ async function updateTrackerFromAxenta(trackerDbId: string, axentaObject: Record
 
 // ═══════════════════════════════════════════════════════════════
 // MAIN SYNC ENDPOINT
+// Supports ?fast=true query param for fast mode (skip geocode/stats)
+// Processes trackers in PARALLEL with concurrency limit.
 // ═══════════════════════════════════════════════════════════════
 
-export async function POST() {
+export async function POST(request: NextRequest) {
+  const fastMode = new URL(request.url).searchParams.get('fast') === 'true'
+  const startTime = Date.now()
+
   try {
     const settings = await db.axentaSettings.findFirst()
     if (!settings || !settings.isActive) {
@@ -407,7 +411,6 @@ export async function POST() {
       return NextResponse.json({ error: 'API URL не задан' }, { status: 400 })
     }
 
-    // Get a valid token (will re-login if expired)
     const token = await getValidToken(settings)
     if (!token) {
       return NextResponse.json({ error: 'Не удалось получить токен авторизации. Проверьте логин и пароль.' }, { status: 401 })
@@ -416,8 +419,6 @@ export async function POST() {
     const trackers = await db.glonassTracker.findMany()
 
     if (trackers.length === 0) {
-      // Even with no linked trackers, try to fetch all objects from Axenta
-      // to show available objects for linking
       try {
         const monitoringData = await fetchMonitoringData(settings.apiUrl, token)
         const objectsCount = Array.isArray(monitoringData) ? monitoringData.length :
@@ -447,13 +448,10 @@ export async function POST() {
     let errorCount = 0
     const errors: string[] = []
 
-    // Build lookup maps for trackers:
-    // 1. By axentaCloudId (primary)
-    // 2. By trackerId matching Axenta object ID
-    // 3. By trackerName matching Axenta object name
-    const trackerByAxentaId = new Map<string, typeof trackers[0]>() // axentaCloudId -> tracker
-    const trackerByTrackerId = new Map<string, typeof trackers[0]>() // trackerId -> tracker
-    const trackerByName = new Map<string, typeof trackers[0]>() // trackerName -> tracker
+    // Build lookup maps for trackers
+    const trackerByAxentaId = new Map<string, typeof trackers[0]>()
+    const trackerByTrackerId = new Map<string, typeof trackers[0]>()
+    const trackerByName = new Map<string, typeof trackers[0]>()
 
     for (const tracker of trackers) {
       if (tracker.axentaCloudId) {
@@ -465,8 +463,7 @@ export async function POST() {
       }
     }
 
-    // Fetch ALL monitoring data from Axenta (not filtered by IDs)
-    // This ensures we can match trackers by name even without axentaCloudId
+    // Fetch ALL monitoring data from Axenta (one bulk request)
     try {
       const monitoringData = await fetchMonitoringData(settings.apiUrl, token)
       const objects = Array.isArray(monitoringData) ? monitoringData :
@@ -474,17 +471,16 @@ export async function POST() {
 
       const matchedTrackerIds = new Set<string>()
 
+      // OPTIMIZATION: Process trackers in PARALLEL with concurrency limit
+      const CONCURRENCY = 5
+      const matchedPairs: Array<{ tracker: typeof trackers[0]; axentaObj: Record<string, unknown> }> = []
+
       for (const obj of objects) {
         const axentaObj = obj as Record<string, unknown>
         const axentaId = String(axentaObj.id)
         const axentaName = String(axentaObj.name || '')
         const axentaUniqueId = String(axentaObj.uniqueId || '')
 
-        // Try to find matching tracker by:
-        // 1. axentaCloudId (exact match)
-        // 2. trackerId matching Axenta object ID
-        // 3. trackerId matching Axenta uniqueId
-        // 4. trackerName matching Axenta object name
         let matchedTracker = trackerByAxentaId.get(axentaId) ||
           trackerByTrackerId.get(axentaId) ||
           trackerByTrackerId.get(axentaUniqueId)
@@ -500,17 +496,29 @@ export async function POST() {
               where: { id: matchedTracker.id },
               data: { axentaCloudId: axentaId }
             })
-            console.log(`[GLONASS Sync] Updated axentaCloudId for tracker ${matchedTracker.trackerId} -> ${axentaId}`)
           }
+          matchedPairs.push({ tracker: matchedTracker, axentaObj })
+        }
+      }
 
-          try {
-            await updateTrackerFromAxenta(matchedTracker.id, axentaObj, token, settings.apiUrl)
+      // Process matched trackers in PARALLEL chunks
+      for (let i = 0; i < matchedPairs.length; i += CONCURRENCY) {
+        const chunk = matchedPairs.slice(i, i + CONCURRENCY)
+        const results = await Promise.allSettled(
+          chunk.map(({ tracker, axentaObj }) =>
+            updateTrackerFromAxenta(tracker.id, axentaObj, token, settings.apiUrl, fastMode)
+          )
+        )
+
+        for (let j = 0; j < results.length; j++) {
+          const result = results[j]
+          if (result.status === 'fulfilled') {
             syncedCount++
-            matchedTrackerIds.add(matchedTracker.id)
-          } catch (err) {
+            matchedTrackerIds.add(chunk[j].tracker.id)
+          } else {
             errorCount++
-            const msg = err instanceof Error ? err.message : 'Unknown error'
-            errors.push(`Объект ${axentaId}: ${msg}`)
+            const msg = result.reason instanceof Error ? result.reason.message : 'Unknown error'
+            errors.push(`Объект ${chunk[j].axentaObj.id}: ${msg}`)
           }
         }
       }
@@ -536,7 +544,7 @@ export async function POST() {
           }
 
           const objectData = await fetchObjectDetails(settings.apiUrl, token, numericId)
-          await updateTrackerFromAxenta(tracker.id, objectData, token, settings.apiUrl)
+          await updateTrackerFromAxenta(tracker.id, objectData, token, settings.apiUrl, fastMode)
           syncedCount++
         } catch (err2) {
           errorCount++
@@ -552,6 +560,9 @@ export async function POST() {
       data: { lastSyncAt: new Date() }
     })
 
+    const elapsed = Date.now() - startTime
+    console.log(`[GLONASS Sync] Completed in ${elapsed}ms (${fastMode ? 'fast' : 'full'} mode, ${syncedCount} synced, ${errorCount} errors)`)
+
     return NextResponse.json({
       success: true,
       synced: syncedCount,
@@ -559,6 +570,8 @@ export async function POST() {
       errorDetails: errors,
       totalTrackers: trackers.length,
       syncedAt: new Date().toISOString(),
+      elapsedMs: elapsed,
+      mode: fastMode ? 'fast' : 'full',
     })
   } catch (error) {
     console.error('Error syncing with Axenta.cloud:', error)

@@ -18,6 +18,7 @@ import {
 import type { Company } from '@/lib/types'
 import { COMPANY_TYPES } from '@/lib/constants'
 import { formatDate, downloadCSV, useDebounce, copyToClipboard } from '@/lib/utils'
+import { PanelSection, PanelConfigContext, PanelManagerDialog, PanelManagerButton, useTabPanels } from '@/components/panels'
 
 // ═══════════════════════════════════════════════════════════════
 // COMPANIES TAB — 15 improvements (#1-15)
@@ -40,6 +41,7 @@ export const CompaniesTab = React.memo(function CompaniesTab({ companies, onAdd,
   // #2 Detail view
   const [detailCompany, setDetailCompany] = useState<Company | null>(null)
   const [detailOpen, setDetailOpen] = useState(false)
+  const { panelConfig, panelManagerOpen, setPanelManagerOpen, contextValue } = useTabPanels('companies')
 
   const toggleSort = (field: SortField) => {
     if (sortField === field) setSortDir(d => d === 'asc' ? 'desc' : 'asc')
@@ -134,8 +136,10 @@ export const CompaniesTab = React.memo(function CompaniesTab({ companies, onAdd,
   )
 
   return (
-    <div className="space-y-3">
+    <PanelConfigContext.Provider value={contextValue}>
+    <div className="flex flex-col gap-3">
       {/* #6 Stats header */}
+      <PanelSection panelKey="comp_stats">
       <div className="grid grid-cols-3 gap-2">
         <Card className="border-0 shadow-none bg-emerald-50 dark:bg-emerald-950/20">
           <CardContent className="p-2.5 flex items-center gap-2">
@@ -156,8 +160,10 @@ export const CompaniesTab = React.memo(function CompaniesTab({ companies, onAdd,
           </CardContent>
         </Card>
       </div>
+      </PanelSection>
 
       {/* Search + #1 Type filter + actions */}
+      <PanelSection panelKey="comp_actions" noCollapse>
       <div className="flex flex-col sm:flex-row gap-2">
         <div className="relative flex-1">
           <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 size-3.5 text-muted-foreground" />
@@ -174,8 +180,11 @@ export const CompaniesTab = React.memo(function CompaniesTab({ companies, onAdd,
         <Button variant="outline" size="sm" className="h-9 px-2 active:scale-95 transition-transform" onClick={handleExport} title="Экспорт CSV" aria-label="Экспорт CSV">
           <FileDown className="size-3.5" />
         </Button>
+        <PanelManagerButton panelConfig={panelConfig} onClick={() => setPanelManagerOpen(true)} />
       </div>
+      </PanelSection>
 
+      <PanelSection panelKey="comp_list" noCollapse>
       <p className="text-xs text-muted-foreground">Найдено: {filtered.length}</p>
 
       {filtered.length === 0 ? (
@@ -309,6 +318,8 @@ export const CompaniesTab = React.memo(function CompaniesTab({ companies, onAdd,
         </>
       )}
 
+      </PanelSection>
+
       {/* #2 Detail sheet */}
       <Sheet open={detailOpen} onOpenChange={setDetailOpen}>
         <SheetContent className="w-full sm:max-w-xl p-0 flex flex-col">
@@ -394,5 +405,7 @@ export const CompaniesTab = React.memo(function CompaniesTab({ companies, onAdd,
         </SheetContent>
       </Sheet>
     </div>
+    <PanelManagerDialog open={panelManagerOpen} onOpenChange={setPanelManagerOpen} tabKey="companies" tabLabel="Компании" panelConfig={panelConfig} />
+    </PanelConfigContext.Provider>
   )
 })

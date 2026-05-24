@@ -18,6 +18,7 @@ import {
 import type { Repair, Equipment } from '@/lib/types'
 import { REPAIR_STATUS_MAP, REPAIR_PRIORITY_MAP, REPAIR_TYPE_MAP } from '@/lib/constants'
 import { formatDate, formatDateTime, formatPrice, statusBadge, getStageProgress, downloadCSV, PaginationControls, useDebounce } from '@/lib/utils'
+import { PanelSection, PanelConfigContext, PanelManagerDialog, PanelManagerButton, useTabPanels } from '@/components/panels'
 
 // ═══════════════════════════════════════════════════════════════
 // REPAIRS TAB
@@ -43,6 +44,7 @@ export const RepairsTab = React.memo(function RepairsTab({ repairs, equipment, o
   const debouncedSearch = useDebounce(search, 300)
   const [page, setPage] = useState(1)
   const PAGE_SIZE = 20
+  const { panelConfig, panelManagerOpen, setPanelManagerOpen, contextValue } = useTabPanels('repairs')
 
   const filtered = useMemo(() => {
     let result = repairs.filter(r => {
@@ -140,8 +142,9 @@ export const RepairsTab = React.memo(function RepairsTab({ repairs, equipment, o
   )
 
   return (
-    <div className="space-y-3">
+    <PanelConfigContext.Provider value={contextValue}><div className="flex flex-col gap-3">
       {/* Statistics dashboard */}
+      <PanelSection panelKey="rep_stats">
       {filtered.length > 0 && (
         <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
           <Card className="border-0 shadow-none bg-muted/30 py-2"><CardContent className="p-2 text-center"><p className="text-[10px] text-muted-foreground">Всего</p><p className="text-sm font-bold">{filtered.length}</p></CardContent></Card>
@@ -153,7 +156,10 @@ export const RepairsTab = React.memo(function RepairsTab({ repairs, equipment, o
         </div>
       )}
 
+      </PanelSection>
+
       {/* Top repaired equipment */}
+      <PanelSection panelKey="rep_top_repaired">
       {topRepaired.length > 0 && (
         <div className="flex items-center gap-2 text-[10px] text-muted-foreground">
           <span>Чаще в ремонте:</span>
@@ -164,6 +170,9 @@ export const RepairsTab = React.memo(function RepairsTab({ repairs, equipment, o
         </div>
       )}
 
+      </PanelSection>
+
+      <PanelSection panelKey="rep_filters" noCollapse>
       <div className="flex flex-col sm:flex-row gap-2">
         <div className="relative flex-1">
           <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 size-3.5 text-muted-foreground" />
@@ -198,12 +207,16 @@ export const RepairsTab = React.memo(function RepairsTab({ repairs, equipment, o
           </SelectContent>
         </Select>
         <Button onClick={() => onAdd()} size="sm" className="h-9 gap-1.5 active:scale-95 transition-transform"><Plus className="size-3.5" />Добавить</Button>
+        <PanelManagerButton panelConfig={panelConfig} onClick={() => setPanelManagerOpen(true)} />
         <Button variant="outline" size="sm" className="h-9 px-2 active:scale-95 transition-transform" onClick={() => downloadCSV(filtered.map(r => ({ Описание: r.description, Причина: r.reason || '', Техника: r.equipment?.name || '', Статус: REPAIR_STATUS_MAP[r.status]?.label || r.status, Приоритет: REPAIR_PRIORITY_MAP[r.priority]?.label || '', Тип: REPAIR_TYPE_MAP[r.repairType]?.label || '', 'Дата начала': formatDate(r.startDate), 'Дата окончания': formatDate(r.endDate), Стоимость: r.cost || 0, Подрядчик: r.contractor || '' })), 'repairs')} title="Экспорт CSV" aria-label="Экспорт CSV">
           <FileDown className="size-3.5" />
         </Button>
       </div>
 
+      </PanelSection>
+
       {/* Quick filters */}
+      <PanelSection panelKey="rep_quick_filters">
       <div className="flex flex-wrap gap-1.5">
         <button onClick={() => setQuickFilter('all')} className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium transition-colors ${quickFilter === 'all' ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground hover:bg-muted/80'}`}>Все</button>
         <button onClick={() => setQuickFilter('overdue')} className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium transition-colors ${quickFilter === 'overdue' ? 'bg-red-600 text-white' : 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-400 hover:bg-red-200'}`}><AlertTriangle className="size-2.5" />Просроченные</button>
@@ -219,7 +232,10 @@ export const RepairsTab = React.memo(function RepairsTab({ repairs, equipment, o
         </div>
       </div>
 
+      </PanelSection>
+
       {/* Batch actions */}
+      <PanelSection panelKey="rep_list" noCollapse>
       {selectedIds.size > 0 && (
         <div className="flex items-center gap-2 p-2 rounded-md border bg-muted/50">
           <span className="text-xs font-medium">Выбрано: {selectedIds.size}</span>
@@ -425,7 +441,15 @@ export const RepairsTab = React.memo(function RepairsTab({ repairs, equipment, o
       {filtered.length > PAGE_SIZE && (
         <PaginationControls page={page} totalPages={Math.ceil(filtered.length / PAGE_SIZE)} total={filtered.length} pageSize={PAGE_SIZE} onPageChange={setPage} />
       )}
-    </div>
+      </PanelSection>
+      <PanelManagerDialog
+        open={panelManagerOpen}
+        onOpenChange={setPanelManagerOpen}
+        tabKey="repairs"
+        tabLabel="Ремонты"
+        panelConfig={panelConfig}
+      />
+    </div></PanelConfigContext.Provider>
   )
 })
 

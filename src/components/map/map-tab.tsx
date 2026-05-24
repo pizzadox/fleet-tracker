@@ -159,6 +159,7 @@ export const MapTab = React.memo(function MapTab({ equipment, onSync, onOpenDeta
 }) {
   // ─── Core state (existing) ────────────────────────────────
   const [syncing, setSyncing] = useState(false)
+  const [quickSyncingIds, setQuickSyncingIds] = useState<Set<string>>(new Set())
   const [refreshInterval, setRefreshInterval] = useState<ReturnType<typeof REFRESH_OPTIONS[number]['value']>>(60)
   const [filter, setFilter] = useState<'all' | 'online' | 'offline' | 'notracker'>('all')
   const [subTab, setSubTab] = useState<'map' | 'notifications'>('map')
@@ -777,6 +778,33 @@ export const MapTab = React.memo(function MapTab({ equipment, onSync, onOpenDeta
       card.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
     }
   }, [])
+
+  // ─── Quick sync: refresh sensors for a single tracker ────
+  const quickSyncTracker = useCallback(async (trackerId: string) => {
+    setQuickSyncingIds(prev => new Set(prev).add(trackerId))
+    try {
+      const res = await fetch('/api/glonass/quick-sync', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ trackerId }),
+      })
+      if (res.ok) {
+        const data = await res.json()
+        if (data.synced > 0) {
+          // Refresh equipment data to reflect updated sensors
+          await onSync()
+        }
+      }
+    } catch {
+      // Silent fail for quick sync
+    } finally {
+      setQuickSyncingIds(prev => {
+        const next = new Set(prev)
+        next.delete(trackerId)
+        return next
+      })
+    }
+  }, [onSync])
 
   // ─── #36 Track playback animation ─────────────────────────
   useEffect(() => {
@@ -1719,6 +1747,15 @@ ${trackPoints.map(p => `    <trkpt lat="${p.lat}" lon="${p.lng}"></trkpt>`).join
                                 </TooltipTrigger>
                                 <TooltipContent>Центрировать на карте</TooltipContent>
                               </Tooltip>
+                              {/* Quick sensor refresh button */}
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <Button size="sm" variant="ghost" className="h-6 w-6 p-0" disabled={quickSyncingIds.has(t.id)} onClick={() => quickSyncTracker(t.id)} aria-label="Обновить датчики">
+                                    {quickSyncingIds.has(t.id) ? <Loader2 className="size-3 animate-spin" /> : <RefreshCw className="size-3" />}
+                                  </Button>
+                                </TooltipTrigger>
+                                <TooltipContent>Обновить датчики</TooltipContent>
+                              </Tooltip>
                             </div>
 
                             {viewMode === 'expanded' && (
@@ -1792,7 +1829,10 @@ ${trackPoints.map(p => `    <trkpt lat="${p.lat}" lon="${p.lng}"></trkpt>`).join
                                 <span className={movement.color + ' flex items-center gap-0.5'}>{movement.icon}</span>
                                 {t.lastSpeed != null && <span className="font-medium">{t.lastSpeed} км/ч</span>}
                                 {t.lastFuelLevel != null && <span><Fuel className="size-2 inline" />{t.lastFuelLevel}л</span>}
-                                {t.lastSeenAt && <span className="text-muted-foreground ml-auto">{formatRelativeTime(t.lastSeenAt)}</span>}
+                                {t.lastSeenAt && <span className="text-muted-foreground">{formatRelativeTime(t.lastSeenAt)}</span>}
+                                <button className="text-muted-foreground hover:text-foreground ml-auto shrink-0 disabled:opacity-50" disabled={quickSyncingIds.has(t.id)} onClick={() => quickSyncTracker(t.id)} aria-label="Обновить датчики">
+                                  {quickSyncingIds.has(t.id) ? <Loader2 className="size-2.5 animate-spin" /> : <RefreshCw className="size-2.5" />}
+                                </button>
                               </div>
                             )}
                           </CardContent>

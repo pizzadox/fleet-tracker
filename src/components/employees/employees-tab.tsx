@@ -18,6 +18,7 @@ import {
 import type { Employee, Crew } from '@/lib/types'
 import { EMPLOYEE_POSITION_MAP, EMPLOYEE_STATUS_MAP } from '@/lib/constants'
 import { formatDate, formatPrice, statusBadge, TypeBadge, PaginationControls, downloadCSV, useDebounce } from '@/lib/utils'
+import { PanelSection, PanelConfigContext, PanelManagerDialog, PanelManagerButton, useTabPanels } from '@/components/panels'
 
 // ═══════════════════════════════════════════════════════════════
 // EMPLOYEES TAB — 20 improvements (#26-45)
@@ -157,10 +158,13 @@ export const EmployeesTab = React.memo(function EmployeesTab({ employees, crews,
 
   // #42 Skeleton loading state
   const [loading, setLoading] = React.useState(false)
+  const { panelConfig, panelManagerOpen, setPanelManagerOpen, contextValue } = useTabPanels('employees')
 
   return (
-    <div className="space-y-3">
+    <PanelConfigContext.Provider value={contextValue}>
+    <div className="flex flex-col gap-3">
       {/* Stats */}
+      <PanelSection panelKey="emp_stats">
       <div className="grid grid-cols-3 sm:grid-cols-5 gap-2">
         <Card className="border-0 shadow-none bg-blue-50 dark:bg-blue-950/20">
           <CardContent className="p-2.5 flex items-center gap-2">
@@ -202,8 +206,10 @@ export const EmployeesTab = React.memo(function EmployeesTab({ employees, crews,
           <span>Средняя: <span className="font-medium text-foreground">{formatPrice(avgSalary)}</span></span>
         </div>
       )}
+      </PanelSection>
 
       {/* Filters */}
+      <PanelSection panelKey="emp_filters" noCollapse>
       <div className="flex flex-col sm:flex-row gap-2">
         <div className="relative flex-1">
           <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 size-3.5 text-muted-foreground" />
@@ -242,8 +248,11 @@ export const EmployeesTab = React.memo(function EmployeesTab({ employees, crews,
           <Button size="sm" variant={viewMode === 'table' ? 'default' : 'ghost'} className="h-7 px-2 rounded-r-none" onClick={() => setViewMode('table')}><SlidersHorizontal className="size-3" /></Button>
           <Button size="sm" variant={viewMode === 'cards' ? 'default' : 'ghost'} className="h-7 px-2 rounded-l-none" onClick={() => setViewMode('cards')}><Users className="size-3" /></Button>
         </div>
+        <PanelManagerButton panelConfig={panelConfig} onClick={() => setPanelManagerOpen(true)} />
       </div>
+      </PanelSection>
 
+      <PanelSection panelKey="emp_list" noCollapse>
       <p className="text-xs text-muted-foreground">Найдено: {filtered.length} из {employees.length}</p>
 
       {/* Employee list */}
@@ -408,6 +417,9 @@ export const EmployeesTab = React.memo(function EmployeesTab({ employees, crews,
       {filtered.length > pageSize && (
         <PaginationControls page={page} totalPages={totalPages} total={filtered.length} pageSize={pageSize} onPageChange={setPage} />
       )}
+      </PanelSection>
     </div>
+    <PanelManagerDialog open={panelManagerOpen} onOpenChange={setPanelManagerOpen} tabKey="employees" tabLabel="Сотрудники" panelConfig={panelConfig} />
+    </PanelConfigContext.Provider>
   )
 })

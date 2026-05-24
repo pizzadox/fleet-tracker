@@ -16,6 +16,7 @@ import {
 import type { Crew, Employee } from '@/lib/types'
 import { CREW_TYPE_MAP, MEMBER_ROLE_MAP, EMPLOYEE_POSITION_MAP } from '@/lib/constants'
 import { formatDate, downloadCSV, useDebounce, statusBadge } from '@/lib/utils'
+import { PanelSection, PanelConfigContext, PanelManagerDialog, PanelManagerButton, useTabPanels } from '@/components/panels'
 
 // ═══════════════════════════════════════════════════════════════
 // CREWS TAB — Экипажи (#81-90 improvements)
@@ -54,6 +55,7 @@ export const CrewsTab = React.memo(function CrewsTab({ crews, employees, onAdd, 
   // #85 Detail sheet
   const [detailCrew, setDetailCrew] = useState<Crew | null>(null)
   const [detailOpen, setDetailOpen] = useState(false)
+  const { panelConfig, panelManagerOpen, setPanelManagerOpen, contextValue } = useTabPanels('crews')
 
   const toggleSort = (field: SortField) => {
     if (sortField === field) setSortDir(d => d === 'asc' ? 'desc' : 'asc')
@@ -115,8 +117,10 @@ export const CrewsTab = React.memo(function CrewsTab({ crews, employees, onAdd, 
   )
 
   return (
-    <div className="space-y-3">
+    <PanelConfigContext.Provider value={contextValue}>
+    <div className="flex flex-col gap-3">
       {/* #87 Stats header */}
+      <PanelSection panelKey="crew_stats">
       <div className="grid grid-cols-3 gap-2">
         <Card className="border-0 shadow-none bg-sky-50 dark:bg-sky-950/20">
           <CardContent className="p-2.5 flex items-center gap-2">
@@ -137,8 +141,10 @@ export const CrewsTab = React.memo(function CrewsTab({ crews, employees, onAdd, 
           </CardContent>
         </Card>
       </div>
+      </PanelSection>
 
       {/* #82 Search + #83 Type filter + #84 Status filter */}
+      <PanelSection panelKey="crew_filters" noCollapse>
       <div className="flex flex-col sm:flex-row gap-2">
         <div className="relative flex-1">
           <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 size-3.5 text-muted-foreground" />
@@ -163,8 +169,11 @@ export const CrewsTab = React.memo(function CrewsTab({ crews, employees, onAdd, 
         <Button variant="outline" size="sm" className="h-9 px-2 active:scale-95 transition-transform" onClick={handleExportCSV} title="Экспорт CSV" aria-label="Экспорт CSV">
           <FileDown className="size-3.5" />
         </Button>
+        <PanelManagerButton panelConfig={panelConfig} onClick={() => setPanelManagerOpen(true)} />
       </div>
+      </PanelSection>
 
+      <PanelSection panelKey="crew_list" noCollapse>
       <p className="text-xs text-muted-foreground">Найдено: {filtered.length} из {crews.length}</p>
 
       {/* #90 Empty state with illustration */}
@@ -293,6 +302,8 @@ export const CrewsTab = React.memo(function CrewsTab({ crews, employees, onAdd, 
         </>
       )}
 
+      </PanelSection>
+
       {/* #85 Detail sheet */}
       <Sheet open={detailOpen} onOpenChange={setDetailOpen}>
         <SheetContent className="w-full sm:max-w-xl p-0 flex flex-col">
@@ -379,5 +390,7 @@ export const CrewsTab = React.memo(function CrewsTab({ crews, employees, onAdd, 
         </SheetContent>
       </Sheet>
     </div>
+    <PanelManagerDialog open={panelManagerOpen} onOpenChange={setPanelManagerOpen} tabKey="crews" tabLabel="Экипажи" panelConfig={panelConfig} />
+    </PanelConfigContext.Provider>
   )
 })

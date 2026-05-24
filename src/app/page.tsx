@@ -440,13 +440,13 @@ export default function Home() {
     } catch { /* ignore */ }
   }, [])
 
-  // Auto-refresh: sync + check notifications every 60 seconds
+  // Auto-refresh: fast sync (sensors only) + check notifications every 60 seconds
   useEffect(() => {
     if (!autoRefreshEnabled) return
     const interval = setInterval(async () => {
       try {
-        // Sync GLONASS data
-        const syncRes = await fetch('/api/glonass/sync', { method: 'POST' })
+        // Fast sync GLONASS data (skip geocoding & stats for speed)
+        const syncRes = await fetch('/api/glonass/sync?fast=true', { method: 'POST' })
         if (syncRes.ok) {
           setLastSyncTime(new Date())
         }
@@ -873,7 +873,7 @@ export default function Home() {
           )}
           {hasPermission(currentUser.role, 'map') && (
             <TabsContent value="map">
-              <MapTab equipment={equipment} onOpenDetail={openEquipmentDetailById} onSync={async () => { try { const res = await fetch('/api/glonass/sync', { method: 'POST' }); const data = await res.json(); if (data.synced !== undefined) toast.success(`Синхронизация: ${data.synced} из ${data.totalTrackers}`); else toast.error(data.error || 'Ошибка'); fetchEquipment() } catch { toast.error('Ошибка синхронизации') } }} />
+              <MapTab equipment={equipment} onOpenDetail={openEquipmentDetailById} onSync={async () => { try { const res = await fetch('/api/glonass/sync?fast=true', { method: 'POST' }); const data = await res.json(); if (data.synced !== undefined) toast.success(`Синхронизация: ${data.synced} из ${data.totalTrackers}${data.elapsedMs ? ` (${(data.elapsedMs / 1000).toFixed(1)}с)` : ''}`); else toast.error(data.error || 'Ошибка'); fetchEquipment() } catch { toast.error('Ошибка синхронизации') } }} />
             </TabsContent>
           )}
         </Tabs>
@@ -897,7 +897,7 @@ export default function Home() {
               {mgmtSubTab === 'crews' && <CrewsTab crews={crews} employees={employees} onAdd={() => { setCrewFormEdit(null); setCrewFormOpen(true) }} onEdit={(c) => { setCrewFormEdit(c); setCrewFormOpen(true) }} onDelete={(c) => setDeleteDialog({ open: true, type: 'crew', id: c.id, name: c.name })} />}
             </div>
           )}
-          {mainTab === 'map' && hasPermission(currentUser.role, 'map') && <MapTab equipment={equipment} onOpenDetail={openEquipmentDetailById} onSync={async () => { try { const res = await fetch('/api/glonass/sync', { method: 'POST' }); const data = await res.json(); if (data.synced !== undefined) toast.success(`Синхронизация: ${data.synced} из ${data.totalTrackers}`); else toast.error(data.error || 'Ошибка'); fetchEquipment() } catch { toast.error('Ошибка синхронизации') } }} />}
+          {mainTab === 'map' && hasPermission(currentUser.role, 'map') && <MapTab equipment={equipment} onOpenDetail={openEquipmentDetailById} onSync={async () => { try { const res = await fetch('/api/glonass/sync?fast=true', { method: 'POST' }); const data = await res.json(); if (data.synced !== undefined) toast.success(`Синхронизация: ${data.synced} из ${data.totalTrackers}${data.elapsedMs ? ` (${(data.elapsedMs / 1000).toFixed(1)}с)` : ''}`); else toast.error(data.error || 'Ошибка'); fetchEquipment() } catch { toast.error('Ошибка синхронизации') } }} />}
         </div>
       </main>
 

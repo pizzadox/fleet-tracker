@@ -26,6 +26,7 @@ import {
 import type { Equipment, Company } from '@/lib/types'
 import { EQUIPMENT_STATUS_MAP, EQUIPMENT_TYPE_MAP, EQUIPMENT_TYPE_GROUPS, EQUIPMENT_CONDITION_MAP, MAINTENANCE_WARN_DAYS, CREW_TYPE_MAP, EMPLOYEE_POSITION_MAP } from '@/lib/constants'
 import { formatDate, formatDateTime, formatPrice, statusBadge, downloadCSV, copyToClipboard, TypeBadge, PaginationControls, handleApiError, getTypeInfo } from '@/lib/utils'
+import { PanelSection, PanelConfigContext, PanelManagerDialog, PanelManagerButton, useTabPanels } from '@/components/panels'
 
 // ═══════════════════════════════════════════════════════════════
 // STAT CARD (compact)
@@ -77,6 +78,7 @@ export const EquipmentTab = React.memo(function EquipmentTab({ equipment, compan
   const [batchNewStatus, setBatchNewStatus] = useState('active')
   const [confirmDialog, setConfirmDialog] = useState<{ open: boolean; title: string; desc: string; onConfirm: () => void }>({ open: false, title: '', desc: '', onConfirm: () => {} })
   const PAGE_SIZE = 20
+  const { panelConfig, panelManagerOpen, setPanelManagerOpen, contextValue } = useTabPanels('equipment')
 
   const daysUntil = (d?: string | null) => {
     if (!d) return null
@@ -202,8 +204,10 @@ export const EquipmentTab = React.memo(function EquipmentTab({ equipment, compan
   const paginatedEquipment = filteredEquipment.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
 
   return (
-    <div className="space-y-3" ref={containerRef}>
+    <PanelConfigContext.Provider value={contextValue}>
+    <div className="flex flex-col gap-3" ref={containerRef}>
       {/* ── Statistics Dashboard ── */}
+      <PanelSection panelKey="eq_stats">
       <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-2">
         <Card className="p-3"><div className="flex items-center gap-2"><div className="size-8 rounded-lg bg-emerald-100 dark:bg-emerald-900/40 flex items-center justify-center"><Truck className="size-4 text-emerald-600 dark:text-emerald-400" /></div><div><p className="text-lg font-bold">{stats.total}</p><p className="text-[10px] text-muted-foreground">Всего</p></div></div></Card>
         <Card className="p-3"><div className="flex items-center gap-2"><div className="size-8 rounded-lg bg-emerald-100 dark:bg-emerald-900/40 flex items-center justify-center"><CheckCircle2 className="size-4 text-emerald-600 dark:text-emerald-400" /></div><div><p className="text-lg font-bold">{stats.active}</p><p className="text-[10px] text-muted-foreground">В эксплуатации</p></div></div></Card>
@@ -212,8 +216,10 @@ export const EquipmentTab = React.memo(function EquipmentTab({ equipment, compan
         <Card className="p-3"><div className="flex items-center gap-2"><div className="size-8 rounded-lg bg-violet-100 dark:bg-violet-900/40 flex items-center justify-center"><BookmarkCheck className="size-4 text-violet-600 dark:text-violet-400" /></div><div><p className="text-lg font-bold">{stats.reserved}</p><p className="text-[10px] text-muted-foreground">Зарезервирована</p></div></div></Card>
         <Card className="p-3"><div className="flex items-center gap-2"><div className="size-8 rounded-lg bg-red-100 dark:bg-red-900/40 flex items-center justify-center"><XCircle className="size-4 text-red-600 dark:text-red-400" /></div><div><p className="text-lg font-bold">{stats.decommissioned}</p><p className="text-[10px] text-muted-foreground">Списана</p></div></div></Card>
       </div>
+      </PanelSection>
 
       {/* ── Fleet Value + Condition + Utilization ── */}
+      <PanelSection panelKey="eq_fleet_value">
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
         <Card className="p-3">
           <p className="text-[10px] text-muted-foreground font-medium mb-1">Стоимость парка</p>
@@ -259,8 +265,10 @@ export const EquipmentTab = React.memo(function EquipmentTab({ equipment, compan
           )}
         </Card>
       </div>
+      </PanelSection>
 
       {/* ── Filters ── */}
+      <PanelSection panelKey="eq_filters" noCollapse>
       <div className="flex flex-col sm:flex-row gap-2">
         <div className="relative flex-1">
           <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 size-3.5 text-muted-foreground" />
@@ -309,8 +317,10 @@ export const EquipmentTab = React.memo(function EquipmentTab({ equipment, compan
           </Select>
         </div>
       </div>
+      </PanelSection>
 
       {/* ── Quick Filters ── */}
+      <PanelSection panelKey="eq_quick_filters">
       <div className="flex flex-wrap gap-1.5">
         {[
           { key: 'all' as const, label: 'Все', icon: <List className="size-3" /> },
@@ -326,8 +336,10 @@ export const EquipmentTab = React.memo(function EquipmentTab({ equipment, compan
           </Button>
         ))}
       </div>
+      </PanelSection>
 
       {/* ── Action buttons ── */}
+      <PanelSection panelKey="eq_actions" noCollapse>
       <div className="flex flex-wrap items-center gap-1.5">
         <Button onClick={onAdd} size="sm" className="h-9 gap-1.5 active:scale-95 transition-transform"><Plus className="size-3.5" />Добавить</Button>
         <div className="flex gap-0.5">
@@ -353,9 +365,11 @@ export const EquipmentTab = React.memo(function EquipmentTab({ equipment, compan
             <CheckCheck className="size-3.5" />
           </Button>
         )}
+        <PanelManagerButton panelConfig={panelConfig} onClick={() => setPanelManagerOpen(true)} />
         <div className="flex-1" />
         <p className="text-xs text-muted-foreground">Найдено: {filteredEquipment.length}</p>
       </div>
+      </PanelSection>
 
       {/* ── Bulk actions bar ── */}
       {bulkMode && selectedIds.size > 0 && (
@@ -404,6 +418,7 @@ export const EquipmentTab = React.memo(function EquipmentTab({ equipment, compan
       </AlertDialog>
 
       {/* ── Status quick filter chips ── */}
+      <PanelSection panelKey="eq_status_chips">
       <div className="flex gap-1">
         {statusOrder.map(s => {
           const cnt = groupedByStatus[s]?.length || 0
@@ -417,7 +432,9 @@ export const EquipmentTab = React.memo(function EquipmentTab({ equipment, compan
           )
         })}
       </div>
+      </PanelSection>
 
+      <PanelSection panelKey="eq_list" noCollapse>
       {filteredEquipment.length === 0 ? (
         <Card className="py-8 animate-in fade-in duration-300">
           <CardContent className="flex flex-col items-center text-center p-4 pt-0">
@@ -847,7 +864,16 @@ export const EquipmentTab = React.memo(function EquipmentTab({ equipment, compan
           <PaginationControls page={page} totalPages={Math.ceil(filteredEquipment.length / PAGE_SIZE)} total={filteredEquipment.length} pageSize={PAGE_SIZE} onPageChange={setPage} />
         </div>
       )}
+      </PanelSection>
     </div>
+    <PanelManagerDialog
+      open={panelManagerOpen}
+      onOpenChange={setPanelManagerOpen}
+      tabKey="equipment"
+      tabLabel="Техника"
+      panelConfig={panelConfig}
+    />
+    </PanelConfigContext.Provider>
   )
 })
 

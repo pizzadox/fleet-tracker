@@ -23,6 +23,7 @@ import {
 import type { Trip, Equipment, Crew, RouteTemplate } from '@/lib/types'
 import { TRIP_STATUS_MAP, CREW_TYPE_MAP, EQUIPMENT_STATUS_MAP, MEMBER_ROLE_MAP, EQUIPMENT_TYPE_MAP } from '@/lib/constants'
 import { formatDate, formatDateTime, formatPrice, statusBadge, fmtDuration, handleApiError, downloadCSV, copyToClipboard, PaginationControls, formatDurationShort, useDebounce, getTypeInfo } from '@/lib/utils'
+import { PanelSection, PanelConfigContext, PanelManagerDialog, PanelManagerButton, useTabPanels } from '@/components/panels'
 import dynamic from 'next/dynamic'
 const TrackerMap = dynamic(() => import('@/components/tracker-map'), { ssr: false })
 
@@ -188,6 +189,7 @@ export const TripsTab = React.memo(function TripsTab({ trips, equipment, crews, 
   const [page, setPage] = useState(1)
   const [mobileShowCount, setMobileShowCount] = useState(10)
   const pageSize = 20
+  const { panelConfig, panelManagerOpen, setPanelManagerOpen, contextValue } = useTabPanels('trips')
 
   // ─── Route map state ───
   const [routeMapTemplate, setRouteMapTemplate] = useState<RouteTemplate | null>(null)
@@ -319,8 +321,10 @@ export const TripsTab = React.memo(function TripsTab({ trips, equipment, crews, 
   }
 
   return (
-    <div className="space-y-3">
+    <PanelConfigContext.Provider value={contextValue}>
+    <div className="flex flex-col gap-3">
       {/* ─── SEARCH BAR + PRIMARY FILTERS ─── */}
+      <PanelSection panelKey="trip_filters" noCollapse>
       <div className="flex flex-col sm:flex-row gap-2">
         <div className="relative flex-1">
           <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 size-3.5 text-muted-foreground" />
@@ -350,8 +354,10 @@ export const TripsTab = React.memo(function TripsTab({ trips, equipment, crews, 
         <Button onClick={() => onAdd()} size="sm" className="h-9 gap-1.5"><Plus className="size-3.5" />Рейс</Button>
         <Button onClick={onAddCrew} variant="outline" size="sm" className="h-9 gap-1.5"><Users className="size-3.5" />Экипаж</Button>
       </div>
+      </PanelSection>
 
       {/* ─── QUICK FILTERS + FILTER TOGGLE ─── */}
+      <PanelSection panelKey="trip_quick_filters">
       <div className="flex items-center gap-2 flex-wrap">
         {/* Quick filter chips */}
         <div className="flex items-center gap-1">
@@ -396,6 +402,7 @@ export const TripsTab = React.memo(function TripsTab({ trips, equipment, crews, 
           {showRoutes ? <ChevronUp className="size-3" /> : <ChevronDown className="size-3" />}
         </Button>
       </div>
+      </PanelSection>
 
       {/* ─── EXTENDED FILTERS (collapsible) ─── */}
       {filtersOpen && (
@@ -443,6 +450,7 @@ export const TripsTab = React.memo(function TripsTab({ trips, equipment, crews, 
       )}
 
       {/* Crews section (toggleable) */}
+      <PanelSection panelKey="trip_crews">
       {showCrews && (
         <div className="space-y-2">
           <Separator />
@@ -488,8 +496,10 @@ export const TripsTab = React.memo(function TripsTab({ trips, equipment, crews, 
           <Separator />
         </div>
       )}
+      </PanelSection>
 
       {/* Route Templates section (toggleable) */}
+      <PanelSection panelKey="trip_routes">
       {showRoutes && (
         <div className="space-y-2">
           <Separator />
@@ -579,8 +589,15 @@ export const TripsTab = React.memo(function TripsTab({ trips, equipment, crews, 
           <Separator />
         </div>
       )}
+      </PanelSection>
+
+      {/* ─── ACTIONS ─── */}
+      <PanelSection panelKey="trip_actions" noCollapse>
+      <PanelManagerButton panelConfig={panelConfig} onClick={() => setPanelManagerOpen(true)} />
+      </PanelSection>
 
       {/* ─── TRIPS LIST ─── */}
+      <PanelSection panelKey="trip_list" noCollapse>
       {isLoading ? (
         // Skeleton loading state
         <>
@@ -873,6 +890,9 @@ export const TripsTab = React.memo(function TripsTab({ trips, equipment, crews, 
           )}
         </>
       )}
+      </PanelSection>
+      <PanelManagerDialog open={panelManagerOpen} onOpenChange={setPanelManagerOpen} tabKey="trips" tabLabel="Рейсы" panelConfig={panelConfig} />
     </div>
+    </PanelConfigContext.Provider>
   )
 })

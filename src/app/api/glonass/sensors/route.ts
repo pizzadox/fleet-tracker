@@ -212,9 +212,19 @@ export async function GET(request: NextRequest) {
       positionSensors.push({ id: 'pos_motion', name: 'Движение', type: 'position', category: 'position', value: objectDetails.isMotion ? 1 : 0, stringValue: objectDetails.isMotion ? 'Да' : 'Нет', unit: null, hasValue: true })
     }
 
-    // Update the local sensor data in DB
+    // Update the local sensor data in DB — BULK createMany for speed
     if (sensors.length > 0) {
       await db.glonassSensorData.deleteMany({ where: { trackerId } })
+
+      const sensorCreates: Array<{
+        trackerId: string
+        sensorType: string
+        sensorName: string | null
+        value: number | null
+        stringValue: string | null
+        unit: string | null
+        timestamp: Date
+      }> = []
 
       for (const s of sensors) {
         const sensorApiId = (s as Record<string, unknown>).id as number | undefined
@@ -230,17 +240,20 @@ export async function GET(request: NextRequest) {
           sensorStringValue = unit ? `${sensorValue} ${unit}` : String(sensorValue)
         }
 
-        await db.glonassSensorData.create({
-          data: {
-            trackerId,
-            sensorType,
-            sensorName,
-            value: sensorValue,
-            stringValue: sensorStringValue,
-            unit: (s as Record<string, unknown>).unit ? String((s as Record<string, unknown>).unit) : null,
-            timestamp: new Date(),
-          }
-        }).catch(() => {})
+        sensorCreates.push({
+          trackerId,
+          sensorType,
+          sensorName,
+          value: sensorValue,
+          stringValue: sensorStringValue,
+          unit: (s as Record<string, unknown>).unit ? String((s as Record<string, unknown>).unit) : null,
+          timestamp: new Date(),
+        })
+      }
+
+      // Bulk insert — much faster than individual creates
+      if (sensorCreates.length > 0) {
+        await db.glonassSensorData.createMany({ data: sensorCreates, skipDuplicates: true })
       }
     }
 
