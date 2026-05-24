@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
+import { Badge } from '@/components/ui/badge'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Separator } from '@/components/ui/separator'
@@ -13,15 +14,31 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import {
   Building2, Save, Loader2, Plus, Edit, CheckCircle2, Shield,
   Users, FileText, Phone, Mail, MapPin, Copy, AlertTriangle,
-  Briefcase, Globe
+  Briefcase, Globe, ChevronDown, ChevronUp, User
 } from 'lucide-react'
 import type { Company } from '@/lib/types'
 import { COMPANY_TYPES, API } from '@/lib/constants'
 import { handleApiError } from '@/lib/utils'
 
 // ═══════════════════════════════════════════════════════════════
-// COMPANY FORM DIALOG — 10 improvements (#16-25)
+// COMPANY FORM DIALOG
 // ═══════════════════════════════════════════════════════════════
+
+// Collapsible sections (matches employee-form-dialog pattern)
+function CollapsibleSection({ title, icon, children, defaultOpen = true }: {
+  title: string; icon: React.ReactNode; children: React.ReactNode; defaultOpen?: boolean
+}) {
+  const [open, setOpen] = useState(defaultOpen)
+  return (
+    <div>
+      <button type="button" className="flex items-center gap-1.5 w-full text-left" onClick={() => setOpen(!open)}>
+        <p className="text-xs font-semibold flex items-center gap-1.5 flex-1">{icon}{title}</p>
+        {open ? <ChevronUp className="size-3 text-muted-foreground" /> : <ChevronDown className="size-3 text-muted-foreground" />}
+      </button>
+      {open && <div className="mt-2">{children}</div>}
+    </div>
+  )
+}
 
 export function CompanyFormDialog({ open, onOpenChange, editData, saving, setSaving, onSaved }: {
   open: boolean; onOpenChange: (v: boolean) => void;
@@ -115,21 +132,18 @@ export function CompanyFormDialog({ open, onOpenChange, editData, saving, setSav
     <>
       <Dialog open={open} onOpenChange={handleOpenChange}>
         <DialogContent className="sm:max-w-2xl max-h-[98dvh] flex flex-col">
-          <DialogHeader>
+          <DialogHeader className="border-l-4 border-l-emerald-500 pl-3">
             <DialogTitle className="flex items-center gap-2">{editData ? <Edit className="size-4" /> : <Plus className="size-4" />}{editData ? 'Редактирование компании' : 'Новая компания'}</DialogTitle>
-            {/* #18 DialogDescription for accessibility */}
             <DialogDescription>{editData ? 'Измените данные компании и нажмите "Сохранить"' : 'Заполните данные новой компании'}</DialogDescription>
           </DialogHeader>
           <div className="overflow-y-auto flex-1 min-h-0 px-4 sm:px-5">
             <div className="space-y-3 py-2">
-              {/* #17 Section: Basic */}
-              <div>
-                <p className="text-xs font-semibold flex items-center gap-1.5 mb-2"><FileText className="size-3.5" />Основные данные</p>
+              {/* Section: Basic */}
+              <CollapsibleSection title="Основные данные" icon={<FileText className="size-3.5" />} defaultOpen>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div className="sm:col-span-2">
-                    <Label className="text-xs">Название *</Label>
+                    <Label className="text-xs">Название <span className="text-red-400">*</span></Label>
                     <Input value={f('name')} onChange={e => setF('name', e.target.value)} autoFocus placeholder="ООО «Компания»" />
-                    {/* #16 Validation error display */}
                     {errors.name && <p className="text-[10px] text-red-500 mt-0.5 flex items-center gap-1"><AlertTriangle className="size-2.5" />{errors.name}</p>}
                   </div>
                   <div>
@@ -148,14 +162,13 @@ export function CompanyFormDialog({ open, onOpenChange, editData, saving, setSav
                     {errors.ogrn && <p className="text-[10px] text-red-500 mt-0.5 flex items-center gap-1"><AlertTriangle className="size-2.5" />{errors.ogrn}</p>}
                   </div>
                 </div>
-              </div>
+              </CollapsibleSection>
 
               <Separator />
 
-              {/* #23 Type as visual cards */}
-              <div>
-                <Label className="text-xs font-medium">Тип компании</Label>
-                <div className="grid grid-cols-3 gap-2 mt-1.5">
+              {/* Type as visual cards */}
+              <CollapsibleSection title="Тип компании" icon={<Shield className="size-3.5" />} defaultOpen>
+                <div className="grid grid-cols-3 gap-2">
                   {typeOptions.map(opt => (
                     <button key={opt.value} type="button" onClick={() => setF('type', opt.value)}
                       className={`flex flex-col items-center gap-1.5 p-2.5 rounded-lg border-2 transition-all text-center ${f('type') === opt.value ? opt.color + ' ring-2 ring-primary/30' : 'border-muted hover:border-muted-foreground/30'}`}>
@@ -164,13 +177,12 @@ export function CompanyFormDialog({ open, onOpenChange, editData, saving, setSav
                     </button>
                   ))}
                 </div>
-              </div>
+              </CollapsibleSection>
 
               <Separator />
 
-              {/* #17 Section: Contacts */}
-              <div>
-                <p className="text-xs font-semibold flex items-center gap-1.5 mb-2"><Phone className="size-3.5" />Контакты</p>
+              {/* Section: Contacts */}
+              <CollapsibleSection title="Контакты" icon={<Phone className="size-3.5" />} defaultOpen>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div>
                     <Label className="text-xs">Телефон</Label>
@@ -186,13 +198,12 @@ export function CompanyFormDialog({ open, onOpenChange, editData, saving, setSav
                     <Input value={f('director')} onChange={e => setF('director', e.target.value)} placeholder="Иванов Иван Иванович" />
                   </div>
                 </div>
-              </div>
+              </CollapsibleSection>
 
               <Separator />
 
-              {/* #17 Section: Address */}
-              <div>
-                <p className="text-xs font-semibold flex items-center gap-1.5 mb-2"><MapPin className="size-3.5" />Адреса</p>
+              {/* Section: Address */}
+              <CollapsibleSection title="Адреса" icon={<MapPin className="size-3.5" />} defaultOpen={false}>
                 <div className="space-y-3">
                   <div>
                     <Label className="text-xs">Юридический адрес</Label>
@@ -201,13 +212,12 @@ export function CompanyFormDialog({ open, onOpenChange, editData, saving, setSav
                   <div>
                     <div className="flex items-center justify-between">
                       <Label className="text-xs">Фактический адрес</Label>
-                      {/* #19 Copy legal address */}
                       {f('address') && <Button type="button" variant="ghost" size="sm" className="h-5 text-[10px] gap-0.5 px-1" onClick={copyLegalAddress}><Copy className="size-2.5" />Скопировать юр.</Button>}
                     </div>
                     <Input value={f('factAddress')} onChange={e => setF('factAddress', e.target.value)} placeholder="Совпадает с юридическим" />
                   </div>
                 </div>
-              </div>
+              </CollapsibleSection>
             </div>
           </div>
           <div className="shrink-0 border-t bg-card px-4 sm:px-5 py-3">
