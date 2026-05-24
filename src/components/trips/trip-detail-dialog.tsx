@@ -1442,65 +1442,56 @@ export function TripDetailDialog({ open, onOpenChange, trip, loading, crews, onE
 
       {/* ─── Complete Trip Dialog with Refuel Detection ─── */}
       <Dialog open={completeDialog.open} onOpenChange={(v) => !completeDialog.loading && setCompleteDialog(prev => ({ ...prev, open: v }))}>
-        <DialogContent className="max-w-lg p-0 gap-0 overflow-hidden">
-          {/* Gradient header */}
-          <DialogHeader className="px-6 pt-5 pb-3 border-b bg-gradient-to-r from-emerald-50 to-green-50 dark:from-emerald-950/30 dark:to-green-950/30">
-            <DialogTitle className="flex items-center gap-2.5 text-base">
-              <div className="size-8 rounded-lg bg-emerald-100 dark:bg-emerald-900/50 flex items-center justify-center shrink-0">
-                <CheckCircle2 className="size-4 text-emerald-600 dark:text-emerald-400" />
-              </div>
-              <div>
-                <span>Завершение рейса</span>
-                <p className="text-xs font-normal text-muted-foreground mt-0.5">
-                  Проверьте и подтвердите данные перед завершением
-                </p>
-              </div>
+        <DialogContent className="sm:max-w-lg max-h-[98dvh] flex flex-col">
+          <DialogHeader className="border-l-4 border-l-emerald-500 pl-3">
+            <DialogTitle className="flex items-center gap-2">
+              <CheckCircle2 className="size-4 text-emerald-500 shrink-0" />
+              <span>Завершение рейса</span>
             </DialogTitle>
-            {completeDialog.refuelDetected && (
-              <div className="mt-2 p-2 rounded-md bg-amber-100/80 dark:bg-amber-900/30 border border-amber-300 dark:border-amber-700 flex items-center gap-2">
-                <Fuel className="size-4 text-amber-600 dark:text-amber-400 shrink-0" />
-                <div>
-                  <p className="text-xs font-semibold text-amber-700 dark:text-amber-400">Обнаружены заправки!</p>
-                  <p className="text-[10px] text-amber-600 dark:text-amber-500">По данным датчиков во время рейса была заправка</p>
-                </div>
-              </div>
-            )}
+            <DialogDescription>Проверьте и подтвердите данные перед завершением</DialogDescription>
           </DialogHeader>
 
-          {completeDialog.loading ? (
-            <div className="flex flex-col items-center justify-center py-12">
-              <div className="size-12 rounded-full bg-emerald-100 dark:bg-emerald-900/40 flex items-center justify-center mb-3">
-                <Loader2 className="size-6 animate-spin text-emerald-600 dark:text-emerald-400" />
+          <div className="overflow-y-auto flex-1 min-h-0 px-4 sm:px-5">
+            {completeDialog.loading ? (
+              <div className="flex flex-col items-center justify-center py-12">
+                <div className="size-12 rounded-full bg-emerald-100 dark:bg-emerald-900/40 flex items-center justify-center mb-3">
+                  <Loader2 className="size-6 animate-spin text-emerald-600 dark:text-emerald-400" />
+                </div>
+                <p className="text-sm font-medium text-muted-foreground">Получение данных с датчиков...</p>
+                <p className="text-xs text-muted-foreground/60 mt-1">Запрос показаний трекера</p>
               </div>
-              <p className="text-sm font-medium text-muted-foreground">Получение данных с датчиков...</p>
-              <p className="text-xs text-muted-foreground/60 mt-1">Запрос показаний трекера</p>
-            </div>
-          ) : (
-            <div className="space-y-4 px-6 py-4">
-              {/* Trip summary bar */}
-              <div className="flex items-center gap-3 p-2.5 rounded-lg bg-muted/40 border">
-                <div className="flex-1 text-center">
-                  <p className="text-[10px] text-muted-foreground">Маршрут</p>
-                  <p className="text-xs font-semibold truncate">{t.route || '—'}</p>
-                </div>
-                <div className="w-px h-6 bg-border" />
-                <div className="text-center">
-                  <p className="text-[10px] text-muted-foreground">Топливо начало</p>
-                  <p className="text-xs font-semibold">{completeDialog.fuelStart != null ? `${completeDialog.fuelStart} л` : '—'}</p>
-                </div>
-                <div className="w-px h-6 bg-border" />
-                <div className="text-center">
-                  <p className="text-[10px] text-muted-foreground">Старт</p>
-                  <p className="text-xs font-semibold">{t.mileageStart != null ? `${t.mileageStart.toLocaleString('ru-RU')} км` : '—'}</p>
-                </div>
-              </div>
+            ) : (
+              <div className="space-y-4 py-2">
+                {completeDialog.refuelDetected && (
+                  <div className="p-2 rounded-lg bg-amber-50 dark:bg-amber-900/20 border border-amber-300 dark:border-amber-700 flex items-center gap-2">
+                    <Fuel className="size-4 text-amber-600 dark:text-amber-400 shrink-0" />
+                    <div>
+                      <p className="text-xs font-semibold text-amber-700 dark:text-amber-400">Обнаружены заправки!</p>
+                      <p className="text-[10px] text-amber-600 dark:text-amber-500">По данным датчиков во время рейса была заправка</p>
+                    </div>
+                  </div>
+                )}
 
-              {/* Fuel data section */}
-              <div className="space-y-2">
-                <h4 className="text-xs font-semibold text-muted-foreground flex items-center gap-1.5">
-                  <Fuel className="size-3.5" /> Показания топлива
-                </h4>
-                <div className="grid grid-cols-2 gap-3">
+                {/* Trip summary bar */}
+                <div className="flex items-center gap-3 p-2.5 rounded-lg bg-muted/40 border">
+                  <div className="flex-1 text-center">
+                    <p className="text-[10px] text-muted-foreground">Маршрут</p>
+                    <p className="text-xs font-semibold truncate">{t.route || '—'}</p>
+                  </div>
+                  <div className="w-px h-6 bg-border" />
+                  <div className="text-center">
+                    <p className="text-[10px] text-muted-foreground">Топливо начало</p>
+                    <p className="text-xs font-semibold">{completeDialog.fuelStart != null ? `${completeDialog.fuelStart} л` : '—'}</p>
+                  </div>
+                  <div className="w-px h-6 bg-border" />
+                  <div className="text-center">
+                    <p className="text-[10px] text-muted-foreground">Старт</p>
+                    <p className="text-xs font-semibold">{t.mileageStart != null ? `${t.mileageStart.toLocaleString('ru-RU')} км` : '—'}</p>
+                  </div>
+                </div>
+
+                {/* Fuel data section */}
+                <DetailSection title="Показания топлива" icon={<Fuel className="size-3.5" />}>
                   <div className="p-2.5 rounded-lg bg-muted/30 border">
                     <Label className="text-[10px] text-muted-foreground flex items-center gap-1">
                       <div className="size-1.5 rounded-full bg-sky-500" />Топливо начало (л)
@@ -1530,175 +1521,177 @@ export function TripDetailDialog({ open, onOpenChange, trip, loading, crews, onE
                       className="h-9 text-sm font-semibold mt-1"
                     />
                   </div>
-                </div>
-              </div>
+                </DetailSection>
 
-              {/* Refuel section */}
-              {completeDialog.refuelDetected ? (
-                <div className="rounded-lg border-2 border-amber-300 dark:border-amber-700 bg-amber-50/50 dark:bg-amber-900/20 p-3 space-y-2">
-                  <div className="flex items-center gap-2 text-xs font-semibold text-amber-700 dark:text-amber-400">
-                    <div className="size-6 rounded-md bg-amber-200 dark:bg-amber-800/50 flex items-center justify-center">
-                      <FuelIcon className="size-3.5" />
+                {/* Refuel section */}
+                {completeDialog.refuelDetected ? (
+                  <div className="rounded-lg border-2 border-amber-300 dark:border-amber-700 bg-amber-50/50 dark:bg-amber-900/20 p-3 space-y-2">
+                    <div className="flex items-center gap-2 text-xs font-semibold text-amber-700 dark:text-amber-400">
+                      <div className="size-6 rounded-md bg-amber-200 dark:bg-amber-800/50 flex items-center justify-center">
+                        <FuelIcon className="size-3.5" />
+                      </div>
+                      Заправка обнаружена!
                     </div>
-                    Заправка обнаружена!
+                    <p className="text-[10px] text-amber-600 dark:text-amber-500 ml-8">
+                      Подтвердите объём заправки или введите вручную.
+                    </p>
+                    <div className="ml-8">
+                      <Label className="text-[10px] text-amber-700 dark:text-amber-400">Объём заправки (л)</Label>
+                      <div className="flex items-center gap-2">
+                        <Input
+                          type="number"
+                          step="0.1"
+                          value={completeDialog.refuelVolume}
+                          onChange={e => {
+                            const val = e.target.value
+                            setCompleteDialog(prev => {
+                              const refuel = parseFloat(val) || 0
+                              const fuelStart = prev.fuelStart
+                              const fuelEnd = parseFloat(prev.fuelEnd) || 0
+                              let consumed = fuelStart != null ? Math.round((fuelStart - fuelEnd + refuel) * 100) / 100 : null
+                              if (consumed != null && consumed < 0) consumed = 0
+                              return { ...prev, refuelVolume: val, fuelConsumed: consumed != null ? String(consumed) : '' }
+                            })
+                          }}
+                          placeholder="0"
+                          className="h-8 text-xs w-28"
+                        />
+                        {completeDialog.sensorRefuelVolume != null && (
+                          <Badge variant="outline" className="text-[10px] h-6 bg-amber-100/50 dark:bg-amber-900/30 border-amber-300 dark:border-amber-700 text-amber-700 dark:text-amber-400">
+                            Датчик: {completeDialog.sensorRefuelVolume.toFixed(1)} л
+                          </Badge>
+                        )}
+                      </div>
+                    </div>
                   </div>
-                  <p className="text-[10px] text-amber-600 dark:text-amber-500 ml-8">
-                    Подтвердите объём заправки или введите вручную.
-                  </p>
-                  <div className="ml-8">
-                    <Label className="text-[10px] text-amber-700 dark:text-amber-400">Объём заправки (л)</Label>
-                    <div className="flex items-center gap-2">
-                      <Input
-                        type="number"
-                        step="0.1"
-                        value={completeDialog.refuelVolume}
-                        onChange={e => {
-                          const val = e.target.value
-                          setCompleteDialog(prev => {
-                            const refuel = parseFloat(val) || 0
-                            const fuelStart = prev.fuelStart
-                            const fuelEnd = parseFloat(prev.fuelEnd) || 0
-                            let consumed = fuelStart != null ? Math.round((fuelStart - fuelEnd + refuel) * 100) / 100 : null
-                            if (consumed != null && consumed < 0) consumed = 0
-                            return { ...prev, refuelVolume: val, fuelConsumed: consumed != null ? String(consumed) : '' }
-                          })
-                        }}
-                        placeholder="0"
-                        className="h-8 text-xs w-28"
-                      />
-                      {completeDialog.sensorRefuelVolume != null && (
-                        <Badge variant="outline" className="text-[10px] h-6 bg-amber-100/50 dark:bg-amber-900/30 border-amber-300 dark:border-amber-700 text-amber-700 dark:text-amber-400">
-                          Датчик: {completeDialog.sensorRefuelVolume.toFixed(1)} л
-                        </Badge>
+                ) : (
+                  <DetailSection title="Заправки" icon={<FuelIcon className="size-3.5" />}>
+                    <div className="col-span-2">
+                      <Label className="text-[10px] text-muted-foreground flex items-center gap-1 mb-1.5">
+                        Была ли заправка во время рейса?
+                      </Label>
+                      <div className="flex gap-2">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className={`h-8 text-[11px] flex-1 gap-1.5 ${completeDialog.refuelVolume ? 'bg-amber-50 dark:bg-amber-900/30 border-amber-300 dark:border-amber-700' : ''}`}
+                          onClick={() => setCompleteDialog(prev => ({ ...prev, refuelVolume: prev.refuelVolume || '0' }))}
+                        >
+                          <Fuel className="size-3" />Да, была
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className={`h-8 text-[11px] flex-1 gap-1.5 ${!completeDialog.refuelVolume && completeDialog.refuelVolume !== '' ? '' : 'bg-muted/50'}`}
+                          onClick={() => setCompleteDialog(prev => ({ ...prev, refuelVolume: '', fuelConsumed: prev.fuelStart != null && prev.fuelEnd ? String(Math.round((prev.fuelStart - (parseFloat(prev.fuelEnd) || 0)) * 100) / 100) : '' }))}
+                        >
+                          <X className="size-3" />Нет заправок
+                        </Button>
+                      </div>
+                      {completeDialog.refuelVolume !== '' && (
+                        <div className="p-2.5 rounded-lg bg-amber-50/50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800/50 mt-2">
+                          <Label className="text-[10px] text-muted-foreground">Объём заправки (л)</Label>
+                          <Input
+                            type="number"
+                            step="0.1"
+                            value={completeDialog.refuelVolume}
+                            onChange={e => {
+                              const val = e.target.value
+                              setCompleteDialog(prev => {
+                                const refuel = parseFloat(val) || 0
+                                const fuelStart = prev.fuelStart
+                                const fuelEnd = parseFloat(prev.fuelEnd) || 0
+                                let consumed = fuelStart != null ? Math.round((fuelStart - fuelEnd + refuel) * 100) / 100 : null
+                                if (consumed != null && consumed < 0) consumed = 0
+                                return { ...prev, refuelVolume: val, fuelConsumed: consumed != null ? String(consumed) : '' }
+                              })
+                            }}
+                            placeholder="0"
+                            className="h-8 text-xs mt-1"
+                          />
+                        </div>
                       )}
                     </div>
-                  </div>
-                </div>
-              ) : (
-                <div className="space-y-2">
-                  <Label className="text-[10px] text-muted-foreground flex items-center gap-1">
-                    <FuelIcon className="size-3" /> Была ли заправка во время рейса?
-                  </Label>
-                  <div className="flex gap-2">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className={`h-8 text-[11px] flex-1 gap-1.5 ${completeDialog.refuelVolume ? 'bg-amber-50 dark:bg-amber-900/30 border-amber-300 dark:border-amber-700' : ''}`}
-                      onClick={() => setCompleteDialog(prev => ({ ...prev, refuelVolume: prev.refuelVolume || '0' }))}
-                    >
-                      <Fuel className="size-3" />Да, была
-                    </Button>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className={`h-8 text-[11px] flex-1 gap-1.5 ${!completeDialog.refuelVolume && completeDialog.refuelVolume !== '' ? '' : 'bg-muted/50'}`}
-                      onClick={() => setCompleteDialog(prev => ({ ...prev, refuelVolume: '', fuelConsumed: prev.fuelStart != null && prev.fuelEnd ? String(Math.round((prev.fuelStart - (parseFloat(prev.fuelEnd) || 0)) * 100) / 100) : '' }))}
-                    >
-                      <X className="size-3" />Нет заправок
-                    </Button>
-                  </div>
-                  {completeDialog.refuelVolume !== '' && (
-                    <div className="p-2.5 rounded-lg bg-amber-50/50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800/50">
-                      <Label className="text-[10px] text-muted-foreground">Объём заправки (л)</Label>
-                      <Input
-                        type="number"
-                        step="0.1"
-                        value={completeDialog.refuelVolume}
-                        onChange={e => {
-                          const val = e.target.value
-                          setCompleteDialog(prev => {
-                            const refuel = parseFloat(val) || 0
-                            const fuelStart = prev.fuelStart
-                            const fuelEnd = parseFloat(prev.fuelEnd) || 0
-                            let consumed = fuelStart != null ? Math.round((fuelStart - fuelEnd + refuel) * 100) / 100 : null
-                            if (consumed != null && consumed < 0) consumed = 0
-                            return { ...prev, refuelVolume: val, fuelConsumed: consumed != null ? String(consumed) : '' }
-                          })
-                        }}
-                        placeholder="0"
-                        className="h-8 text-xs mt-1"
-                      />
-                    </div>
-                  )}
-                </div>
-              )}
+                  </DetailSection>
+                )}
 
-              {/* Calculated section */}
-              <div className="grid grid-cols-2 gap-3">
-                <div className="p-2.5 rounded-lg bg-muted/30 border">
-                  <Label className="text-[10px] text-muted-foreground flex items-center gap-1">
-                    <Flame className="size-2.5" />Расход топлива (л)
-                  </Label>
-                  <Input
-                    type="number"
-                    step="0.1"
-                    value={completeDialog.fuelConsumed}
-                    onChange={e => setCompleteDialog(prev => ({ ...prev, fuelConsumed: e.target.value }))}
-                    className="h-8 text-xs font-bold mt-1"
-                    placeholder="Авто-расчёт"
+                {/* Calculated section */}
+                <DetailSection title="Итоговые показания" icon={<Gauge className="size-3.5" />}>
+                  <div className="p-2.5 rounded-lg bg-muted/30 border">
+                    <Label className="text-[10px] text-muted-foreground flex items-center gap-1">
+                      <Flame className="size-2.5" />Расход топлива (л)
+                    </Label>
+                    <Input
+                      type="number"
+                      step="0.1"
+                      value={completeDialog.fuelConsumed}
+                      onChange={e => setCompleteDialog(prev => ({ ...prev, fuelConsumed: e.target.value }))}
+                      className="h-8 text-xs font-bold mt-1"
+                      placeholder="Авто-расчёт"
+                    />
+                  </div>
+                  <div className="p-2.5 rounded-lg bg-muted/30 border">
+                    <Label className="text-[10px] text-muted-foreground flex items-center gap-1">
+                      <Gauge className="size-2.5" />Пробег конец (км)
+                    </Label>
+                    <Input
+                      type="number"
+                      value={completeDialog.mileageEnd}
+                      onChange={e => setCompleteDialog(prev => ({ ...prev, mileageEnd: e.target.value }))}
+                      className="h-8 text-xs font-bold mt-1"
+                      placeholder="Показание одометра"
+                    />
+                  </div>
+                </DetailSection>
+
+                {/* Trip distance summary if available */}
+                {(t.distance || (t.mileageStart != null && completeDialog.mileageEnd)) && (
+                  <div className="flex items-center gap-2 p-2 rounded-lg bg-sky-50 dark:bg-sky-900/20 border border-sky-200 dark:border-sky-800/50">
+                    <Navigation className="size-3.5 text-sky-600 dark:text-sky-400 shrink-0" />
+                    <span className="text-[11px] text-sky-700 dark:text-sky-400">
+                      {t.distance ? `Расстояние по маршруту: ${t.distance.toFixed(1)} км` : ''}
+                      {t.distance && completeDialog.mileageEnd && t.mileageStart ? ' • ' : ''}
+                      {completeDialog.mileageEnd && t.mileageStart ? `По одометру: ${(parseFloat(completeDialog.mileageEnd) - t.mileageStart).toLocaleString('ru-RU')} км` : ''}
+                    </span>
+                  </div>
+                )}
+
+                {/* Notes */}
+                <DetailSection title="Примечание" icon={<StickyNote className="size-3.5" />}>
+                  <Textarea
+                    value={completeDialog.notes}
+                    onChange={e => setCompleteDialog(prev => ({ ...prev, notes: e.target.value }))}
+                    placeholder="Комментарий о заправке, расходе, особенностях рейса..."
+                    className="text-xs min-h-[60px]"
                   />
-                </div>
-                <div className="p-2.5 rounded-lg bg-muted/30 border">
-                  <Label className="text-[10px] text-muted-foreground flex items-center gap-1">
-                    <Gauge className="size-2.5" />Пробег конец (км)
-                  </Label>
-                  <Input
-                    type="number"
-                    value={completeDialog.mileageEnd}
-                    onChange={e => setCompleteDialog(prev => ({ ...prev, mileageEnd: e.target.value }))}
-                    className="h-8 text-xs font-bold mt-1"
-                    placeholder="Показание одометра"
-                  />
-                </div>
+                </DetailSection>
               </div>
+            )}
 
-              {/* Trip distance summary if available */}
-              {(t.distance || (t.mileageStart != null && completeDialog.mileageEnd)) && (
-                <div className="flex items-center gap-2 p-2 rounded-lg bg-sky-50 dark:bg-sky-900/20 border border-sky-200 dark:border-sky-800/50">
-                  <Navigation className="size-3.5 text-sky-600 dark:text-sky-400 shrink-0" />
-                  <span className="text-[11px] text-sky-700 dark:text-sky-400">
-                    {t.distance ? `Расстояние по маршруту: ${t.distance.toFixed(1)} км` : ''}
-                    {t.distance && completeDialog.mileageEnd && t.mileageStart ? ' • ' : ''}
-                    {completeDialog.mileageEnd && t.mileageStart ? `По одометру: ${(parseFloat(completeDialog.mileageEnd) - t.mileageStart).toLocaleString('ru-RU')} км` : ''}
-                  </span>
-                </div>
-              )}
-
-              {/* Notes */}
-              <div>
-                <Label className="text-[10px] text-muted-foreground flex items-center gap-1">
-                  <StickyNote className="size-2.5" />Примечание к завершению
-                </Label>
-                <Textarea
-                  value={completeDialog.notes}
-                  onChange={e => setCompleteDialog(prev => ({ ...prev, notes: e.target.value }))}
-                  placeholder="Комментарий о заправке, расходе, особенностях рейса..."
-                  className="text-xs min-h-[60px] mt-1"
-                />
+            {/* Footer after content */}
+            <div className="bg-card border-t pt-3 pb-2 -mx-4 sm:-mx-5 px-4 sm:px-5 mt-4">
+              <div className="flex justify-end gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-8 text-xs"
+                  onClick={() => setCompleteDialog(prev => ({ ...prev, open: false }))}
+                  disabled={completeDialog.loading}
+                >
+                  Отмена
+                </Button>
+                <Button
+                  size="sm"
+                  className="h-8 text-xs bg-emerald-600 text-white hover:bg-emerald-700 gap-1.5"
+                  onClick={handleConfirmComplete}
+                  disabled={completeDialog.loading}
+                >
+                  {completeDialog.loading ? <Loader2 className="size-3.5 animate-spin" /> : <CheckCircle2 className="size-3.5" />}
+                  Завершить рейс
+                </Button>
               </div>
             </div>
-          )}
-
-          <DialogFooter className="gap-2 px-6 py-3 border-t bg-muted/20">
-            <Button
-              variant="outline"
-              size="sm"
-              className="h-8 text-xs"
-              onClick={() => setCompleteDialog(prev => ({ ...prev, open: false }))}
-              disabled={completeDialog.loading}
-            >
-              Отмена
-            </Button>
-            <Button
-              size="sm"
-              className="h-8 text-xs bg-emerald-600 text-white hover:bg-emerald-700 gap-1.5"
-              onClick={handleConfirmComplete}
-              disabled={completeDialog.loading}
-            >
-              {completeDialog.loading ? <Loader2 className="size-3.5 animate-spin" /> : <CheckCircle2 className="size-3.5" />}
-              Завершить рейс
-            </Button>
-          </DialogFooter>
+          </div>
         </DialogContent>
       </Dialog>
     </Dialog>
