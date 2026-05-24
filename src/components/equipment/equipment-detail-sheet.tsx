@@ -158,6 +158,103 @@ export function EquipmentDetailSheet({ open, onOpenChange, equipment, loading, d
   const glonassPanelConfig = usePanelConfig('glonass')
   const [glonassPanelManagerOpen, setGlonassPanelManagerOpen] = useState(false)
 
+  // Auto-refresh for GLONASS live data
+  const REFRESH_SPEEDS = [
+    { key: 'off', label: 'Выкл', interval: 0 },
+    { key: '5s', label: '5с', interval: 5000 },
+    { key: '10s', label: '10с', interval: 10000 },
+    { key: '15s', label: '15с', interval: 15000 },
+    { key: '30s', label: '30с', interval: 30000 },
+    { key: '60s', label: '1м', interval: 60000 },
+  ]
+  const [refreshSpeed, setRefreshSpeed] = useState('15s')
+  const refreshTimerRef = useRef<ReturnType<typeof setInterval> | null>(null)
+
+  // Fast live data fetch (uses /api/glonass/live — no DB writes)
+  const fetchLiveData = useCallback(async () => {
+    if (!eq?.trackers?.length) return
+    for (const tracker of eq.trackers) {
+      try {
+        const res = await fetch(`/api/glonass/live?trackerId=${tracker.id}`)
+        if (res.ok) {
+          const data = await res.json()
+          // Update position in local state for map
+          if (data.position) {
+            // Update the tracker's last position in the parent data
+            if (tracker.lastLatitude !== data.position.lat || tracker.lastLongitude !== data.position.lng) {
+              onRefresh()
+            }
+          }
+          // If we have sensor data from live endpoint, merge it with axentaSensors
+          if (axentaSensors && data.sensors) {
+            setAxentaSensors(prev => {
+              if (!prev) return prev
+              const updatedSensors = prev.sensors.map(s => {
+                const live = data.sensors.find((ls: { name: string; type: string }) =>
+                  ls.name === s.name || ls.type === s.type
+                )
+                if (live && live.value != null) {
+                  return { ...s, value: live.value, stringValue: live.stringValue, hasValue: true }
+                }
+                return s
+              })
+              // Recalculate grouped sensors
+              const categoryOrder = ['position', 'ignition', 'fuel', 'temperature', 'mileage', 'voltage', 'digital', 'custom']
+              const categoryLabels: Record<string, string> = {
+                position: 'Позиция и движение', ignition: 'Зажигание', fuel: 'Топливо',
+                temperature: 'Температура', mileage: 'Пробег', voltage: 'Напряжение',
+                digital: 'Цифровые датчики', custom: 'Прочие датчики',
+              }
+              const grouped: Record<string, { key: string; label: string; sensors: typeof updatedSensors }> = {}
+              for (const sensor of updatedSensors) {
+                const cat = sensor.category
+                if (!grouped[cat]) grouped[cat] = { key: cat, label: categoryLabels[cat] || cat, sensors: [] }
+                grouped[cat].sensors.push(sensor)
+              }
+              const sortedGroups = categoryOrder
+                .filter(cat => grouped[cat])
+                .map(cat => ({ ...grouped[cat] }))
+                .filter(g => g.sensors.length > 0)
+              return {
+                ...prev,
+                sensors: updatedSensors,
+                grouped: sortedGroups,
+                sensorsWithValues: updatedSensors.filter(s => s.hasValue).length,
+              }
+            })
+          }
+        }
+      } catch { /* ignore errors on auto-refresh */ }
+    }
+  }, [eq?.trackers, axentaSensors, onRefresh])
+
+  // Auto-refresh timer
+  useEffect(() => {
+    if (refreshTimerRef.current) {
+      clearInterval(refreshTimerRef.current)
+      refreshTimerRef.current = null
+    }
+    const speed = REFRESH_SPEEDS.find(s => s.key === refreshSpeed)
+    if (speed && speed.interval > 0 && open && detailTab === 'glonass' && eq?.trackers?.length) {
+      // Fetch immediately on start
+      fetchLiveData()
+      refreshTimerRef.current = setInterval(fetchLiveData, speed.interval)
+    }
+    return () => {
+      if (refreshTimerRef.current) {
+        clearInterval(refreshTimerRef.current)
+        refreshTimerRef.current = null
+      }
+    }
+  }, [refreshSpeed, open, detailTab, eq?.id, fetchLiveData])
+
+  // Reset live data when sheet closes
+  useEffect(() => {
+    if (!open) {
+      setRefreshSpeed('15s')
+    }
+  }, [open])
+
   // Axenta tracker commands
   const [trackerCommands, setTrackerCommands] = useState<{
     commands: Array<{ id: number | string; name: string; type: string; params: string | null; isVisible: boolean }>;
@@ -333,6 +430,14 @@ export function EquipmentDetailSheet({ open, onOpenChange, equipment, loading, d
       setCommandLog([])
     }
   }, [open, eq?.id])
+
+  // Auto-load Axenta sensors when GLONASS tab is opened
+  useEffect(() => {
+    if (open && eq && detailTab === 'glonass' && eq.trackers && eq.trackers.length > 0 && !axentaSensors && !axentaSensorsLoading) {
+      // Load sensors for the first tracker automatically
+      fetchAxentaSensors(eq.trackers[0].id)
+    }
+  }, [open, eq?.id, detailTab])
 
   if (!equipment) return null
 
@@ -820,9 +925,27 @@ export function EquipmentDetailSheet({ open, onOpenChange, equipment, loading, d
                             <CardHeader className="pb-1.5 pt-3 px-3">
                               <div className="flex items-center justify-between">
                                 <CardTitle className="text-xs font-semibold flex items-center gap-1.5"><MapPin className="size-3.5" />Карта</CardTitle>
-                                <Button size="sm" variant="ghost" className="h-6 text-[10px] gap-1" onClick={() => setShowAllTrackersMap(!showAllTrackersMap)}>
-                                  {showAllTrackersMap ? 'Текущая техника' : 'Вся техника'}
-                                </Button>
+                                <div className="flex items-center gap-1.5">
+                                  <Button size="sm" variant="ghost" className="h-6 text-[10px] gap-1" onClick={() => setShowAllTrackersMap(!showAllTrackersMap)}>
+                                    {showAllTrackersMap ? 'Текущая техника' : 'Вся техника'}
+                                  </Button>
+                                  <div className="flex items-center gap-0.5 bg-muted rounded-md p-0.5">
+                                    {REFRESH_SPEEDS.map(s => (
+                                      <button
+                                        key={s.key}
+                                        onClick={() => setRefreshSpeed(s.key)}
+                                        className={`h-5 px-1.5 rounded text-[9px] font-medium transition-colors ${
+                                          refreshSpeed === s.key
+                                            ? 'bg-background shadow-sm text-foreground'
+                                            : 'text-muted-foreground hover:text-foreground'
+                                        }`}
+                                        title={s.key === 'off' ? 'Авто-обновление выключено' : `Обновление каждые ${s.label}`}
+                                      >
+                                        {s.label}
+                                      </button>
+                                    ))}
+                                  </div>
+                                </div>
                               </div>
                             </CardHeader>
                             <CardContent className="px-0">
