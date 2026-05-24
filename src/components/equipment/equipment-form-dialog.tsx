@@ -314,7 +314,7 @@ export function EquipmentFormDialog({ open, onOpenChange, editData, companies, s
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-2xl p-0 gap-0 overflow-hidden" onKeyDown={handleKeyDown}>
+      <DialogContent className="sm:max-w-2xl max-h-[98dvh] p-0 gap-0 overflow-hidden" onKeyDown={handleKeyDown}>
         {/* #1 Gradient header */}
         <DialogHeader className="px-6 pt-5 pb-3 border-b bg-gradient-to-r from-emerald-50 to-teal-50 dark:from-emerald-950/30 dark:to-teal-950/30">
           <DialogTitle className="flex items-center gap-2.5 text-base">
