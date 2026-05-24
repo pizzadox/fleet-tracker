@@ -857,7 +857,7 @@ export function EquipmentDetailSheet({ open, onOpenChange, equipment, loading, d
                                 {statusBadge(tracker.isActive ? 'active' : 'repair', { active: { label: 'Активен', color: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-400' }, repair: { label: 'Неактивен', color: 'bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-400' } })}
                               </div>
                             </CardHeader>
-                            <CardContent className="px-0 space-y-2">
+                            <CardContent className="space-y-2">
                               <Separator />
                               <PanelSection panelKey="gl_location">
                               <DetailSection title="Местоположение" icon={<MapPin className="size-3.5" />}>
