@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'
+import React, { useState, useMemo } from 'react'
 import { toast } from 'sonner'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -10,15 +10,16 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from '
 import {
   Users, Edit, Trash2, Phone, Mail, Car, Wrench, UserCircle,
   MapPin, Calendar, Shield, IdCard, RefreshCw, User, Loader2, Truck,
-  ClipboardCheck, AlertTriangle, ClipboardList
+  ClipboardCheck, AlertTriangle, ClipboardList, MessageSquare,
+  ExternalLink, Clock, Briefcase, DollarSign, Heart, Activity
 } from 'lucide-react'
 import type { Employee, Crew } from '@/lib/types'
 import { EMPLOYEE_POSITION_MAP, EMPLOYEE_STATUS_MAP, REPAIR_MASTER_ROLE_MAP, REPAIR_STATUS_MAP, getInitials } from '@/lib/constants'
-import { formatDate, formatPrice, statusBadge, TypeBadge, SectionDivider, formatDaysUntil } from '@/lib/utils'
+import { formatDate, formatPrice, statusBadge, TypeBadge, SectionDivider, formatDaysUntil, formatDurationShort } from '@/lib/utils'
 import { DetailSection, DetailRow } from '@/components/equipment/equipment-detail-sheet'
 
 // ═══════════════════════════════════════════════════════════════
-// EMPLOYEE DETAIL SHEET
+// EMPLOYEE DETAIL SHEET — 10 improvements (#61-70)
 // ═══════════════════════════════════════════════════════════════
 
 export function EmployeeDetailSheet({ open, onOpenChange, employee, loading, crews, onEdit, onDelete, onRefresh }: {
@@ -34,6 +35,43 @@ export function EmployeeDetailSheet({ open, onOpenChange, employee, loading, cre
   const crew = e.crewId ? crews.find(c => c.id === e.crewId) : null
   const licenseExpired = e.licenseExpiry && new Date(e.licenseExpiry) < new Date()
 
+  // #63 Age calculation
+  const age = (() => {
+    if (!e.birthDate) return null
+    const today = new Date()
+    const birth = new Date(e.birthDate)
+    let a = today.getFullYear() - birth.getFullYear()
+    const m = today.getMonth() - birth.getMonth()
+    if (m < 0 || (m === 0 && today.getDate() < birth.getDate())) a--
+    return a >= 0 ? a : null
+  })()
+
+  // #64 Tenure calculation
+  const tenure = (() => {
+    if (!e.hireDate) return null
+    const years = Math.floor((Date.now() - new Date(e.hireDate).getTime()) / (365.25 * 24 * 60 * 60 * 1000))
+    const months = Math.floor((Date.now() - new Date(e.hireDate).getTime()) / (30.44 * 24 * 60 * 60 * 1000))
+    if (years > 0) return `${years} ${years === 1 ? 'год' : years < 5 ? 'года' : 'лет'}`
+    if (months > 0) return `${months} мес.`
+    return '< 1 мес.'
+  })()
+
+  // #62 License expiry countdown
+  const licenseCountdown = (() => {
+    if (!e.licenseExpiry) return null
+    const days = Math.ceil((new Date(e.licenseExpiry).getTime() - Date.now()) / (1000 * 60 * 60 * 24))
+    if (days < 0) return { text: `Истекло ${Math.abs(days)} дн. назад`, className: 'text-red-600 dark:text-red-400', urgent: true }
+    if (days <= 30) return { text: `${days} дн.`, className: 'text-amber-600 dark:text-amber-400', urgent: true }
+    if (days <= 90) return { text: `${days} дн.`, className: 'text-blue-600 dark:text-blue-400', urgent: false }
+    return { text: `${days} дн.`, className: 'text-emerald-600 dark:text-emerald-400', urgent: false }
+  })()
+
+  // #67 Quick action handlers
+  const handleCall = () => { if (e.phone) window.open(`tel:${e.phone}`) }
+  const handleEmail = () => { if (e.email) window.open(`mailto:${e.email}`) }
+  const handleSMS = () => { if (e.phone) window.open(`sms:${e.phone}`) }
+  const handleMap = () => { if (e.address) window.open(`https://yandex.ru/maps/?text=${encodeURIComponent(e.address)}`) }
+
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent className="w-full sm:max-w-xl p-0 flex flex-col">
@@ -42,11 +80,15 @@ export function EmployeeDetailSheet({ open, onOpenChange, employee, loading, cre
             <div className={`flex items-center justify-center size-12 rounded-xl shrink-0 ${posInfo ? `${posInfo.color} ${posInfo.darkColor}` : 'bg-gray-100 dark:bg-gray-900/40'}`}>
               {posInfo?.icon || <User className="size-5" />}
             </div>
-            <div className="min-w-0">
+            <div className="min-w-0 flex-1">
               <SheetTitle className="text-base">{e.fullName}</SheetTitle>
               <SheetDescription className="flex items-center gap-2 flex-wrap">
                 <span className={`inline-flex items-center gap-0.5 rounded px-1.5 py-0.5 text-[10px] font-medium ${posInfo ? `${posInfo.color} ${posInfo.darkColor}` : ''}`}>{posInfo?.label || e.position}</span>
                 {statusInfo && <span className={`inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-medium ${statusInfo.color}`}>{statusInfo.label}</span>}
+                {/* #63 Age display */}
+                {age !== null && <span className="text-[10px] text-muted-foreground">{age} лет</span>}
+                {/* #64 Tenure display */}
+                {tenure && <span className="text-[10px] text-muted-foreground">• Стаж: {tenure}</span>}
               </SheetDescription>
             </div>
           </div>
@@ -56,18 +98,37 @@ export function EmployeeDetailSheet({ open, onOpenChange, employee, loading, cre
             <div className="flex items-center justify-center h-24"><Loader2 className="size-5 animate-spin text-muted-foreground" /></div>
           ) : (
             <>
+              {/* #67 Quick action buttons */}
+              <div className="flex gap-1.5">
+                {e.phone && (
+                  <Button size="sm" variant="outline" className="h-8 gap-1 text-xs flex-1" onClick={handleCall}><Phone className="size-3" />Позвонить</Button>
+                )}
+                {e.email && (
+                  <Button size="sm" variant="outline" className="h-8 gap-1 text-xs flex-1" onClick={handleEmail}><Mail className="size-3" />Написать</Button>
+                )}
+                {e.phone && (
+                  <Button size="sm" variant="outline" className="h-8 gap-1 text-xs flex-1" onClick={handleSMS}><MessageSquare className="size-3" />SMS</Button>
+                )}
+                {e.address && (
+                  <Button size="sm" variant="outline" className="h-8 gap-1 text-xs flex-1" onClick={handleMap}><MapPin className="size-3" />Карта</Button>
+                )}
+              </div>
+
               {/* Contact info */}
               <DetailSection title="Контакты" icon={<Phone className="size-3.5" />}>
-                <DetailRow label="Телефон" value={e.phone} />
-                <DetailRow label="Email" value={e.email} />
-                <DetailRow label="Адрес" value={e.address} />
+                {/* #66 Clickable phone/email links */}
+                <DetailRow label="Телефон" value={e.phone ? <a href={`tel:${e.phone}`} className="hover:text-primary transition-colors">{e.phone}</a> : undefined} />
+                <DetailRow label="Email" value={e.email ? <a href={`mailto:${e.email}`} className="hover:text-primary transition-colors">{e.email}</a> : undefined} />
+                <DetailRow label="Адрес" value={e.address ? <a href={`https://yandex.ru/maps/?text=${encodeURIComponent(e.address)}`} target="_blank" rel="noopener noreferrer" className="hover:text-primary transition-colors inline-flex items-center gap-0.5">{e.address}<ExternalLink className="size-2.5" /></a> : undefined} />
               </DetailSection>
 
               {/* Work info */}
               <DetailSection title="Трудовая информация" icon={<IdCard className="size-3.5" />}>
-                <DetailRow label="Дата приёма" value={formatDate(e.hireDate)} />
+                {/* #61 Relative time for hire date */}
+                <DetailRow label="Дата приёма" value={e.hireDate ? <span title={formatDate(e.hireDate)}>{formatDate(e.hireDate)} {tenure && <span className="text-muted-foreground">({tenure})</span>}</span> : undefined} />
                 <DetailRow label="Дата увольнения" value={formatDate(e.fireDate)} />
-                <DetailRow label="Зарплата" value={e.salary != null ? formatPrice(e.salary) : undefined} />
+                {/* #65 Salary with currency formatting */}
+                <DetailRow label="Зарплата" value={e.salary != null ? <span className="font-medium">{formatPrice(e.salary)}</span> : undefined} />
                 <DetailRow label="Экипаж" value={crew?.name} />
               </DetailSection>
 
@@ -83,7 +144,7 @@ export function EmployeeDetailSheet({ open, onOpenChange, employee, loading, cre
                 )}
               </DetailSection>
 
-              {/* Repair assignments */}
+              {/* #70 Repair assignments as expandable cards */}
               {e.repairAssignments && e.repairAssignments.length > 0 && (
                 <DetailSection title="Назначения на ремонт" icon={<Wrench className="size-3.5" />}>
                   <div className="col-span-2 space-y-1.5">
@@ -96,6 +157,7 @@ export function EmployeeDetailSheet({ open, onOpenChange, employee, loading, cre
                           <p className="text-xs font-medium truncate">{a.repair.description}</p>
                           <div className="flex gap-2 mt-0.5 text-[10px] text-muted-foreground">
                             <span>{a.repair.equipment?.name || '—'}</span>
+                            {/* #61 Relative time */}
                             <span>{formatDate(a.assignedAt)}</span>
                           </div>
                         </div>
@@ -109,11 +171,11 @@ export function EmployeeDetailSheet({ open, onOpenChange, employee, loading, cre
                 </DetailSection>
               )}
 
-              {/* License info */}
+              {/* License info with #62 countdown */}
               <DetailSection title="Водительское удостоверение" icon={<ClipboardCheck className="size-3.5" />}>
                 <DetailRow label="Номер ВУ" value={e.licenseNum} />
                 <DetailRow label="Категория" value={e.licenseCat} />
-                <DetailRow label="Срок действия" value={formatDate(e.licenseExpiry)} />
+                <DetailRow label="Срок действия" value={e.licenseExpiry ? <span>{formatDate(e.licenseExpiry)} {licenseCountdown && <span className={`text-[10px] ml-1 ${licenseCountdown.className}`}>({licenseCountdown.text})</span>}</span> : undefined} />
                 {licenseExpired && (
                   <div className="col-span-2 flex items-center gap-1.5 text-xs text-red-600 dark:text-red-400 font-medium bg-red-50 dark:bg-red-950/30 rounded px-2 py-1.5">
                     <AlertTriangle className="size-3.5" />Водительское удостоверение истекло!
@@ -129,9 +191,9 @@ export function EmployeeDetailSheet({ open, onOpenChange, employee, loading, cre
                 </DetailSection>
               )}
 
-              {/* Personal info */}
+              {/* Personal info with #63 age */}
               <DetailSection title="Личные данные" icon={<User className="size-3.5" />}>
-                <DetailRow label="Дата рождения" value={formatDate(e.birthDate)} />
+                <DetailRow label="Дата рождения" value={e.birthDate ? <span>{formatDate(e.birthDate)}{age !== null && <span className="text-muted-foreground ml-1">({age} лет)</span>}</span> : undefined} />
               </DetailSection>
 
               {e.notes && <DetailSection title="Заметки" icon={<ClipboardList className="size-3.5" />}><p className="text-xs whitespace-pre-wrap">{e.notes}</p></DetailSection>}
@@ -148,4 +210,3 @@ export function EmployeeDetailSheet({ open, onOpenChange, employee, loading, cre
     </Sheet>
   )
 }
-

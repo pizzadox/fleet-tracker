@@ -74,6 +74,7 @@ import { TripsTab } from '@/components/trips/trips-tab'
 import { TripDetailDialog } from '@/components/trips/trip-detail-dialog'
 import { TripFormDialog } from '@/components/trips/trip-form-dialog'
 import { CrewFormDialog } from '@/components/crews/crew-form-dialog'
+import { CrewsTab } from '@/components/crews/crews-tab'
 import { RouteTemplateFormDialog } from '@/components/routes/route-template-form-dialog'
 import { CompaniesTab } from '@/components/management/companies-tab'
 import { CompanyFormDialog } from '@/components/management/company-form-dialog'
@@ -866,29 +867,7 @@ export default function Home() {
                 </Tabs>
                 {mgmtSubTab === 'companies' && <CompaniesTab companies={companies} onAdd={() => { setCompanyFormEdit(null); setCompanyFormOpen(true) }} onEdit={(c) => { setCompanyFormEdit(c); setCompanyFormOpen(true) }} onDelete={(c) => setDeleteDialog({ open: true, type: 'company', id: c.id, name: c.name })} />}
                 {mgmtSubTab === 'employees' && <EmployeesTab employees={employees} crews={crews} empSearch={empSearch} setEmpSearch={setEmpSearch} empPositionFilter={empPositionFilter} setEmpPositionFilter={setEmpPositionFilter} empStatusFilter={empStatusFilter} setEmpStatusFilter={setEmpStatusFilter} onOpenDetail={openEmployeeDetail} onAdd={() => { setEmpFormEdit(null); setEmpFormOpen(true) }} onEdit={(emp) => { setEmpFormEdit(emp); setEmpFormOpen(true) }} onDelete={(emp) => setDeleteDialog({ open: true, type: 'employee', id: emp.id, name: emp.fullName })} />}
-                {mgmtSubTab === 'crews' && (
-                  <div className="space-y-3">
-                    <div className="flex items-center justify-between">
-                      <h3 className="text-sm font-semibold">Экипажи</h3>
-                      <Button size="sm" onClick={() => { setCrewFormEdit(null); setCrewFormOpen(true) }}><Plus className="size-3.5 mr-1" />Добавить</Button>
-                    </div>
-                    {crews.length === 0 ? (
-                      <p className="text-sm text-muted-foreground text-center py-6">Нет экипажей</p>
-                    ) : (
-                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                        {crews.map(crew => (
-                          <Card key={crew.id} className="cursor-pointer hover:shadow-md transition-shadow" onClick={() => { setCrewFormEdit(crew); setCrewFormOpen(true) }}>
-                            <CardHeader className="p-3 pb-1"><CardTitle className="text-xs font-semibold">{crew.name}</CardTitle></CardHeader>
-                            <CardContent className="p-3 pt-1">
-                              <p className="text-[10px] text-muted-foreground">{CREW_TYPE_MAP[crew.type] || crew.type} • {crew.status === 'active' ? 'Активен' : 'Неактивен'}</p>
-                              {crew.members && crew.members.length > 0 && <p className="text-[10px] text-muted-foreground mt-1">Членов: {crew.members.length}</p>}
-                            </CardContent>
-                          </Card>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                )}
+                {mgmtSubTab === 'crews' && <CrewsTab crews={crews} employees={employees} onAdd={() => { setCrewFormEdit(null); setCrewFormOpen(true) }} onEdit={(c) => { setCrewFormEdit(c); setCrewFormOpen(true) }} onDelete={(c) => setDeleteDialog({ open: true, type: 'crew', id: c.id, name: c.name })} />}
               </div>
             </TabsContent>
           )}
@@ -915,14 +894,7 @@ export default function Home() {
               </Tabs>
               {mgmtSubTab === 'companies' && <CompaniesTab companies={companies} onAdd={() => { setCompanyFormEdit(null); setCompanyFormOpen(true) }} onEdit={(c) => { setCompanyFormEdit(c); setCompanyFormOpen(true) }} onDelete={(c) => setDeleteDialog({ open: true, type: 'company', id: c.id, name: c.name })} />}
               {mgmtSubTab === 'employees' && <EmployeesTab employees={employees} crews={crews} empSearch={empSearch} setEmpSearch={setEmpSearch} empPositionFilter={empPositionFilter} setEmpPositionFilter={setEmpPositionFilter} empStatusFilter={empStatusFilter} setEmpStatusFilter={setEmpStatusFilter} onOpenDetail={openEmployeeDetail} onAdd={() => { setEmpFormEdit(null); setEmpFormOpen(true) }} onEdit={(emp) => { setEmpFormEdit(emp); setEmpFormOpen(true) }} onDelete={(emp) => setDeleteDialog({ open: true, type: 'employee', id: emp.id, name: emp.fullName })} />}
-              {mgmtSubTab === 'crews' && (
-                <div className="space-y-3">
-                  <div className="flex items-center justify-between"><h3 className="text-sm font-semibold">Экипажи</h3><Button size="sm" onClick={() => { setCrewFormEdit(null); setCrewFormOpen(true) }}><Plus className="size-3.5 mr-1" />Добавить</Button></div>
-                  {crews.length === 0 ? <p className="text-sm text-muted-foreground text-center py-6">Нет экипажей</p> : (
-                    <div className="space-y-2">{crews.map(crew => (<Card key={crew.id} className="cursor-pointer hover:shadow-md transition-shadow" onClick={() => { setCrewFormEdit(crew); setCrewFormOpen(true) }}><CardHeader className="p-3 pb-1"><CardTitle className="text-xs font-semibold">{crew.name}</CardTitle></CardHeader><CardContent className="p-3 pt-1"><p className="text-[10px] text-muted-foreground">{CREW_TYPE_MAP[crew.type] || crew.type}</p></CardContent></Card>))}</div>
-                  )}
-                </div>
-              )}
+              {mgmtSubTab === 'crews' && <CrewsTab crews={crews} employees={employees} onAdd={() => { setCrewFormEdit(null); setCrewFormOpen(true) }} onEdit={(c) => { setCrewFormEdit(c); setCrewFormOpen(true) }} onDelete={(c) => setDeleteDialog({ open: true, type: 'crew', id: c.id, name: c.name })} />}
             </div>
           )}
           {mainTab === 'map' && hasPermission(currentUser.role, 'map') && <MapTab equipment={equipment} onOpenDetail={openEquipmentDetailById} onSync={async () => { try { const res = await fetch('/api/glonass/sync', { method: 'POST' }); const data = await res.json(); if (data.synced !== undefined) toast.success(`Синхронизация: ${data.synced} из ${data.totalTrackers}`); else toast.error(data.error || 'Ошибка'); fetchEquipment() } catch { toast.error('Ошибка синхронизации') } }} />}
