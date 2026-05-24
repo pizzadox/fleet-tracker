@@ -136,11 +136,13 @@ export async function GET(request: NextRequest) {
     }
 
     // Single request: fetch object details with lastMessage
+    const fetchStart = Date.now()
     const url = `${settings.apiUrl}/api/objects/${axentaId}/?full=true`
     const response = await fetch(url, {
       headers: { 'Authorization': `Token ${token}`, 'Content-Type': 'application/json' },
       signal: AbortSignal.timeout(12000),
     })
+    const fetchDuration = Date.now() - fetchStart
 
     if (!response.ok) {
       return NextResponse.json({ error: 'Ошибка Axenta API' }, { status: 502 })
@@ -216,6 +218,27 @@ export async function GET(request: NextRequest) {
       mileage: tracker.lastMileage,
       engineTemp: tracker.lastEngineTemp,
       sensors: liveSensors,
+      // Diagnostic timestamps
+      diagnostics: {
+        // When the tracker last sent a message to Axenta server
+        trackerLastMessage: lastMessage?.t
+          ? new Date(lastMessage.t as string).toISOString()
+          : null,
+        // When the tracker last reported its GPS position
+        trackerLastPosition: lastMessage?.tpos
+          ? new Date(lastMessage.tpos as string).toISOString()
+          : null,
+        // Whether Axenta considers the tracker online right now
+        axentaOnline: objectDetails?.connectedStatus ?? null,
+        // When we (our server) last successfully queried Axenta
+        ourLastFetch: new Date().toISOString(),
+        // How long our Axenta API call took (ms)
+        fetchDurationMs: fetchDuration,
+        // Whether the data from Axenta is considered "fresh" (< 90s old)
+        dataFresh: lastMessage?.t
+          ? (Date.now() - new Date(lastMessage.t as string).getTime()) < 90000
+          : false,
+      },
       lastSeenAt: lastMessage?.t
         ? new Date(lastMessage.t as string).toISOString()
         : tracker.lastSeenAt?.toISOString() || null,

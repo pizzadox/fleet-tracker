@@ -170,6 +170,17 @@ export function EquipmentDetailSheet({ open, onOpenChange, equipment, loading, d
   const [refreshSpeed, setRefreshSpeed] = useState('15s')
   const refreshTimerRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
+  // Live diagnostics state
+  const [liveDiag, setLiveDiag] = useState<{
+    trackerLastMessage: string | null    // ISO: when tracker sent to Axenta
+    trackerLastPosition: string | null   // ISO: when tracker reported GPS
+    axentaOnline: boolean | null         // Axenta thinks tracker is online
+    ourLastFetch: string | null          // ISO: when we last got data from Axenta
+    fetchDurationMs: number              // How long Axenta API call took
+    dataFresh: boolean                   // Data < 90s old
+    fetchError: string | null            // Last error message
+  } | null>(null)
+
   // Fast live data fetch (uses /api/glonass/live — no DB writes)
   const fetchLiveData = useCallback(async () => {
     if (!eq?.trackers?.length) return
@@ -178,9 +189,12 @@ export function EquipmentDetailSheet({ open, onOpenChange, equipment, loading, d
         const res = await fetch(`/api/glonass/live?trackerId=${tracker.id}`)
         if (res.ok) {
           const data = await res.json()
+          // Save diagnostics
+          if (data.diagnostics) {
+            setLiveDiag({ ...data.diagnostics, fetchError: null })
+          }
           // Update position in local state for map
           if (data.position) {
-            // Update the tracker's last position in the parent data
             if (tracker.lastLatitude !== data.position.lat || tracker.lastLongitude !== data.position.lng) {
               onRefresh()
             }
@@ -223,8 +237,12 @@ export function EquipmentDetailSheet({ open, onOpenChange, equipment, loading, d
               }
             })
           }
+        } else {
+          setLiveDiag(prev => prev ? { ...prev, fetchError: `HTTP ${res.status}` } : null)
         }
-      } catch { /* ignore errors on auto-refresh */ }
+      } catch (err) {
+        setLiveDiag(prev => prev ? { ...prev, fetchError: 'Сетевая ошибка' } : null)
+      }
     }
   }, [eq?.trackers, axentaSensors, onRefresh])
 
@@ -428,6 +446,7 @@ export function EquipmentDetailSheet({ open, onOpenChange, equipment, loading, d
       setCommandsPanelOpen(false)
       setCustomCommandText('')
       setCommandLog([])
+      setLiveDiag(null)
     }
   }, [open, eq?.id])
 
@@ -895,6 +914,86 @@ export function EquipmentDetailSheet({ open, onOpenChange, equipment, loading, d
                         </span>
                       )}
                     </div>
+
+                    {/* Live diagnostics bar */}
+                    {liveDiag && (
+                      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 px-2 py-1.5 rounded-md bg-muted/40 border border-border/30 text-[10px]">
+                        {/* Data freshness indicator */}
+                        <div className="flex items-center gap-1">
+                          <div className={`size-2 rounded-full ${
+                            liveDiag.fetchError ? 'bg-red-500 animate-pulse' :
+                            liveDiag.dataFresh ? 'bg-emerald-500' :
+                            liveDiag.trackerLastMessage ? 'bg-amber-500' : 'bg-gray-400'
+                          }`} />
+                          <span className="font-medium">
+                            {liveDiag.fetchError ? `Ошибка: ${liveDiag.fetchError}` :
+                             liveDiag.dataFresh ? 'Данные актуальны' :
+                             'Данные устарели'}
+                          </span>
+                        </div>
+
+                        {/* Tracker → Axenta: last message */}
+                        {liveDiag.trackerLastMessage && (
+                          <div className="flex items-center gap-1 text-muted-foreground">
+                            <Satellite className="size-2.5" />
+                            <span>Трекер→Axenta: {(() => {
+                              const diff = Date.now() - new Date(liveDiag.trackerLastMessage).getTime()
+                              const sec = Math.floor(diff / 1000)
+                              const min = Math.floor(sec / 60)
+                              const hrs = Math.floor(min / 60)
+                              if (sec < 10) return 'только что'
+                              if (sec < 60) return `${sec}с назад`
+                              if (min < 60) return `${min}м ${sec % 60}с назад`
+                              return `${hrs}ч ${min % 60}м назад`
+                            })()}</span>
+                          </div>
+                        )}
+
+                        {/* Axenta online status */}
+                        {liveDiag.axentaOnline != null && (
+                          <div className={`flex items-center gap-1 ${liveDiag.axentaOnline ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-500'}`}>
+                            {liveDiag.axentaOnline ? <Wifi className="size-2.5" /> : <WifiOff className="size-2.5" />}
+                            <span>{liveDiag.axentaOnline ? 'Онлайн' : 'Офлайн'}</span>
+                          </div>
+                        )}
+
+                        {/* Our API call timing */}
+                        {liveDiag.fetchDurationMs > 0 && (
+                          <div className="flex items-center gap-1 text-muted-foreground">
+                            <RefreshCw className="size-2.5" />
+                            <span>Axenta: {liveDiag.fetchDurationMs > 1000 ? `${(liveDiag.fetchDurationMs / 1000).toFixed(1)}с` : `${liveDiag.fetchDurationMs}мс`}</span>
+                          </div>
+                        )}
+
+                        {/* Last GPS position time */}
+                        {liveDiag.trackerLastPosition && (
+                          <div className="flex items-center gap-1 text-muted-foreground">
+                            <MapPin className="size-2.5" />
+                            <span>GPS: {(() => {
+                              const diff = Date.now() - new Date(liveDiag.trackerLastPosition).getTime()
+                              const sec = Math.floor(diff / 1000)
+                              const min = Math.floor(sec / 60)
+                              if (sec < 10) return 'только что'
+                              if (sec < 60) return `${sec}с назад`
+                              if (min < 60) return `${min}м назад`
+                              return `${Math.floor(min / 60)}ч назад`
+                            })()}</span>
+                          </div>
+                        )}
+
+                        {/* Explanation of delay if data is stale */}
+                        {!liveDiag.dataFresh && liveDiag.trackerLastMessage && (
+                          <div className="flex items-center gap-1 text-amber-600 dark:text-amber-400">
+                            <AlertTriangle className="size-2.5" />
+                            <span>
+                              {liveDiag.axentaOnline
+                                ? 'Трекер передаёт с задержкой'
+                                : 'Нет связи с трекером'}
+                            </span>
+                          </div>
+                        )}
+                      </div>
+                    )}
 
                     {(!eq.trackers || eq.trackers.length === 0) ? (
                       <div className="text-center py-8">
