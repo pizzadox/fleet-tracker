@@ -70,6 +70,7 @@ export function TripDetailDialog({ open, onOpenChange, trip, loading, crews, onE
   const [routeMapTrackData, setRouteMapTrackData] = useState<any>(null)
   const [focusedPoint, setFocusedPoint] = useState<{ lat: number; lng: number; type: 'parking' | 'stop' | 'refuel' | 'plum'; label?: string } | null>(null)
   const [routePointsCollapsed, setRoutePointsCollapsed] = useState(true)
+  const [routeAddressesOpen, setRouteAddressesOpen] = useState(false)
 
   // ─── Complete trip dialog with refuel detection ─────────────
   const [completeDialog, setCompleteDialog] = useState<{
@@ -775,50 +776,82 @@ export function TripDetailDialog({ open, onOpenChange, trip, loading, crews, onE
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-3xl max-h-[98dvh] flex flex-col">
         <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            <Route className="size-4" />
+          <DialogTitle className="flex items-center gap-2 pr-8">
+            <Route className="size-4 shrink-0" />
             <span className="flex-1 min-w-0 truncate">{t.route}</span>
-            {/* Copy route name button */}
-            <Button variant="ghost" size="sm" className="size-6 p-0 shrink-0" onClick={() => copyToClipboard(t.route)} title="Копировать маршрут">
-              <Copy className="size-3" />
-            </Button>
-            {/* Share trip link button */}
-            <Button variant="ghost" size="sm" className="size-6 p-0 shrink-0" onClick={() => copyToClipboard(`${window.location.origin}/?trip=${t.id}`)} title="Скопировать ссылку">
-              <Share2 className="size-3" />
-            </Button>
           </DialogTitle>
-          <DialogDescription className="flex items-center gap-2 flex-wrap">
-            {t.equipment && onOpenEquipment ? (
-              <button
-                type="button"
-                className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-primary hover:underline transition-colors cursor-pointer"
-                onClick={() => onOpenEquipment(t.equipment.id)}
-              >
-                {eqTypeInfo ? React.cloneElement(eqTypeInfo.icon as React.ReactElement, { className: 'size-3.5 shrink-0' }) : <Truck className="size-3.5 shrink-0" />}
-                <span>{t.equipment.name}</span>
-                {t.equipment.registrationNum && <span>• {t.equipment.registrationNum}</span>}
-              </button>
-            ) : (
-              <>{t.equipment?.name} {t.equipment?.registrationNum ? `• ${t.equipment.registrationNum}` : ''}</>
+          <DialogDescription className="space-y-1.5">
+            {/* First row: equipment, status, duration, crew */}
+            <div className="flex items-center gap-2 flex-wrap">
+              {/* Copy route name button */}
+              <Button variant="ghost" size="sm" className="size-6 p-0 shrink-0" onClick={() => copyToClipboard(t.route)} title="Копировать маршрут">
+                <Copy className="size-3" />
+              </Button>
+              {/* Share trip link button */}
+              <Button variant="ghost" size="sm" className="size-6 p-0 shrink-0" onClick={() => copyToClipboard(`${window.location.origin}/?trip=${t.id}`)} title="Скопировать ссылку">
+                <Share2 className="size-3" />
+              </Button>
+              {t.equipment && onOpenEquipment ? (
+                <button
+                  type="button"
+                  className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-primary hover:underline transition-colors cursor-pointer"
+                  onClick={() => onOpenEquipment(t.equipment.id)}
+                >
+                  {eqTypeInfo ? React.cloneElement(eqTypeInfo.icon as React.ReactElement, { className: 'size-3.5 shrink-0' }) : <Truck className="size-3.5 shrink-0" />}
+                  <span>{t.equipment.name}</span>
+                  {t.equipment.registrationNum && <span>• {t.equipment.registrationNum}</span>}
+                </button>
+              ) : (
+                <>{t.equipment?.name} {t.equipment?.registrationNum ? `• ${t.equipment.registrationNum}` : ''}</>
+              )}
+              <span className="ml-1">{statusBadge(t.status, TRIP_STATUS_MAP)}</span>
+              {/* Duration in header */}
+              {t.tripDuration != null && t.tripDuration > 0 && t.tripDuration < 8640000 && (
+                <span className="inline-flex items-center gap-0.5 text-[10px] text-muted-foreground ml-1"><Timer className="size-3" />{fmtDur(t.tripDuration)}</span>
+              )}
+              {/* Elapsed time for in-progress */}
+              {elapsedTime && (
+                <span className="inline-flex items-center gap-0.5 text-[10px] font-medium text-amber-600 dark:text-amber-400 animate-pulse"><Clock className="size-3" />{elapsedTime}</span>
+              )}
+              {/* Crew name */}
+              {crew && <span className="inline-flex items-center gap-0.5 text-[10px] text-muted-foreground"><Users className="size-3" />{crew.name}</span>}
+              {/* Route template badge */}
+              {t.routeTemplate && <span className="inline-flex items-center gap-0.5 text-[10px] text-sky-600 dark:text-sky-400 bg-sky-50 dark:bg-sky-950/30 px-1.5 py-0.5 rounded"><Route className="size-2.5" />{t.routeTemplate.name}</span>}
+              {/* Trip ID short */}
+              <span className="inline-flex items-center gap-0.5 text-[9px] text-muted-foreground/60 font-mono ml-auto"><Hash className="size-2.5" />{t.id.slice(0, 8)}</span>
+            </div>
+            {/* Collapsible route addresses */}
+            {(t.startPoint || t.endPoint) && (
+              <Collapsible open={routeAddressesOpen} onOpenChange={setRouteAddressesOpen}>
+                <CollapsibleTrigger asChild>
+                  <button className="flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground transition-colors py-0.5 cursor-pointer">
+                    <ChevronDown className={`size-3 transition-transform duration-200 ${!routeAddressesOpen ? '-rotate-90' : ''}`} />
+                    <MapPinned className="size-3" />
+                    {t.startPoint && <span className="text-emerald-600 dark:text-emerald-400">{t.startPoint}</span>}
+                    {t.startPoint && t.endPoint && <ArrowRight className="size-2.5 text-muted-foreground/50" />}
+                    {t.endPoint && <span className="text-red-600 dark:text-red-400">{t.endPoint}</span>}
+                  </button>
+                </CollapsibleTrigger>
+                <CollapsibleContent>
+                  <div className="ml-4 mt-1 space-y-0.5">
+                    {t.startPoint && (
+                      <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground">
+                        <MapPin className="size-2.5 text-emerald-500" />
+                        <span>От: </span>
+                        <span className="text-foreground">{t.startPoint}</span>
+                      </div>
+                    )}
+                    {t.endPoint && (
+                      <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground">
+                        <MapPin className="size-2.5 text-red-500" />
+                        <span>До: </span>
+                        <span className="text-foreground">{t.endPoint}</span>
+                      </div>
+                    )}
+                  </div>
+                </CollapsibleContent>
+              </Collapsible>
             )}
-            <span className="ml-1">{statusBadge(t.status, TRIP_STATUS_MAP)}</span>
-            {/* Duration in header */}
-            {t.tripDuration != null && t.tripDuration > 0 && t.tripDuration < 8640000 && (
-              <span className="inline-flex items-center gap-0.5 text-[10px] text-muted-foreground ml-1"><Timer className="size-3" />{fmtDur(t.tripDuration)}</span>
-            )}
-            {/* Elapsed time for in-progress */}
-            {elapsedTime && (
-              <span className="inline-flex items-center gap-0.5 text-[10px] font-medium text-amber-600 dark:text-amber-400 animate-pulse"><Clock className="size-3" />{elapsedTime}</span>
-            )}
-            {/* Crew name */}
-            {crew && <span className="inline-flex items-center gap-0.5 text-[10px] text-muted-foreground"><Users className="size-3" />{crew.name}</span>}
-            {/* Route template badge */}
-            {t.routeTemplate && <span className="inline-flex items-center gap-0.5 text-[10px] text-sky-600 dark:text-sky-400 bg-sky-50 dark:bg-sky-950/30 px-1.5 py-0.5 rounded"><Route className="size-2.5" />{t.routeTemplate.name}</span>}
-            {/* Start/end point badges */}
-            {t.startPoint && <span className="inline-flex items-center gap-0.5 text-[10px] text-muted-foreground"><MapPin className="size-2.5 text-emerald-500" />{t.startPoint}</span>}
-            {t.endPoint && <span className="inline-flex items-center gap-0.5 text-[10px] text-muted-foreground"><MapPin className="size-2.5 text-red-500" />{t.endPoint}</span>}
-            {/* Trip ID short */}
-            <span className="inline-flex items-center gap-0.5 text-[9px] text-muted-foreground/60 font-mono ml-auto"><Hash className="size-2.5" />{t.id.slice(0, 8)}</span>
           </DialogDescription>
         </DialogHeader>
         <div className="overflow-y-auto flex-1 min-h-0 px-4 sm:px-5">
