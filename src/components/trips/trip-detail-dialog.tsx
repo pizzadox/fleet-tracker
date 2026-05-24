@@ -302,6 +302,8 @@ export function TripDetailDialog({ open, onOpenChange, trip, loading, crews, onE
     setCompleteDialog(prev => ({ ...prev, loading: true }))
     try {
       const payload: Record<string, unknown> = { action: 'complete' }
+      // Use existing endDate if already filled, otherwise let API set current time
+      if (t.endDate) payload.endDate = new Date(t.endDate).toISOString()
       // Override sensor data with user-confirmed values
       if (completeDialog.fuelEnd) payload.fuelEnd = parseFloat(completeDialog.fuelEnd)
       if (completeDialog.mileageEnd) payload.mileageEnd = parseInt(completeDialog.mileageEnd)
@@ -1453,9 +1455,9 @@ export function TripDetailDialog({ open, onOpenChange, trip, loading, crews, onE
 
           <div className="overflow-y-auto flex-1 min-h-0 px-4 sm:px-5">
             {completeDialog.loading ? (
-              <div className="flex flex-col items-center justify-center py-12">
-                <div className="size-12 rounded-full bg-emerald-100 dark:bg-emerald-900/40 flex items-center justify-center mb-3">
-                  <Loader2 className="size-6 animate-spin text-emerald-600 dark:text-emerald-400" />
+              <div className="flex flex-col items-center justify-center py-8">
+                <div className="size-10 rounded-full bg-emerald-100 dark:bg-emerald-900/40 flex items-center justify-center mb-3">
+                  <Loader2 className="size-5 animate-spin text-emerald-600 dark:text-emerald-400" />
                 </div>
                 <p className="text-sm font-medium text-muted-foreground">Получение данных с датчиков...</p>
                 <p className="text-xs text-muted-foreground/60 mt-1">Запрос показаний трекера</p>
@@ -1668,28 +1670,29 @@ export function TripDetailDialog({ open, onOpenChange, trip, loading, crews, onE
               </div>
             )}
 
-            {/* Footer after content */}
-            <div className="bg-card border-t pt-3 pb-2 -mx-4 sm:-mx-5 px-4 sm:px-5 mt-4">
-              <div className="flex justify-end gap-2">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="h-8 text-xs"
-                  onClick={() => setCompleteDialog(prev => ({ ...prev, open: false }))}
-                  disabled={completeDialog.loading}
-                >
-                  Отмена
-                </Button>
-                <Button
-                  size="sm"
-                  className="h-8 text-xs bg-emerald-600 text-white hover:bg-emerald-700 gap-1.5"
-                  onClick={handleConfirmComplete}
-                  disabled={completeDialog.loading}
-                >
-                  {completeDialog.loading ? <Loader2 className="size-3.5 animate-spin" /> : <CheckCircle2 className="size-3.5" />}
-                  Завершить рейс
-                </Button>
-              </div>
+          </div>
+
+          {/* Footer — outside scrollable area */}
+          <div className="shrink-0 border-t bg-card px-4 sm:px-5 py-3">
+            <div className="flex justify-end gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-8 text-xs"
+                onClick={() => setCompleteDialog(prev => ({ ...prev, open: false }))}
+                disabled={completeDialog.loading}
+              >
+                Отмена
+              </Button>
+              <Button
+                size="sm"
+                className="h-8 text-xs bg-emerald-600 text-white hover:bg-emerald-700 gap-1.5"
+                onClick={handleConfirmComplete}
+                disabled={completeDialog.loading}
+              >
+                {completeDialog.loading ? <Loader2 className="size-3.5 animate-spin" /> : <CheckCircle2 className="size-3.5" />}
+                Завершить рейс
+              </Button>
             </div>
           </div>
         </DialogContent>

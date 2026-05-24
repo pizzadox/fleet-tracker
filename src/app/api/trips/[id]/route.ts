@@ -1682,7 +1682,8 @@ async function handleComplete(id: string, body?: Record<string, unknown> | null)
   if (trip.status === 'cancelled') return NextResponse.json({ error: 'Отменённый рейс нельзя завершить' }, { status: 400 })
 
   const now = new Date()
-  const updateData: Record<string, unknown> = { status: 'completed', endDate: now }
+  const endDate = body?.endDate ? new Date(body.endDate as string) : (trip.endDate ? new Date(trip.endDate) : now)
+  const updateData: Record<string, unknown> = { status: 'completed', endDate }
 
   // User-provided overrides from the complete dialog take priority
   const userFuelEnd = body?.fuelEnd != null ? Number(body.fuelEnd) : null
@@ -1755,7 +1756,7 @@ async function handleComplete(id: string, body?: Record<string, unknown> | null)
           const statsResponse = await fetch(statsUrl, {
             method: 'POST',
             headers: { 'Authorization': `Token ${token}`, 'Content-Type': 'application/json' },
-            body: JSON.stringify({ objectId: Number(objectId), startDate: new Date(trip.startDate).toISOString(), endDate: now.toISOString() }),
+            body: JSON.stringify({ objectId: Number(objectId), startDate: new Date(trip.startDate).toISOString(), endDate: endDate.toISOString() }),
             signal: AbortSignal.timeout(15000),
           })
           if (statsResponse.ok) {
@@ -1809,7 +1810,7 @@ async function handleComplete(id: string, body?: Record<string, unknown> | null)
     distance: trip.distance ?? null,
     refuelVolume: effectiveRefuelVolume,
     startDate: trip.startDate,
-    endDate: now,
+    endDate: endDate,
     tripDuration: trip.tripDuration ?? null,
     axentaMileage: axentaStats?.mileage as number | null ?? null,
     axentaAvgSpeed: axentaStats?.avgSpeed as number | null ?? null,
@@ -1841,7 +1842,7 @@ async function handleComplete(id: string, body?: Record<string, unknown> | null)
   })
 
   await db.equipmentHistory.create({
-    data: { equipmentId: trip.equipmentId, event: 'trip_completed', description: `Рейс завершён: ${trip.route}`, date: now },
+    data: { equipmentId: trip.equipmentId, event: 'trip_completed', description: `Рейс завершён: ${trip.route}`, date: endDate },
   })
 
   return NextResponse.json(updatedTrip)
