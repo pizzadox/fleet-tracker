@@ -128,6 +128,13 @@ export function EquipmentDetailSheet({ open, onOpenChange, equipment, loading, d
   const eq = equipment
   const filteredPhotos = eq?.photos?.filter(p => photoCategoryFilter === 'all' || p.category === photoCategoryFilter) || []
 
+  // Reset live positions when equipment changes
+  const prevEqIdRef = useRef(eq?.id)
+  if (eq?.id !== prevEqIdRef.current) {
+    prevEqIdRef.current = eq?.id
+    // Will be handled below in livePositions state reset
+  }
+
   // Tracker connection dialog
   const [trackerPickerOpen, setTrackerPickerOpen] = useState(false)
   const [trackerPickerLoading, setTrackerPickerLoading] = useState(false)
@@ -181,6 +188,13 @@ export function EquipmentDetailSheet({ open, onOpenChange, equipment, loading, d
     fetchError: string | null            // Last error message
   } | null>(null)
 
+  // Live positions for map — updated on every auto-refresh without full page reload
+  const [livePositions, setLivePositions] = useState<Record<string, {
+    lat: number; lng: number; speed: number | null; course: number | null; altitude: number | null; address: string | null;
+    ignition: boolean | null; fuelLevel: number | null; mileage: number | null; engineTemp: number | null;
+    lastSeenAt: string | null; lastPositionAt: string | null; connectedStatus: boolean | null;
+  }>>({})
+
   // Fast live data fetch (uses /api/glonass/live — no DB writes)
   const fetchLiveData = useCallback(async () => {
     if (!eq?.trackers?.length) return
@@ -193,11 +207,26 @@ export function EquipmentDetailSheet({ open, onOpenChange, equipment, loading, d
           if (data.diagnostics) {
             setLiveDiag({ ...data.diagnostics, fetchError: null })
           }
-          // Update position in local state for map
-          if (data.position) {
-            if (tracker.lastLatitude !== data.position.lat || tracker.lastLongitude !== data.position.lng) {
-              onRefresh()
-            }
+          // Update position in local state for map — NO full page refresh, just move the marker
+          if (data.position && data.position.lat != null && data.position.lng != null) {
+            setLivePositions(prev => ({
+              ...prev,
+              [tracker.id]: {
+                lat: data.position.lat,
+                lng: data.position.lng,
+                speed: data.position.speed ?? null,
+                course: data.position.course ?? null,
+                altitude: data.position.altitude ?? null,
+                address: data.position.address ?? null,
+                ignition: data.ignition ?? null,
+                fuelLevel: data.fuelLevel ?? null,
+                mileage: data.mileage ?? null,
+                engineTemp: data.engineTemp ?? null,
+                lastSeenAt: data.lastSeenAt ?? null,
+                lastPositionAt: data.lastPositionAt ?? null,
+                connectedStatus: data.connectedStatus ?? null,
+              }
+            }))
           }
           // If we have sensor data from live endpoint, merge it with axentaSensors
           if (axentaSensors && data.sensors) {
@@ -244,7 +273,7 @@ export function EquipmentDetailSheet({ open, onOpenChange, equipment, loading, d
         setLiveDiag(prev => prev ? { ...prev, fetchError: 'Сетевая ошибка' } : null)
       }
     }
-  }, [eq?.trackers, axentaSensors, onRefresh])
+  }, [eq?.trackers, axentaSensors])
 
   // Auto-refresh timer
   useEffect(() => {
@@ -270,6 +299,8 @@ export function EquipmentDetailSheet({ open, onOpenChange, equipment, loading, d
   useEffect(() => {
     if (!open) {
       setRefreshSpeed('15s')
+      setLivePositions({})
+      setLiveDiag(null)
     }
   }, [open])
 
@@ -1051,8 +1082,46 @@ export function EquipmentDetailSheet({ open, onOpenChange, equipment, loading, d
                               <div className="h-[300px] rounded-lg overflow-hidden border">
                                 <TrackerMap
                                   trackers={showAllTrackersMap
-                                    ? allEquipment.flatMap(e => (e.trackers || []).filter(t => t.lastLatitude != null && t.lastLongitude != null).map(t => ({ ...t, equipmentName: e.name, registrationNum: e.registrationNum, equipmentId: e.id })))
-                                    : eq.trackers!.filter(t => t.lastLatitude != null && t.lastLongitude != null).map(t => ({ ...t, equipmentName: eq.name, registrationNum: eq.registrationNum, equipmentId: eq.id }))
+                                    ? allEquipment.flatMap(e => (e.trackers || []).filter(t => t.lastLatitude != null && t.lastLongitude != null).map(t => {
+                                      const live = livePositions[t.id]
+                                      return {
+                                        ...t,
+                                        lastLatitude: live?.lat ?? t.lastLatitude,
+                                        lastLongitude: live?.lng ?? t.lastLongitude,
+                                        lastSpeed: live?.speed ?? t.lastSpeed,
+                                        lastCourse: live?.course ?? t.lastCourse,
+                                        lastAltitude: live?.altitude ?? t.lastAltitude,
+                                        lastAddress: live?.address ?? t.lastAddress,
+                                        lastIgnition: live?.ignition ?? t.lastIgnition,
+                                        lastFuelLevel: live?.fuelLevel ?? t.lastFuelLevel,
+                                        lastMileage: live?.mileage ?? t.lastMileage,
+                                        lastEngineTemp: live?.engineTemp ?? t.lastEngineTemp,
+                                        lastSeenAt: live?.lastSeenAt ?? t.lastSeenAt,
+                                        lastPositionAt: live?.lastPositionAt ?? t.lastPositionAt,
+                                        isActive: live?.connectedStatus ?? t.isActive,
+                                        equipmentName: e.name, registrationNum: e.registrationNum, equipmentId: e.id,
+                                      }
+                                    }))
+                                    : eq.trackers!.filter(t => t.lastLatitude != null || livePositions[t.id]?.lat != null).map(t => {
+                                      const live = livePositions[t.id]
+                                      return {
+                                        ...t,
+                                        lastLatitude: live?.lat ?? t.lastLatitude,
+                                        lastLongitude: live?.lng ?? t.lastLongitude,
+                                        lastSpeed: live?.speed ?? t.lastSpeed,
+                                        lastCourse: live?.course ?? t.lastCourse,
+                                        lastAltitude: live?.altitude ?? t.lastAltitude,
+                                        lastAddress: live?.address ?? t.lastAddress,
+                                        lastIgnition: live?.ignition ?? t.lastIgnition,
+                                        lastFuelLevel: live?.fuelLevel ?? t.lastFuelLevel,
+                                        lastMileage: live?.mileage ?? t.lastMileage,
+                                        lastEngineTemp: live?.engineTemp ?? t.lastEngineTemp,
+                                        lastSeenAt: live?.lastSeenAt ?? t.lastSeenAt,
+                                        lastPositionAt: live?.lastPositionAt ?? t.lastPositionAt,
+                                        isActive: live?.connectedStatus ?? t.isActive,
+                                        equipmentName: eq.name, registrationNum: eq.registrationNum, equipmentId: eq.id,
+                                      }
+                                    })
                                   }
                                   trackPoints={mapTrackData}
                                 />
@@ -1083,12 +1152,12 @@ export function EquipmentDetailSheet({ open, onOpenChange, equipment, loading, d
                               <Separator />
                               <PanelSection panelKey="gl_location">
                               <DetailSection title="Местоположение" icon={<MapPin className="size-3.5" />}>
-                                <DetailRow label="Широта" value={tracker.lastLatitude?.toFixed(6)} />
-                                <DetailRow label="Долгота" value={tracker.lastLongitude?.toFixed(6)} />
-                                <DetailRow label="Скорость" value={tracker.lastSpeed != null ? `${tracker.lastSpeed} км/ч` : undefined} />
-                                <DetailRow label="Курс" value={tracker.lastCourse != null ? getCourseDirection(tracker.lastCourse) : undefined} />
-                                <DetailRow label="Высота" value={tracker.lastAltitude != null ? `${tracker.lastAltitude} м` : undefined} />
-                                {tracker.lastAddress && <DetailRow label="Адрес" value={tracker.lastAddress} />}
+                                <DetailRow label="Широта" value={(livePositions[tracker.id]?.lat ?? tracker.lastLatitude)?.toFixed(6)} />
+                                <DetailRow label="Долгота" value={(livePositions[tracker.id]?.lng ?? tracker.lastLongitude)?.toFixed(6)} />
+                                <DetailRow label="Скорость" value={(livePositions[tracker.id]?.speed ?? tracker.lastSpeed) != null ? `${livePositions[tracker.id]?.speed ?? tracker.lastSpeed} км/ч` : undefined} />
+                                <DetailRow label="Курс" value={(livePositions[tracker.id]?.course ?? tracker.lastCourse) != null ? getCourseDirection(livePositions[tracker.id]?.course ?? tracker.lastCourse) : undefined} />
+                                <DetailRow label="Высота" value={(livePositions[tracker.id]?.altitude ?? tracker.lastAltitude) != null ? `${livePositions[tracker.id]?.altitude ?? tracker.lastAltitude} м` : undefined} />
+                                {(livePositions[tracker.id]?.address ?? tracker.lastAddress) && <DetailRow label="Адрес" value={livePositions[tracker.id]?.address ?? tracker.lastAddress} />}
                               </DetailSection>
                               </PanelSection>
                               {/* ── All sensors from Axenta ── */}
