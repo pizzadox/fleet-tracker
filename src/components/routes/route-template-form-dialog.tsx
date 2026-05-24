@@ -298,7 +298,7 @@ export function RouteTemplateFormDialog({ open, setOpen, editData, onSaved }: {
           <DialogDescription className="text-xs">{editData ? 'Измените параметры маршрута и точки маршрута' : 'Создайте шаблон маршрута с точками назначения'}</DialogDescription>
         </DialogHeader>
 
-        <div className="overflow-y-auto flex-1 min-h-0 max-h-[72vh]">
+        <div className="overflow-y-auto flex-1 min-h-0">
           {/* Section 1: Basic parameters */}
           <div className="px-6 py-4 border-b">
             <div className="flex items-center gap-2 mb-3">
@@ -560,22 +560,22 @@ export function RouteTemplateFormDialog({ open, setOpen, editData, onSaved }: {
               </div>
             </div>
           </div>
-        </div>
 
-        {/* Footer with summary */}
-        <DialogFooter className="px-6 py-3 border-t bg-muted/30 flex-row items-center justify-between gap-4">
-          <div className="flex items-center gap-4 text-xs text-muted-foreground">
-            {points.length > 0 && <span className="flex items-center gap-1"><MapPinned className="size-3" />{points.length} {points.length === 1 ? 'точка' : points.length < 5 ? 'точки' : 'точек'}</span>}
-            {totalDist > 0 && <span className="flex items-center gap-1"><Navigation className="size-3" />{totalDist.toFixed(1)} км</span>}
-            {durationStr && <span className="flex items-center gap-1"><Clock className="size-3" />{durationStr}</span>}
-          </div>
-          <div className="flex items-center gap-2">
-            <Button variant="outline" onClick={() => setOpen(false)} className="h-9">Отмена</Button>
-            <Button onClick={handleSave} disabled={saving} className="h-9 bg-sky-600 hover:bg-sky-700">
-              {saving && <Loader2 className="size-3.5 animate-spin mr-1.5" />}{editData ? 'Сохранить' : 'Создать маршрут'}
-            </Button>
-          </div>
-        </DialogFooter>
+          {/* Footer with summary — inside scrollable area, sticks to bottom */}
+          <DialogFooter className="sticky bottom-0 px-6 py-3 border-t bg-card z-10 flex-row items-center justify-between gap-4">
+            <div className="flex items-center gap-4 text-xs text-muted-foreground">
+              {points.length > 0 && <span className="flex items-center gap-1"><MapPinned className="size-3" />{points.length} {points.length === 1 ? 'точка' : points.length < 5 ? 'точки' : 'точек'}</span>}
+              {totalDist > 0 && <span className="flex items-center gap-1"><Navigation className="size-3" />{totalDist.toFixed(1)} км</span>}
+              {durationStr && <span className="flex items-center gap-1"><Clock className="size-3" />{durationStr}</span>}
+            </div>
+            <div className="flex items-center gap-2">
+              <Button variant="outline" onClick={() => setOpen(false)} className="h-9">Отмена</Button>
+              <Button onClick={handleSave} disabled={saving} className="h-9 bg-sky-600 hover:bg-sky-700">
+                {saving && <Loader2 className="size-3.5 animate-spin mr-1.5" />}{editData ? 'Сохранить' : 'Создать маршрут'}
+              </Button>
+            </div>
+          </DialogFooter>
+        </div>
       </DialogContent>
     </Dialog>
   )
