@@ -253,7 +253,7 @@ export async function GET(request: NextRequest) {
 
       // Bulk insert — much faster than individual creates
       if (sensorCreates.length > 0) {
-        await db.glonassSensorData.createMany({ data: sensorCreates, skipDuplicates: true })
+        await db.glonassSensorData.createMany({ data: sensorCreates })
       }
     }
 

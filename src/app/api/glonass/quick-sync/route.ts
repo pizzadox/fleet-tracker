@@ -202,7 +202,7 @@ async function quickSyncTracker(
 
     // BULK insert all sensors at once
     if (sensorCreates.length > 0) {
-      await db.glonassSensorData.createMany({ data: sensorCreates, skipDuplicates: true })
+      await db.glonassSensorData.createMany({ data: sensorCreates })
     }
 
     if (hasFuelSensor) updateData.lastFuelLevel = totalFuel

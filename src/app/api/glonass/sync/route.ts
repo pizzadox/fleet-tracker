@@ -332,7 +332,6 @@ async function updateTrackerFromAxenta(
     if (sensorCreates.length > 0) {
       await db.glonassSensorData.createMany({
         data: sensorCreates,
-        skipDuplicates: true,
       })
     }
 
