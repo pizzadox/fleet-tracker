@@ -40,6 +40,7 @@ import dynamic from 'next/dynamic'
 import type { Equipment, GlonassTracker, GlonassSensorData } from '@/lib/types'
 import { EQUIPMENT_STATUS_MAP, EQUIPMENT_TYPE_MAP, REFRESH_OPTIONS, API, EQUIPMENT_TYPES } from '@/lib/constants'
 import { formatDate, formatDateTime, formatTime, formatPrice, statusBadge, TypeBadge, useAutoRefreshCountdown, handleApiError, copyToClipboard, fmtDuration, formatDurationShort, getTypeInfo, toLocalDatetime, useDebounce } from '@/lib/utils'
+import { PanelSection, PanelConfigContext, PanelManagerDialog, PanelManagerButton, useTabPanels } from '@/components/panels'
 
 const TrackerMap = dynamic(() => import('@/components/tracker-map'), {
   ssr: false,
@@ -157,6 +158,9 @@ export const MapTab = React.memo(function MapTab({ equipment, onSync, onOpenDeta
   onSync: () => void
   onOpenDetail?: (equipmentId: string) => void
 }) {
+  // ─── Panel management ──────────────────────────────────────
+  const { panelConfig, panelManagerOpen, setPanelManagerOpen, contextValue } = useTabPanels('map')
+
   // ─── Core state (existing) ────────────────────────────────
   const [syncing, setSyncing] = useState(false)
   const [quickSyncingIds, setQuickSyncingIds] = useState<Set<string>>(new Set())
@@ -917,6 +921,7 @@ ${trackPoints.map(p => `    <trkpt lat="${p.lat}" lon="${p.lng}"></trkpt>`).join
   }
 
   return (
+    <PanelConfigContext.Provider value={contextValue}>
     <TooltipProvider delayDuration={400}>
       <div className="space-y-3">
         {/* ─── #100 Version indicator ──────────────────────────── */}
@@ -938,6 +943,7 @@ ${trackPoints.map(p => `    <trkpt lat="${p.lat}" lon="${p.lng}"></trkpt>`).join
             {/* ═══════════════════════════════════════════════════════
                 #56 Fleet Summary Dashboard Cards
             ═══════════════════════════════════════════════════════ */}
+            <PanelSection panelKey="map_stats">
             <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-6 gap-2" data-testid="fleet-summary">
               {/* #56a Total Online */}
               <Card className="border-l-4 border-l-emerald-500 overflow-hidden">
@@ -1012,10 +1018,12 @@ ${trackPoints.map(p => `    <trkpt lat="${p.lat}" lon="${p.lng}"></trkpt>`).join
                 </CardContent>
               </Card>
             </div>
+            </PanelSection>
 
             {/* ═══════════════════════════════════════════════════════
                 #12 Sticky Toolbar with #16 responsive collapse
             ═══════════════════════════════════════════════════════ */}
+            <PanelSection panelKey="map_filters" noCollapse>
             <div className="sticky top-0 z-30 bg-background/95 backdrop-blur-sm border-b pb-2 -mx-0 px-0" data-testid="toolbar">
               {/* #9/#26 Search input + #76 debounce */}
               <div className="flex items-center gap-2 mb-2">
@@ -1202,6 +1210,9 @@ ${trackPoints.map(p => `    <trkpt lat="${p.lat}" lon="${p.lng}"></trkpt>`).join
                     </SelectContent>
                   </Select>
                 </span>
+
+                {/* Panel management button */}
+                <PanelManagerButton panelConfig={panelConfig} onClick={() => setPanelManagerOpen(true)} />
               </div>
 
               {/* #20 Breadcrumbs showing active filters */}
@@ -1220,6 +1231,7 @@ ${trackPoints.map(p => `    <trkpt lat="${p.lat}" lon="${p.lng}"></trkpt>`).join
                 </div>
               )}
             </div>
+            </PanelSection>
 
             {/* ═══════════════════════════════════════════════════════
                 Track Panel (#21 collapsible, #97 minimize/maximize)
@@ -1528,6 +1540,7 @@ ${trackPoints.map(p => `    <trkpt lat="${p.lat}" lon="${p.lng}"></trkpt>`).join
             {/* ═══════════════════════════════════════════════════════
                 Map Container (#isolate for z-index, #85 error boundary)
             ═══════════════════════════════════════════════════════ */}
+            <PanelSection panelKey="map_main" noCollapse>
             {filter === 'notracker' ? (
               <div className="space-y-2">
                 <Card>
@@ -1628,6 +1641,8 @@ ${trackPoints.map(p => `    <trkpt lat="${p.lat}" lon="${p.lng}"></trkpt>`).join
               </Card>
             )}
 
+            </PanelSection>
+
             {/* ═══════════════════════════════════════════════════════
                 Equipment List Below Map
                 #10 Compact/expanded toggle
@@ -1654,6 +1669,7 @@ ${trackPoints.map(p => `    <trkpt lat="${p.lat}" lon="${p.lng}"></trkpt>`).join
                 #84 data-testid
                 #83 aria-label
             ═══════════════════════════════════════════════════════ */}
+            <PanelSection panelKey="map_equipment_panel">
             {filter !== 'notracker' && mapTrackers.length > 0 && (
               <div className="space-y-2" ref={equipmentListRef}>
                 <div className="flex items-center justify-between">
@@ -1876,6 +1892,8 @@ ${trackPoints.map(p => `    <trkpt lat="${p.lat}" lon="${p.lng}"></trkpt>`).join
                 </CardContent>
               </Card>
             )}
+
+            </PanelSection>
 
             {/* #72 Geofence event log placeholder */}
             <Card data-testid="geofence-events">
@@ -2199,5 +2217,13 @@ ${trackPoints.map(p => `    <trkpt lat="${p.lat}" lon="${p.lng}"></trkpt>`).join
         }
       `}</style>
     </TooltipProvider>
+    <PanelManagerDialog
+      open={panelManagerOpen}
+      onOpenChange={setPanelManagerOpen}
+      tabKey="map"
+      tabLabel="Карта / ГЛОНАСС"
+      panelConfig={panelConfig}
+    />
+    </PanelConfigContext.Provider>
   )
 })

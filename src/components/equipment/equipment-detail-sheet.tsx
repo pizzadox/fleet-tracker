@@ -496,7 +496,6 @@ export function EquipmentDetailSheet({ open, onOpenChange, equipment, loading, d
             <TabsList className="w-full min-w-max h-9">
               <TabsTrigger value="info" className="gap-1 text-xs"><Info className="size-3" /><span className="hidden sm:inline">Информация</span></TabsTrigger>
               <TabsTrigger value="maintenance" className="gap-1 text-xs"><Wrench className="size-3" /><span className="hidden sm:inline">ТО</span></TabsTrigger>
-              <TabsTrigger value="documents" className="gap-1 text-xs"><FileText className="size-3" /><span className="hidden sm:inline">Документы</span></TabsTrigger>
               <TabsTrigger value="photos" className="gap-1 text-xs"><Camera className="size-3" /><span className="hidden sm:inline">Фото</span></TabsTrigger>
               <TabsTrigger value="repairs" className="gap-1 text-xs"><Wrench className="size-3" /><span className="hidden sm:inline">Ремонты</span></TabsTrigger>
               <TabsTrigger value="glonass" className="gap-1 text-xs"><MapPin className="size-3" /><span className="hidden sm:inline">ГЛОНАСС</span></TabsTrigger>
@@ -677,33 +676,6 @@ export function EquipmentDetailSheet({ open, onOpenChange, equipment, loading, d
                   </div>
                 )}
 
-                {detailTab === 'documents' && (
-                  <div className="px-4 sm:px-5 py-3 space-y-3">
-                    <div className="flex items-center justify-between">
-                      <p className="text-xs font-medium">Документы ({eq.documents?.length || 0})</p>
-                    </div>
-                    {(!eq.documents || eq.documents.length === 0) ? (
-                      <div className="text-center py-8 text-muted-foreground"><FileText className="size-8 mx-auto mb-2 opacity-40" /><p className="text-xs">Нет документов</p></div>
-                    ) : (
-                      <div className="space-y-2">
-                        {eq.documents.map(doc => (
-                          <Card key={doc.id} className="p-3">
-                            <div className="flex items-start justify-between gap-2">
-                              <div className="flex items-center gap-2 min-w-0">
-                                <div className="size-8 rounded-md bg-muted flex items-center justify-center shrink-0"><FileText className="size-4 text-muted-foreground" /></div>
-                                <div className="flex-1 min-w-0">
-                                  <p className="text-xs font-medium truncate">{doc.name}</p>
-                                  <p className="text-[10px] text-muted-foreground">{doc.type}{doc.notes ? ` • ${doc.notes}` : ''}</p>
-                                </div>
-                              </div>
-                              {doc.expiryDate && (() => { const d = formatDaysUntil(doc.expiryDate); return d ? <span className={`text-[10px] font-medium shrink-0 ${d.className}`}>{d.text.split('(')[0].trim()}</span> : null })()}
-                            </div>
-                          </Card>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                )}
 
                 {detailTab === 'photos' && (
                   <div className="px-4 sm:px-5 py-3 space-y-3">

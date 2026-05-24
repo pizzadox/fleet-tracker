@@ -3,7 +3,7 @@
 import React, { createContext, useContext } from 'react'
 import type { PanelConfigAPI } from '@/lib/use-panel-config'
 import { getPanelDef } from '@/lib/panel-registry'
-import { ChevronRight, PanelLeftClose } from 'lucide-react'
+import { ChevronDown, ChevronRight, Minimize2 } from 'lucide-react'
 
 // ═══════════════════════════════════════════════════════════════
 // PanelSection — Wraps a section of a tab to make it a
@@ -52,7 +52,7 @@ export const PanelSection = React.memo(function PanelSection({
 
   if (!visible) return null
 
-  // Collapsed state: show just a button to expand
+  // Collapsed state: show a clickable bar with icon and label
   if (collapsed && !noCollapse) {
     return (
       <div
@@ -61,31 +61,32 @@ export const PanelSection = React.memo(function PanelSection({
       >
         <button
           onClick={() => panelConfig.toggleCollapse(panelKey)}
-          className="flex items-center gap-1.5 w-full px-2 py-1.5 rounded-md bg-muted/50 hover:bg-muted transition-colors text-xs text-muted-foreground"
+          className="flex items-center gap-2 w-full px-3 py-2 rounded-lg bg-muted/60 hover:bg-muted transition-colors text-xs text-muted-foreground group/collapse"
         >
-          <ChevronRight className="size-3" />
-          {def?.icon}
+          <ChevronRight className="size-3.5 shrink-0 transition-transform group-hover/collapse:translate-x-0.5" />
+          {def?.icon && <span className="shrink-0">{def.icon}</span>}
           <span className="font-medium">{def?.label || panelKey}</span>
-          <span className="text-[10px] opacity-60">(свёрнуто — нажмите чтобы развернуть)</span>
+          <span className="text-[10px] opacity-50 ml-1">свёрнуто</span>
+          <ChevronDown className="size-3 ml-auto opacity-0 group-hover/collapse:opacity-60 transition-opacity" />
         </button>
       </div>
     )
   }
 
-  // Normal render with optional collapse button on hover
+  // Normal render with collapse button
   return (
     <div
       className={`group/panel relative ${className}`}
       style={{ order }}
     >
-      {/* Hover collapse button (non-edit mode) */}
+      {/* Collapse button — visible on hover */}
       {!noCollapse && !panelConfig.editMode && (
         <button
           onClick={() => panelConfig.toggleCollapse(panelKey)}
-          className="absolute -right-1 -top-1 z-10 size-5 rounded-full bg-muted border shadow-sm flex items-center justify-center opacity-0 group-hover/panel:opacity-100 transition-opacity hover:bg-accent"
+          className="absolute right-1.5 top-1.5 z-10 size-6 rounded-md bg-muted/80 hover:bg-muted border shadow-sm flex items-center justify-center opacity-0 group-hover/panel:opacity-100 transition-all hover:scale-105"
           title="Свернуть панель"
         >
-          <PanelLeftClose className="size-3" />
+          <Minimize2 className="size-3" />
         </button>
       )}
 

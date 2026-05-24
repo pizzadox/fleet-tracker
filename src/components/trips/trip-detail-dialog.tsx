@@ -14,6 +14,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, Di
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Progress } from '@/components/ui/progress'
 import {
@@ -70,7 +71,6 @@ export function TripDetailDialog({ open, onOpenChange, trip, loading, crews, onE
   const [routeMapTrackData, setRouteMapTrackData] = useState<any>(null)
   const [focusedPoint, setFocusedPoint] = useState<{ lat: number; lng: number; type: 'parking' | 'stop' | 'refuel' | 'plum'; label?: string } | null>(null)
   const [routePointsCollapsed, setRoutePointsCollapsed] = useState(true)
-  const [routeAddressesOpen, setRouteAddressesOpen] = useState<'start' | 'end' | false>(false)
 
   // ─── Complete trip dialog with refuel detection ─────────────
   const [completeDialog, setCompleteDialog] = useState<{
@@ -821,46 +821,53 @@ export function TripDetailDialog({ open, onOpenChange, trip, loading, crews, onE
               {/* Trip ID short */}
               <span className="inline-flex items-center gap-0.5 text-[9px] text-muted-foreground/60 font-mono ml-auto"><Hash className="size-2.5" />{t.id.slice(0, 8)}</span>
             </div>
-            {/* Route addresses — click to expand full address */}
+            {/* Route addresses — start green, end red, click to expand full address */}
             {(t.startPoint || t.endPoint) && (
-              <div className="flex items-center gap-1.5 text-[11px]">
+              <div className="flex items-center gap-1.5 text-[11px] flex-wrap">
                 {t.startPoint && (
-                  <button
-                    className="inline-flex items-center gap-0.5 text-emerald-600 dark:text-emerald-400 hover:underline cursor-pointer"
-                    onClick={() => setRouteAddressesOpen(routeAddressesOpen === 'start' ? false : 'start')}
-                    title={t.startPoint}
-                  >
-                    <MapPin className="size-2.5 shrink-0" />
-                    <span className="truncate max-w-[120px] sm:max-w-none">{t.startPoint}</span>
-                  </button>
+                  <Popover>
+                    <PopoverTrigger asChild>
+                      <button
+                        className="inline-flex items-center gap-1 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-950/30 px-1.5 py-0.5 rounded transition-colors cursor-pointer max-w-[200px] sm:max-w-[300px]"
+                        title="Нажмите для полного адреса"
+                      >
+                        <MapPin className="size-2.5 shrink-0" />
+                        <span className="truncate">{t.startPoint}</span>
+                      </button>
+                    </PopoverTrigger>
+                    <PopoverContent className="max-w-xs p-2 text-xs" side="bottom" align="start">
+                      <div className="flex items-start gap-1.5">
+                        <MapPin className="size-3 text-emerald-500 mt-0.5 shrink-0" />
+                        <div>
+                          <p className="text-[10px] text-emerald-600 dark:text-emerald-400 font-medium mb-0.5">Начало рейса</p>
+                          <p className="text-foreground break-words">{t.startPoint}</p>
+                        </div>
+                      </div>
+                    </PopoverContent>
+                  </Popover>
                 )}
                 {t.startPoint && t.endPoint && <ArrowRight className="size-2.5 text-muted-foreground/50 shrink-0" />}
                 {t.endPoint && (
-                  <button
-                    className="inline-flex items-center gap-0.5 text-red-600 dark:text-red-400 hover:underline cursor-pointer"
-                    onClick={() => setRouteAddressesOpen(routeAddressesOpen === 'end' ? false : 'end')}
-                    title={t.endPoint}
-                  >
-                    <MapPin className="size-2.5 shrink-0" />
-                    <span className="truncate max-w-[120px] sm:max-w-none">{t.endPoint}</span>
-                  </button>
-                )}
-              </div>
-            )}
-            {/* Expanded full address */}
-            {routeAddressesOpen && (
-              <div className="ml-0.5 mt-0.5 p-2 rounded-md bg-muted/40 text-[11px]">
-                {routeAddressesOpen === 'start' && t.startPoint && (
-                  <div className="flex items-start gap-1.5">
-                    <MapPin className="size-3 text-emerald-500 mt-0.5 shrink-0" />
-                    <span className="text-foreground">{t.startPoint}</span>
-                  </div>
-                )}
-                {routeAddressesOpen === 'end' && t.endPoint && (
-                  <div className="flex items-start gap-1.5">
-                    <MapPin className="size-3 text-red-500 mt-0.5 shrink-0" />
-                    <span className="text-foreground">{t.endPoint}</span>
-                  </div>
+                  <Popover>
+                    <PopoverTrigger asChild>
+                      <button
+                        className="inline-flex items-center gap-1 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/30 px-1.5 py-0.5 rounded transition-colors cursor-pointer max-w-[200px] sm:max-w-[300px]"
+                        title="Нажмите для полного адреса"
+                      >
+                        <MapPin className="size-2.5 shrink-0" />
+                        <span className="truncate">{t.endPoint}</span>
+                      </button>
+                    </PopoverTrigger>
+                    <PopoverContent className="max-w-xs p-2 text-xs" side="bottom" align="start">
+                      <div className="flex items-start gap-1.5">
+                        <MapPin className="size-3 text-red-500 mt-0.5 shrink-0" />
+                        <div>
+                          <p className="text-[10px] text-red-600 dark:text-red-400 font-medium mb-0.5">Конец рейса</p>
+                          <p className="text-foreground break-words">{t.endPoint}</p>
+                        </div>
+                      </div>
+                    </PopoverContent>
+                  </Popover>
                 )}
               </div>
             )}
