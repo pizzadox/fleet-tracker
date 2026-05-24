@@ -9,7 +9,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import {
-  Building2, Save, Loader2
+  Building2, Save, Loader2, Plus, Edit, CheckCircle2
 } from 'lucide-react'
 import type { Company } from '@/lib/types'
 import { COMPANY_TYPES, API } from '@/lib/constants'
