@@ -1008,8 +1008,8 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
           })).filter((p: { lat: unknown; lng: unknown }) => p.lat != null && p.lng != null)
         }
 
-        // ── Save track data to cache (only when using default dates, no overrides) ──
-        if (!overrideFrom && !overrideTo) {
+        // ── Save track data to cache (when force refresh or using default dates) ──
+        if (forceRefresh || (!overrideFrom && !overrideTo)) {
           try {
             await db.trip.update({
               where: { id },
