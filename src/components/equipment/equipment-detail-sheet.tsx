@@ -627,8 +627,8 @@ export function EquipmentDetailSheet({ open, onOpenChange, equipment, loading, d
             {eq.assignedDriver && <span className="text-[10px] text-muted-foreground">🧑 {eq.assignedDriver}</span>}
             <span className="text-[10px] text-muted-foreground">создано {formatDate(eq.createdAt)}</span>
             {eq.trackers && eq.trackers.length > 0 && (
-              <span className={`inline-flex items-center gap-0.5 rounded px-1 py-0 text-[9px] font-medium ${eq.trackers.some(t => t.isActive) ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-400' : 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-400'}`}>
-                {eq.trackers.some(t => t.isActive) ? <><Wifi className="size-2" />Онлайн</> : <><WifiOff className="size-2" />Офлайн</>}
+              <span className={`inline-flex items-center gap-0.5 rounded px-1 py-0 text-[9px] font-medium ${eq.trackers.some(t => livePositions[t.id]?.connectedStatus ?? t.isActive) ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-400' : 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-400'}`}>
+                {eq.trackers.some(t => livePositions[t.id]?.connectedStatus ?? t.isActive) ? <><Wifi className="size-2" />Онлайн</> : <><WifiOff className="size-2" />Офлайн</>}
               </span>
             )}
             {eq.documents && eq.documents.length > 0 && (
@@ -1132,20 +1132,23 @@ export function EquipmentDetailSheet({ open, onOpenChange, equipment, loading, d
                         )}
 
                         {/* Tracker cards */}
-                        {eq.trackers?.map(tracker => (
+                        {eq.trackers?.map(tracker => {
+                          const live = livePositions[tracker.id]
+                          const trackerOnline = live?.connectedStatus ?? tracker.isActive
+                          return (
                           <Card key={tracker.id} className="gap-0">
                             <CardHeader className="pb-1.5 pt-3 px-3">
                               <div className="flex items-center justify-between gap-2">
                                 <div className="flex items-center gap-2">
-                                  <div className={`size-7 rounded-md flex items-center justify-center ${tracker.isActive ? 'bg-emerald-100 dark:bg-emerald-900/40' : 'bg-red-100 dark:bg-red-900/40'}`}>
-                                    {tracker.isActive ? <Wifi className="size-3.5 text-emerald-600 dark:text-emerald-400" /> : <WifiOff className="size-3.5 text-red-600 dark:text-red-400" />}
+                                  <div className={`size-7 rounded-md flex items-center justify-center ${trackerOnline ? 'bg-emerald-100 dark:bg-emerald-900/40' : 'bg-red-100 dark:bg-red-900/40'}`}>
+                                    {trackerOnline ? <Wifi className="size-3.5 text-emerald-600 dark:text-emerald-400" /> : <WifiOff className="size-3.5 text-red-600 dark:text-red-400" />}
                                   </div>
                                   <div>
                                     <CardTitle className="text-xs font-semibold">{tracker.trackerName || `Трекер ${tracker.trackerId}`}</CardTitle>
                                     <p className="text-[10px] text-muted-foreground">ID: {tracker.trackerId}{tracker.axentaCloudId ? ` • Axenta: ${tracker.axentaCloudId}` : ''}</p>
                                   </div>
                                 </div>
-                                {statusBadge(tracker.isActive ? 'active' : 'repair', { active: { label: 'Активен', color: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-400' }, repair: { label: 'Неактивен', color: 'bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-400' } })}
+                                {statusBadge(trackerOnline ? 'active' : 'repair', { active: { label: 'Онлайн', color: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-400' }, repair: { label: 'Офлайн', color: 'bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-400' } })}
                               </div>
                             </CardHeader>
                             <CardContent className="space-y-2">
@@ -1596,11 +1599,20 @@ export function EquipmentDetailSheet({ open, onOpenChange, equipment, loading, d
                                   try {
                                     const res = await fetch('/api/glonass/sync', { method: 'POST' })
                                     const data = await res.json()
-                                    if (data.synced !== undefined) toast.success(`Синхронизация: ${data.synced} из ${data.totalTrackers}`)
-                                    else toast.error(data.error || 'Ошибка')
+                                    if (data.synced !== undefined) {
+                                      if (data.errors > 0) {
+                                        toast.error(`Синхронизация: ${data.synced} из ${data.totalTrackers} (${data.errors} с ошибкой)`)
+                                      } else if (data.synced === 0 && data.totalTrackers === 0) {
+                                        toast.info('Нет привязанных трекеров')
+                                      } else {
+                                        toast.success(`Синхронизация: ${data.synced} из ${data.totalTrackers}`)
+                                      }
+                                    } else {
+                                      toast.error(data.error || 'Ошибка синхронизации')
+                                    }
                                     ;(onRefreshSilent || onRefresh)()
                                     onRefreshAll()
-                                  } catch { toast.error('Ошибка') }
+                                  } catch { toast.error('Ошибка синхронизации') }
                                 }}><RefreshCw className="size-3" />Синхронизировать</Button>
                                 <Button size="sm" variant="outline" className="h-7 text-[11px] gap-1" onClick={() => { (onRefreshSilent || onRefresh)(); onRefreshAll() }}><Activity className="size-3" />Обновить</Button>
                                 <div className="flex-1" />
@@ -1617,7 +1629,8 @@ export function EquipmentDetailSheet({ open, onOpenChange, equipment, loading, d
                               </PanelSection>
                             </CardContent>
                           </Card>
-                        ))}
+                        );
+                        })}
                       </>
                     )}
 

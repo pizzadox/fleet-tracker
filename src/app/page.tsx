@@ -877,7 +877,7 @@ export default function Home() {
           )}
           {hasPermission(currentUser.role, 'map') && (
             <TabsContent value="map">
-              <MapTab equipment={equipment} onOpenDetail={openEquipmentDetailById} onSync={async () => { try { const res = await fetch('/api/glonass/sync?fast=true', { method: 'POST' }); const data = await res.json(); if (data.synced !== undefined) toast.success(`Синхронизация: ${data.synced} из ${data.totalTrackers}${data.elapsedMs ? ` (${(data.elapsedMs / 1000).toFixed(1)}с)` : ''}`); else toast.error(data.error || 'Ошибка'); fetchEquipment() } catch { toast.error('Ошибка синхронизации') } }} />
+              <MapTab equipment={equipment} onOpenDetail={openEquipmentDetailById} onSync={async () => { try { const res = await fetch('/api/glonass/sync?fast=true', { method: 'POST' }); const data = await res.json(); if (data.synced !== undefined) { if (data.errors > 0) { toast.error(`Синхронизация: ${data.synced} из ${data.totalTrackers} (${data.errors} с ошибкой)${data.elapsedMs ? ` (${(data.elapsedMs / 1000).toFixed(1)}с)` : ''}`) } else if (data.synced === 0 && data.totalTrackers === 0) { toast.info('Нет привязанных трекеров') } else { toast.success(`Синхронизация: ${data.synced} из ${data.totalTrackers}${data.elapsedMs ? ` (${(data.elapsedMs / 1000).toFixed(1)}с)` : ''}`) } } else { toast.error(data.error || 'Ошибка синхронизации') }; fetchEquipment() } catch { toast.error('Ошибка синхронизации') } }} />
             </TabsContent>
           )}
         </Tabs>
@@ -901,7 +901,7 @@ export default function Home() {
               {mgmtSubTab === 'crews' && <CrewsTab crews={crews} employees={employees} onAdd={() => { setCrewFormEdit(null); setCrewFormOpen(true) }} onEdit={(c) => { setCrewFormEdit(c); setCrewFormOpen(true) }} onDelete={(c) => setDeleteDialog({ open: true, type: 'crew', id: c.id, name: c.name })} />}
             </div>
           )}
-          {mainTab === 'map' && hasPermission(currentUser.role, 'map') && <MapTab equipment={equipment} onOpenDetail={openEquipmentDetailById} onSync={async () => { try { const res = await fetch('/api/glonass/sync?fast=true', { method: 'POST' }); const data = await res.json(); if (data.synced !== undefined) toast.success(`Синхронизация: ${data.synced} из ${data.totalTrackers}${data.elapsedMs ? ` (${(data.elapsedMs / 1000).toFixed(1)}с)` : ''}`); else toast.error(data.error || 'Ошибка'); fetchEquipment() } catch { toast.error('Ошибка синхронизации') } }} />}
+          {mainTab === 'map' && hasPermission(currentUser.role, 'map') && <MapTab equipment={equipment} onOpenDetail={openEquipmentDetailById} onSync={async () => { try { const res = await fetch('/api/glonass/sync?fast=true', { method: 'POST' }); const data = await res.json(); if (data.synced !== undefined) { if (data.errors > 0) { toast.error(`Синхронизация: ${data.synced} из ${data.totalTrackers} (${data.errors} с ошибкой)${data.elapsedMs ? ` (${(data.elapsedMs / 1000).toFixed(1)}с)` : ''}`) } else if (data.synced === 0 && data.totalTrackers === 0) { toast.info('Нет привязанных трекеров') } else { toast.success(`Синхронизация: ${data.synced} из ${data.totalTrackers}${data.elapsedMs ? ` (${(data.elapsedMs / 1000).toFixed(1)}с)` : ''}`) } } else { toast.error(data.error || 'Ошибка синхронизации') }; fetchEquipment() } catch { toast.error('Ошибка синхронизации') } }} />}
         </div>
       </main>
 

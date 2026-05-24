@@ -200,9 +200,23 @@ export async function GET(request: NextRequest) {
       }
     }
 
+    // Determine online status using same logic as sync: lastMessage time < 30 min OR connectedStatus
+    let isOnline = tracker.isActive
+    const lastMsgTime = lastMessage?.t ? new Date(lastMessage.t as string) : null
+    const lastPosTime = lastMessage?.tpos ? new Date(lastMessage.tpos as string) : null
+    const mostRecent = lastMsgTime && lastPosTime
+      ? new Date(Math.max(lastMsgTime.getTime(), lastPosTime.getTime()))
+      : lastMsgTime || lastPosTime
+    if (mostRecent) {
+      const minutesSince = (Date.now() - mostRecent.getTime()) / 60000
+      isOnline = minutesSince < 30  // Same threshold as sync
+    } else if (objectDetails?.connectedStatus != null) {
+      isOnline = Boolean(objectDetails.connectedStatus)
+    }
+
     return NextResponse.json({
       source: 'live',
-      connectedStatus: objectDetails?.connectedStatus ?? tracker.isActive,
+      connectedStatus: isOnline,
       isMotion: objectDetails?.isMotion ?? null,
       isIgnition: objectDetails?.isIgnition ?? null,
       position: {

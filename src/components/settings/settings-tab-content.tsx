@@ -609,7 +609,7 @@ export function SettingsTabContent({
             )}
 
             <div className="flex gap-2">
-              <Button variant="outline" className="flex-1 h-9 gap-1.5" onClick={async () => { setSyncing(true); try { const res = await fetch('/api/glonass/sync', { method: 'POST' }); const data = await res.json(); if (data.synced !== undefined) toast.success(`Синхронизация: ${data.synced} из ${data.totalTrackers}`); else toast.error(data.error || 'Ошибка') } catch { toast.error('Ошибка синхронизации') }; setSyncing(false) }} disabled={syncing}>
+              <Button variant="outline" className="flex-1 h-9 gap-1.5" onClick={async () => { setSyncing(true); try { const res = await fetch('/api/glonass/sync', { method: 'POST' }); const data = await res.json(); if (data.synced !== undefined) { if (data.errors > 0) { toast.error(`Синхронизация: ${data.synced} из ${data.totalTrackers} (${data.errors} с ошибкой)`) } else if (data.synced === 0 && data.totalTrackers === 0) { toast.info('Нет привязанных трекеров') } else { toast.success(`Синхронизация: ${data.synced} из ${data.totalTrackers}`) } } else { toast.error(data.error || 'Ошибка синхронизации') } } catch { toast.error('Ошибка синхронизации') }; setSyncing(false) }} disabled={syncing}>
                 {syncing ? <Loader2 className="size-3.5 animate-spin" /> : <RefreshCw className="size-3.5" />}Синхронизировать
               </Button>
               <Button className="flex-1 h-9 gap-1.5" onClick={async () => {
