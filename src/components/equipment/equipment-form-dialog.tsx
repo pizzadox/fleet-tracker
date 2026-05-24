@@ -314,37 +314,27 @@ export function EquipmentFormDialog({ open, onOpenChange, editData, companies, s
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-2xl max-h-[98dvh] p-0 gap-0 overflow-hidden" onKeyDown={handleKeyDown}>
-        {/* #1 Gradient header */}
-        <DialogHeader className="px-6 pt-5 pb-3 border-b bg-gradient-to-r from-emerald-50 to-teal-50 dark:from-emerald-950/30 dark:to-teal-950/30">
-          <DialogTitle className="flex items-center gap-2.5 text-base">
-            <div className="size-8 rounded-lg bg-emerald-100 dark:bg-emerald-900/50 flex items-center justify-center shrink-0">
-              {editData ? <Edit className="size-4 text-emerald-600 dark:text-emerald-400" /> : <Plus className="size-4 text-emerald-600 dark:text-emerald-400" />}
-            </div>
-            <div>
-              <span>{editData ? 'Редактирование техники' : 'Добавление техники'}</span>
-              {!editData && createMode !== 'axenta' && (
-                <p className="text-xs font-normal text-muted-foreground mt-0.5">
-                  Шаг {step + 1} из {steps.length}: {steps[step].title}
-                </p>
-              )}
-              {!editData && createMode === 'axenta' && (
-                <p className="text-xs font-normal text-muted-foreground mt-0.5">
-                  Выберите объект из Axenta для автоматического добавления
-                </p>
-              )}
-              {editData && (
-                <p className="text-xs font-normal text-muted-foreground mt-0.5">
-                  Шаг {step + 1} из {steps.length}: {steps[step].title}
-                </p>
-              )}
-            </div>
+      <DialogContent className="sm:max-w-2xl max-h-[98dvh] flex flex-col" onKeyDown={handleKeyDown}>
+        {/* Header with border-l indicator */}
+        <DialogHeader className="border-l-4 border-l-emerald-500 pl-3">
+          <DialogTitle className="flex items-center gap-2">
+            {editData ? <Edit className="size-4" /> : <Plus className="size-4" />}
+            <span>{editData ? 'Редактирование техники' : 'Добавление техники'}</span>
           </DialogTitle>
+          {(!editData && createMode !== 'axenta') && (
+            <DialogDescription className="text-xs">Шаг {step + 1} из {steps.length}: {steps[step].title}</DialogDescription>
+          )}
+          {(!editData && createMode === 'axenta') && (
+            <DialogDescription className="text-xs">Выберите объект из Axenta для автоматического добавления</DialogDescription>
+          )}
+          {editData && (
+            <DialogDescription className="text-xs">Шаг {step + 1} из {steps.length}: {steps[step].title}</DialogDescription>
+          )}
         </DialogHeader>
 
         {/* #2 Progress bar */}
         {!editData && createMode !== 'axenta' && (
-          <div className="px-6 pt-3 pb-1">
+          <div className="px-4 sm:px-5 pt-2 pb-1 shrink-0">
             <div className="flex items-center justify-between mb-1.5">
               <span className="text-[10px] text-muted-foreground">Прогресс заполнения</span>
               <span className="text-[10px] font-medium text-muted-foreground">{Math.round((filledCount / totalFields) * 100)}%</span>
@@ -355,7 +345,7 @@ export function EquipmentFormDialog({ open, onOpenChange, editData, companies, s
 
         {/* Mode selector — only when creating new */}
         {!editData && (
-          <div className="flex gap-2 px-6 pt-2">
+          <div className="flex gap-2 px-4 sm:px-5 pt-2 shrink-0">
             <Button size="sm" variant={createMode === 'manual' ? 'default' : 'outline'} className="h-7 text-[11px] gap-1.5" onClick={() => setCreateMode('manual')}>
               <Plus className="size-3" />Создать новую
             </Button>
@@ -367,7 +357,7 @@ export function EquipmentFormDialog({ open, onOpenChange, editData, companies, s
 
         {/* #3 Step indicator — stepped timeline with connecting lines & #4 completion indicators */}
         {createMode !== 'axenta' && (
-          <div className="px-6 pt-3 pb-1">
+          <div className="px-4 sm:px-5 pt-2 pb-1 shrink-0">
             <div className="flex items-center">
               {steps.map((s, i) => (
                 <React.Fragment key={i}>
@@ -403,7 +393,7 @@ export function EquipmentFormDialog({ open, onOpenChange, editData, companies, s
 
         {/* #21 Validation summary */}
         {validationAttempted && missingRequired.length > 0 && (
-          <div className="mx-6 mt-2 p-2 rounded-md bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-800/50 flex items-center gap-2">
+          <div className="mx-4 sm:mx-5 mt-2 p-2 rounded-md bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-800/50 flex items-center gap-2 shrink-0">
             <AlertTriangle className="size-3.5 text-red-500 shrink-0" />
             <span className="text-[11px] text-red-700 dark:text-red-400">Заполните обязательные поля: {missingRequired.map(k => {
               const labels: Record<string, string> = { name: 'Наименование' }
@@ -414,7 +404,7 @@ export function EquipmentFormDialog({ open, onOpenChange, editData, companies, s
 
         {/* Axenta object selection */}
         {!editData && createMode === 'axenta' ? (
-          <div className="space-y-3 px-6 overflow-y-auto flex-1 min-h-0 py-3 max-h-[60dvh]">
+          <div className="space-y-3 px-4 sm:px-5 overflow-y-auto flex-1 min-h-0 py-2">
             {/* #18 Search/filter for Axenta */}
             {unlinkedAxentaObjects.length > 0 && (
               <div className="relative">
@@ -598,7 +588,7 @@ export function EquipmentFormDialog({ open, onOpenChange, editData, companies, s
             )}
           </div>
         ) : (
-        <div className="px-6 overflow-y-auto flex-1 min-h-0 py-3 max-h-[55dvh]" key={step}>
+        <div className="px-4 sm:px-5 overflow-y-auto flex-1 min-h-0 py-2" key={step}>
           {/* #15 Animate step transitions */}
           <AnimatePresence mode="wait" custom={stepDirection}>
             <motion.div
@@ -1012,15 +1002,17 @@ export function EquipmentFormDialog({ open, onOpenChange, editData, companies, s
         )}
 
         {/* #16 Better footer with summary */}
-        <DialogFooter className="gap-2 sm:gap-0 px-6 py-3 border-t bg-muted/20">
+        <div className="shrink-0 border-t bg-card px-4 sm:px-5 py-3">
+          <div className="flex flex-wrap items-center justify-between gap-2">
           {/* Filled fields count */}
-          <div className="flex-1 flex items-center gap-2 text-[10px] text-muted-foreground">
+          <div className="flex items-center gap-2 text-[10px] text-muted-foreground">
             <span>Заполнено: {filledCount} из {totalFields}</span>
             <div className="w-20 h-1 rounded-full bg-muted overflow-hidden">
               <div className="h-full rounded-full bg-emerald-500 transition-all" style={{ width: `${(filledCount / totalFields) * 100}%` }} />
             </div>
           </div>
 
+          <div className="flex flex-wrap justify-end gap-2">
           {!editData && createMode === 'axenta' ? (
             <>
               <Button variant="outline" size="sm" onClick={() => { setCreateMode('manual'); setSelectedAxentaId('') }}><ChevronLeft className="size-3.5" />Назад</Button>
@@ -1054,7 +1046,9 @@ export function EquipmentFormDialog({ open, onOpenChange, editData, companies, s
               )}
             </>
           )}
-        </DialogFooter>
+          </div>
+          </div>
+        </div>
       </DialogContent>
     </Dialog>
   )

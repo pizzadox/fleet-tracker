@@ -275,32 +275,33 @@ export function RouteTemplateFormDialog({ open, setOpen, editData, onSaved }: {
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogContent className="sm:max-w-3xl p-0 gap-0">
-        {/* Header with gradient accent */}
-        <DialogHeader className="px-6 pt-5 pb-3 border-b bg-gradient-to-r from-sky-50 to-blue-50 dark:from-sky-950/30 dark:to-blue-950/30">
-          <DialogTitle className="flex items-center gap-2.5 text-base">
-            <div className="size-8 rounded-lg bg-sky-100 dark:bg-sky-900/50 flex items-center justify-center shrink-0">
-              {editData ? <Edit className="size-4 text-sky-600 dark:text-sky-400" /> : <Route className="size-4 text-sky-600 dark:text-sky-400" />}
-            </div>
-            <div>
-              <span>{editData ? 'Редактирование маршрута' : 'Новый маршрут'}</span>
-              {(points.length > 0 || totalDist > 0) && (
-                <p className="text-xs font-normal text-muted-foreground mt-0.5">
-                  {points.length > 0 && `${points.length} ${points.length === 1 ? 'точка' : points.length < 5 ? 'точки' : 'точек'}`}
-                  {points.length > 0 && totalDist > 0 && ' · '}
-                  {totalDist > 0 && `${totalDist.toFixed(1)} км`}
-                  {totalDist > 0 && durationStr && ' · '}
-                  {durationStr && `~${durationStr}`}
-                </p>
-              )}
-            </div>
+      <DialogContent className="sm:max-w-3xl max-h-[98dvh] flex flex-col">
+        {/* Header with border-l indicator */}
+        <DialogHeader className="border-l-4 border-l-sky-500 pl-3">
+          <DialogTitle className="flex items-center gap-2">
+            {editData ? <Edit className="size-4" /> : <Route className="size-4" />}
+            <span>{editData ? 'Редактирование маршрута' : 'Новый маршрут'}</span>
           </DialogTitle>
-          <DialogDescription className="text-xs">{editData ? 'Измените параметры маршрута и точки маршрута' : 'Создайте шаблон маршрута с точками назначения'}</DialogDescription>
+          {(points.length > 0 || totalDist > 0) && (
+            <DialogDescription className="text-xs">
+              {points.length > 0 && `${points.length} ${points.length === 1 ? 'точка' : points.length < 5 ? 'точки' : 'точек'}`}
+              {points.length > 0 && totalDist > 0 && ' · '}
+              {totalDist > 0 && `${totalDist.toFixed(1)} км`}
+              {totalDist > 0 && durationStr && ' · '}
+              {durationStr && `~${durationStr}`}
+            </DialogDescription>
+          )}
+          {!editData && (
+            <DialogDescription className="text-xs">Создайте шаблон маршрута с точками назначения</DialogDescription>
+          )}
+          {editData && !(points.length > 0 || totalDist > 0) && (
+            <DialogDescription className="text-xs">Измените параметры маршрута и точки маршрута</DialogDescription>
+          )}
         </DialogHeader>
 
         <div className="overflow-y-auto flex-1 min-h-0">
           {/* Section 1: Basic parameters */}
-          <div className="px-6 py-4 border-b">
+          <div className="px-4 sm:px-5 py-4 border-b">
             <div className="flex items-center gap-2 mb-3">
               <div className="size-6 rounded-md bg-violet-100 dark:bg-violet-900/30 flex items-center justify-center">
                 <FileText className="size-3.5 text-violet-600 dark:text-violet-400" />
@@ -349,7 +350,7 @@ export function RouteTemplateFormDialog({ open, setOpen, editData, onSaved }: {
           </div>
 
           {/* Section 2: Route points — Timeline style */}
-          <div className="px-6 py-4 border-b">
+          <div className="px-4 sm:px-5 py-4 border-b">
             <div className="flex items-center justify-between mb-3">
               <div className="flex items-center gap-2">
                 <div className="size-6 rounded-md bg-emerald-100 dark:bg-emerald-900/30 flex items-center justify-center">
@@ -542,7 +543,7 @@ export function RouteTemplateFormDialog({ open, setOpen, editData, onSaved }: {
           </div>
 
           {/* Section 3: Description & Notes */}
-          <div className="px-6 py-4">
+          <div className="px-4 sm:px-5 py-4">
             <div className="flex items-center gap-2 mb-3">
               <div className="size-6 rounded-md bg-amber-100 dark:bg-amber-900/30 flex items-center justify-center">
                 <StickyNote className="size-3.5 text-amber-600 dark:text-amber-400" />
@@ -560,9 +561,9 @@ export function RouteTemplateFormDialog({ open, setOpen, editData, onSaved }: {
               </div>
             </div>
           </div>
-
-          {/* Footer with summary — inside scrollable area, sticks to bottom */}
-          <DialogFooter className="sticky bottom-0 px-6 py-3 border-t bg-card z-10 flex-row items-center justify-between gap-4">
+        </div>
+        <div className="shrink-0 border-t bg-card px-4 sm:px-5 py-3">
+          <div className="flex flex-wrap items-center justify-between gap-4">
             <div className="flex items-center gap-4 text-xs text-muted-foreground">
               {points.length > 0 && <span className="flex items-center gap-1"><MapPinned className="size-3" />{points.length} {points.length === 1 ? 'точка' : points.length < 5 ? 'точки' : 'точек'}</span>}
               {totalDist > 0 && <span className="flex items-center gap-1"><Navigation className="size-3" />{totalDist.toFixed(1)} км</span>}
@@ -574,7 +575,7 @@ export function RouteTemplateFormDialog({ open, setOpen, editData, onSaved }: {
                 {saving && <Loader2 className="size-3.5 animate-spin mr-1.5" />}{editData ? 'Сохранить' : 'Создать маршрут'}
               </Button>
             </div>
-          </DialogFooter>
+          </div>
         </div>
       </DialogContent>
     </Dialog>

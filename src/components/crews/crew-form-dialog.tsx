@@ -90,11 +90,12 @@ export function CrewFormDialog({ open, onOpenChange, editData, saving, setSaving
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-2xl">
-        <DialogHeader>
+      <DialogContent className="sm:max-w-2xl max-h-[98dvh] flex flex-col">
+        <DialogHeader className="border-l-4 border-l-sky-500 pl-3">
           <DialogTitle className="flex items-center gap-2">{editData ? <Edit className="size-4" /> : <Plus className="size-4" />}{editData ? 'Редактирование экипажа' : 'Новый экипаж'}</DialogTitle>
         </DialogHeader>
-        <div className="space-y-3 px-4 sm:px-5 overflow-y-auto flex-1 min-h-0">
+        <div className="overflow-y-auto flex-1 min-h-0 px-4 sm:px-5">
+          <div className="space-y-3 py-2">
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div className="sm:col-span-2"><Label className="text-xs">Название *</Label><Input value={f('name')} onChange={e => setF('name', e.target.value)} placeholder="Экипаж №1" autoFocus /></div>
             <div><Label className="text-xs">Тип</Label><Select value={f('type')} onValueChange={v => setF('type', v)}><SelectTrigger className="h-9 text-sm"><SelectValue /></SelectTrigger><SelectContent>{Object.entries(CREW_TYPE_MAP).map(([k, v]) => <SelectItem key={k} value={k}>{v}</SelectItem>)}</SelectContent></Select></div>
@@ -159,10 +160,13 @@ export function CrewFormDialog({ open, onOpenChange, editData, saving, setSaving
               </div>
             ))}
           </div>
+          </div>
         </div>
-        <DialogFooter>
-          <Button size="sm" onClick={handleSave} disabled={saving}>{saving ? <Loader2 className="size-3.5 animate-spin" /> : <CheckCircle2 className="size-3.5" />}{editData ? 'Сохранить' : 'Добавить'}</Button>
-        </DialogFooter>
+        <div className="shrink-0 border-t bg-card px-4 sm:px-5 py-3">
+          <div className="flex flex-wrap justify-end gap-2">
+            <Button size="sm" onClick={handleSave} disabled={saving}>{saving ? <Loader2 className="size-3.5 animate-spin" /> : <CheckCircle2 className="size-3.5" />}{editData ? 'Сохранить' : 'Добавить'}</Button>
+          </div>
+        </div>
       </DialogContent>
     </Dialog>
   )

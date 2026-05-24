@@ -154,11 +154,12 @@ export function RepairFormDialog({ open, onOpenChange, editData, equipmentId, eq
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-2xl max-h-[90dvh] flex flex-col">
-        <DialogHeader>
+      <DialogContent className="sm:max-w-2xl max-h-[98dvh] flex flex-col">
+        <DialogHeader className="border-l-4 border-l-amber-500 pl-3">
           <DialogTitle className="flex items-center gap-2">{editData ? <Edit className="size-4" /> : <Plus className="size-4" />}{editData ? 'Редактирование ремонта' : 'Новый ремонт'}</DialogTitle>
         </DialogHeader>
-        <div className="space-y-3 px-4 sm:px-5 overflow-y-auto flex-1 min-h-0">
+        <div className="overflow-y-auto flex-1 min-h-0 px-4 sm:px-5">
+          <div className="space-y-3 py-2">
           {/* Основная информация */}
           <div className="border rounded-md p-3 space-y-3">
             <h4 className="text-xs font-semibold flex items-center gap-1.5"><ClipboardList className="size-3.5 text-muted-foreground" />Основная информация</h4>
@@ -326,10 +327,13 @@ export function RepairFormDialog({ open, onOpenChange, editData, equipmentId, eq
               ))}
             </div>
           )}
+          </div>
         </div>
-        <DialogFooter>
-          <Button size="sm" onClick={handleSave} disabled={saving}>{saving ? <Loader2 className="size-3.5 animate-spin" /> : <CheckCircle2 className="size-3.5" />}{editData ? 'Сохранить' : 'Добавить'}</Button>
-        </DialogFooter>
+        <div className="shrink-0 border-t bg-card px-4 sm:px-5 py-3">
+          <div className="flex flex-wrap justify-end gap-2">
+            <Button size="sm" onClick={handleSave} disabled={saving}>{saving ? <Loader2 className="size-3.5 animate-spin" /> : <CheckCircle2 className="size-3.5" />}{editData ? 'Сохранить' : 'Добавить'}</Button>
+          </div>
+        </div>
       </DialogContent>
     </Dialog>
   )

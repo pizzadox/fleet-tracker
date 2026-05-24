@@ -76,11 +76,12 @@ export function EmployeeFormDialog({ open, onOpenChange, editData, crews, equipm
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-2xl">
-        <DialogHeader>
+      <DialogContent className="sm:max-w-2xl max-h-[98dvh] flex flex-col">
+        <DialogHeader className="border-l-4 border-l-violet-500 pl-3">
           <DialogTitle className="flex items-center gap-2">{editData ? <Edit className="size-4" /> : <Plus className="size-4" />}{editData ? 'Редактирование сотрудника' : 'Новый сотрудник'}</DialogTitle>
         </DialogHeader>
-        <div className="space-y-3 px-4 sm:px-5 overflow-y-auto flex-1 min-h-0">
+        <div className="overflow-y-auto flex-1 min-h-0 px-4 sm:px-5">
+          <div className="space-y-3 py-2">
           {/* Basic info */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div className="sm:col-span-2"><Label className="text-xs">ФИО *</Label><Input value={f('fullName')} onChange={e => setF('fullName', e.target.value)} placeholder="Иванов Иван Иванович" autoFocus /></div>
@@ -130,10 +131,13 @@ export function EmployeeFormDialog({ open, onOpenChange, editData, crews, equipm
           </div>
 
           <div className="sm:col-span-2"><Label className="text-xs">Заметки</Label><Textarea value={f('notes')} onChange={e => setF('notes', e.target.value)} rows={2} /></div>
+          </div>
         </div>
-        <DialogFooter>
-          <Button size="sm" onClick={handleSave} disabled={saving}>{saving ? <Loader2 className="size-3.5 animate-spin" /> : <CheckCircle2 className="size-3.5" />}{editData ? 'Сохранить' : 'Добавить'}</Button>
-        </DialogFooter>
+        <div className="shrink-0 border-t bg-card px-4 sm:px-5 py-3">
+          <div className="flex flex-wrap justify-end gap-2">
+            <Button size="sm" onClick={handleSave} disabled={saving}>{saving ? <Loader2 className="size-3.5 animate-spin" /> : <CheckCircle2 className="size-3.5" />}{editData ? 'Сохранить' : 'Добавить'}</Button>
+          </div>
+        </div>
       </DialogContent>
     </Dialog>
   )

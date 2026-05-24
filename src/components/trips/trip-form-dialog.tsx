@@ -13,11 +13,11 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import {
   Route, Plus, Trash2, Save, Loader2, MapPin, GripVertical, Truck,
   Navigation, ArrowUp, ArrowDown, Calendar, Clock, Package, Weight,
-  CheckCircle2, Edit, Fuel, MapPinned, ToggleRight
+  CheckCircle2, Edit, Fuel, MapPinned, ToggleRight, AlertTriangle, Sparkles
 } from 'lucide-react'
 import type { Trip, Equipment, Crew, RouteTemplate, RouteTemplatePoint } from '@/lib/types'
 import { TRIP_STATUS_MAP, CREW_TYPE_MAP, API } from '@/lib/constants'
-import { toLocalDatetime, localDatetimeToISO, toLocalDate, formatDate, formatPrice, handleApiError, fmtDuration } from '@/lib/utils'
+import { toLocalDatetime, localDatetimeToISO, toLocalDate, formatDate, formatPrice, handleApiError, fmtDuration, getTypeInfo } from '@/lib/utils'
 
 // ═══════════════════════════════════════════════════════════════
 // TRIP FORM DIALOG
@@ -38,6 +38,7 @@ export function TripFormDialog({ open, onOpenChange, editData, equipmentId, equi
   }>>([])
   const [geocodingIdx, setGeocodingIdx] = useState<number | null>(null)
   const [optimizingRoute, setOptimizingRoute] = useState(false)
+  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false)
 
   useEffect(() => {
     if (editData) {
@@ -69,7 +70,62 @@ export function TripFormDialog({ open, onOpenChange, editData, equipmentId, equi
   }, [editData, equipmentId, open])
 
   const f = (key: string) => form[key] || ''
-  const setF = (key: string, value: string) => setForm(prev => ({ ...prev, [key]: value }))
+  const setF = (key: string, value: string) => {
+    setForm(prev => ({ ...prev, [key]: value }))
+    setHasUnsavedChanges(true)
+  }
+
+  // ─── Form progress (required fields) ───
+  const requiredFields = ['equipmentId', 'route', 'startDate']
+  const filledRequired = requiredFields.filter(k => f(k).trim() !== '').length
+  const formProgress = Math.round((filledRequired / requiredFields.length) * 100)
+
+  // ─── Validation ───
+  const validationErrors: string[] = []
+  if (f('equipmentId') && f('cargoWeight') && f('equipmentId')) {
+    const eq = equipmentList.find(e => e.id === f('equipmentId'))
+    if (eq?.loadCapacity && parseFloat(f('cargoWeight')) > parseFloat(eq.loadCapacity)) {
+      validationErrors.push(`Вес груза (${f('cargoWeight')} т) превышает грузоподъёмность (${eq.loadCapacity} т)`)
+    }
+  }
+  if (f('startDate') && f('plannedEndDate') && new Date(f('plannedEndDate')) <= new Date(f('startDate'))) {
+    validationErrors.push('Планируемое окончание должно быть позже начала')
+  }
+  if (f('fuelStart') && f('fuelEnd') && parseFloat(f('fuelEnd')) > parseFloat(f('fuelStart')) && !f('refuelVolume')) {
+    validationErrors.push('Топливо на финише больше старта — укажите заправку')
+  }
+
+  // ─── Smart suggestions ───
+  const estimatePlannedEnd = () => {
+    const startDate = f('startDate')
+    const distance = parseFloat(f('distance')) || totalRouteDistance
+    if (!startDate || !distance) return
+    // Assume average speed of 60 km/h for planning
+    const hoursNeeded = distance / 60
+    const start = new Date(startDate)
+    const end = new Date(start.getTime() + hoursNeeded * 3600000)
+    setF('plannedEndDate', toLocalDatetime(end))
+    toast.info(`Оценка: ${hoursNeeded.toFixed(1)} ч при 60 км/ч`)
+  }
+
+  // ─── Auto-fill distance from route points ───
+  const autofillDistance = () => {
+    if (totalRouteDistance > 0) {
+      setF('distance', totalRouteDistance.toFixed(1))
+      toast.success(`Расстояние заполнено: ${totalRouteDistance.toFixed(1)} км`)
+    } else {
+      toast.info('Нет данных о расстоянии по точкам маршрута')
+    }
+  }
+
+  // ─── Unsaved changes warning ───
+  const handleOpenChange = (v: boolean) => {
+    if (!v && hasUnsavedChanges) {
+      if (!confirm('Есть несохранённые изменения. Закрыть без сохранения?')) return
+    }
+    setHasUnsavedChanges(false)
+    onOpenChange(v)
+  }
 
   // Haversine distance calculation
   const haversineDistance = (lat1: number, lng1: number, lat2: number, lng2: number): number => {
@@ -313,12 +369,30 @@ export function TripFormDialog({ open, onOpenChange, editData, equipmentId, equi
   const totalRouteDistance = routePoints.reduce((s, p) => s + (parseFloat(p.distanceFromPrev) || 0), 0)
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-2xl flex flex-col max-h-[90dvh]">
-        <DialogHeader>
+    <Dialog open={open} onOpenChange={handleOpenChange}>
+      <DialogContent className="sm:max-w-2xl max-h-[98dvh] flex flex-col">
+        <DialogHeader className="border-l-4 border-l-sky-500 pl-3">
           <DialogTitle className="flex items-center gap-2">{editData ? <Edit className="size-4" /> : <Plus className="size-4" />}{editData ? 'Редактирование рейса' : 'Новый рейс'}</DialogTitle>
+          {/* Form progress indicator */}
+          <div className="flex items-center gap-2 mt-1">
+            <div className="flex-1 h-1.5 bg-muted rounded-full overflow-hidden">
+              <div className={`h-full rounded-full transition-all duration-300 ${formProgress === 100 ? 'bg-emerald-500' : 'bg-sky-500'}`} style={{ width: `${formProgress}%` }} />
+            </div>
+            <span className="text-[9px] text-muted-foreground shrink-0">{filledRequired}/{requiredFields.length} обязательных</span>
+          </div>
+          {/* Validation errors */}
+          {validationErrors.length > 0 && (
+            <div className="space-y-1 mt-1">
+              {validationErrors.map((err, i) => (
+                <div key={i} className="flex items-center gap-1.5 text-[10px] text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-950/20 px-2 py-1 rounded">
+                  <AlertTriangle className="size-3 shrink-0" />{err}
+                </div>
+              ))}
+            </div>
+          )}
         </DialogHeader>
-        <div className="space-y-3 px-4 sm:px-5 overflow-y-auto flex-1 min-h-0">
+        <div className="overflow-y-auto flex-1 min-h-0 px-4 sm:px-5">
+          <div className="space-y-3 py-2">
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div className="sm:col-span-2"><Label className="text-xs">Техника *</Label><Select value={f('equipmentId')} onValueChange={v => setF('equipmentId', v)} disabled={!!editData}><SelectTrigger className="h-9 text-sm"><SelectValue placeholder="Выберите технику" /></SelectTrigger><SelectContent>{equipmentList.map(e => <SelectItem key={e.id} value={e.id}>{e.name} {e.registrationNum ? `(${e.registrationNum})` : ''}</SelectItem>)}</SelectContent></Select></div>
             <div className="sm:col-span-2"><Label className="text-xs">Маршрут *</Label><Input value={f('route')} onChange={e => setF('route', e.target.value)} placeholder="Москва — Санкт-Петербург" autoFocus /></div>
@@ -372,9 +446,9 @@ export function TripFormDialog({ open, onOpenChange, editData, equipmentId, equi
             <div><Label className="text-xs">Статус</Label><Select value={f('status')} onValueChange={v => setF('status', v)}><SelectTrigger className="h-9 text-sm"><SelectValue /></SelectTrigger><SelectContent>{Object.entries(TRIP_STATUS_MAP).map(([k, v]) => <SelectItem key={k} value={k}>{v.label}</SelectItem>)}</SelectContent></Select></div>
             <div><Label className="text-xs">Груз</Label><Input value={f('cargo')} onChange={e => setF('cargo', e.target.value)} /></div>
             <div><Label className="text-xs">Вес груза (т)</Label><Input type="number" value={f('cargoWeight')} onChange={e => setF('cargoWeight', e.target.value)} /></div>
-            <div><Label className="text-xs">Расстояние (км)</Label><Input type="number" value={f('distance')} onChange={e => setF('distance', e.target.value)} /></div>
-            <div><Label className="text-xs">Дата и время начала</Label><Input type="datetime-local" value={f('startDate')} onChange={e => setF('startDate', e.target.value)} /></div>
-            <div><Label className="text-xs">Планируемое окончание</Label><Input type="datetime-local" value={f('plannedEndDate')} onChange={e => setF('plannedEndDate', e.target.value)} /></div>
+            <div><Label className="text-xs">Расстояние (км)</Label><div className="flex gap-1"><Input type="number" value={f('distance')} onChange={e => setF('distance', e.target.value)} className="flex-1" />{totalRouteDistance > 0 && !f('distance') && <Button type="button" size="sm" variant="outline" className="shrink-0 h-9 px-2" onClick={autofillDistance} title="Заполнить из точек маршрута"><Sparkles className="size-3" /></Button>}</div></div>
+            <div><Label className="text-xs">Дата и время начала *</Label><Input type="datetime-local" value={f('startDate')} onChange={e => setF('startDate', e.target.value)} /></div>
+            <div><Label className="text-xs">Планируемое окончание</Label><div className="flex gap-1"><Input type="datetime-local" value={f('plannedEndDate')} onChange={e => setF('plannedEndDate', e.target.value)} className="flex-1" />{f('startDate') && (f('distance') || totalRouteDistance > 0) && <Button type="button" size="sm" variant="outline" className="shrink-0 h-9 px-2" onClick={estimatePlannedEnd} title="Оценить по расстоянию"><Sparkles className="size-3" /></Button>}</div></div>
             <div><Label className="text-xs">Дата и время окончания</Label><Input type="datetime-local" value={f('endDate')} onChange={e => setF('endDate', e.target.value)} /></div>
             <div><Label className="text-xs">Топливо на старте (л)</Label><div className="flex gap-1"><Input type="number" value={f('fuelStart')} onChange={e => setF('fuelStart', e.target.value)} className="flex-1" /><Button type="button" size="sm" variant="outline" className="shrink-0 h-9 px-2" onClick={() => fetchSnapshot('start')} disabled={fetchingStart} title="Запросить из ГЛОНАСС">{fetchingStart ? <Loader2 className="size-3.5 animate-spin" /> : <Fuel className="size-3.5" />}</Button></div></div>
             <div><Label className="text-xs">Топливо на финише (л)</Label><div className="flex gap-1"><Input type="number" value={f('fuelEnd')} onChange={e => setF('fuelEnd', e.target.value)} className="flex-1" /><Button type="button" size="sm" variant="outline" className="shrink-0 h-9 px-2" onClick={() => fetchSnapshot('end')} disabled={fetchingEnd} title="Запросить из ГЛОНАСС">{fetchingEnd ? <Loader2 className="size-3.5 animate-spin" /> : <Fuel className="size-3.5" />}</Button></div></div>
@@ -477,10 +551,13 @@ export function TripFormDialog({ open, onOpenChange, editData, equipmentId, equi
               </div>
             )}
           </div>
+          </div>
         </div>
-        <DialogFooter className="sticky bottom-0 bg-card z-10 border-t pt-2">
-          <Button size="sm" onClick={handleSave} disabled={saving}>{saving ? <Loader2 className="size-3.5 animate-spin" /> : <CheckCircle2 className="size-3.5" />}{editData ? 'Сохранить' : 'Добавить'}</Button>
-        </DialogFooter>
+        <div className="shrink-0 border-t bg-card px-4 sm:px-5 py-3">
+          <div className="flex flex-wrap justify-end gap-2">
+            <Button size="sm" onClick={handleSave} disabled={saving}>{saving ? <Loader2 className="size-3.5 animate-spin" /> : <CheckCircle2 className="size-3.5" />}{editData ? 'Сохранить' : 'Добавить'}</Button>
+          </div>
+        </div>
       </DialogContent>
     </Dialog>
   )

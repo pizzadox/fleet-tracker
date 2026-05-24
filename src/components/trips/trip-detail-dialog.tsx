@@ -24,11 +24,12 @@ import {
   Droplets, Zap, RefreshCw, ExternalLink, Info,
   ArrowDownToLine, ArrowUpFromLine, ChevronRight, ClipboardList, Cog,
   DollarSign, Flame, Fuel as FuelIcon, Loader2, Map, MapPinned, StickyNote,
-  UserCheck, UserCircle, Sofa, X
+  UserCheck, UserCircle, Sofa, X, Share2, Star, CopyPlus, MessageSquare,
+  Hash, Sparkles
 } from 'lucide-react'
 import type { Trip, Crew, RoutePoint, RouteTemplatePoint, GlonassTracker, GlonassSensorData } from '@/lib/types'
 import { TRIP_STATUS_MAP, CREW_TYPE_MAP, MEMBER_ROLE_MAP, EQUIPMENT_TYPE_MAP, API, hasPermission, getInitials } from '@/lib/constants'
-import { formatDate, formatDateTime, formatPrice, formatTime, statusBadge, SectionDivider, fmtDuration, formatDurationShort, handleApiError, copyToClipboard, toLocalDatetime, localDatetimeToISO } from '@/lib/utils'
+import { formatDate, formatDateTime, formatPrice, formatTime, statusBadge, SectionDivider, fmtDuration, formatDurationShort, handleApiError, copyToClipboard, toLocalDatetime, localDatetimeToISO, getTypeInfo } from '@/lib/utils'
 import { DetailSection, DetailRow } from '@/components/equipment/equipment-detail-sheet'
 import dynamic from 'next/dynamic'
 const TrackerMap = dynamic(() => import('@/components/tracker-map'), { ssr: false })
@@ -481,6 +482,43 @@ export function TripDetailDialog({ open, onOpenChange, trip, loading, crews, onE
     setSavingTrip(false)
   }
 
+  // ─── Keyboard shortcuts ───
+  useEffect(() => {
+    if (!open) return
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') return // default dialog close
+      if ((e.ctrlKey || e.metaKey) && e.key === 'p') {
+        e.preventDefault()
+        if (trip) window.open(`/api/trips/${trip.id}/print`, '_blank')
+      }
+      if ((e.ctrlKey || e.metaKey) && e.key === 'c' && !window.getSelection()?.toString()) {
+        e.preventDefault()
+        if (trip) copyToClipboard(trip.route)
+      }
+    }
+    window.addEventListener('keydown', handler)
+    return () => window.removeEventListener('keydown', handler)
+  }, [open, trip?.id])
+
+  // ─── Elapsed time for in-progress trips ───
+  const [elapsedTime, setElapsedTime] = useState<string | null>(null)
+  useEffect(() => {
+    if (!trip || trip.status !== 'in_progress' || !trip.startDate) { setElapsedTime(null); return }
+    const update = () => {
+      const start = new Date(trip.startDate!).getTime()
+      const now = Date.now()
+      const diff = now - start
+      if (diff < 0) { setElapsedTime(null); return }
+      const h = Math.floor(diff / 3600000)
+      const m = Math.floor((diff % 3600000) / 60000)
+      const s = Math.floor((diff % 60000) / 1000)
+      setElapsedTime(h > 0 ? `${h}ч ${m}мин ${s}сек` : m > 0 ? `${m}мин ${s}сек` : `${s}сек`)
+    }
+    update()
+    const interval = setInterval(update, 1000)
+    return () => clearInterval(interval)
+  }, [trip?.id, trip?.status, trip?.startDate])
+
   if (!trip) return null
   const t = trip
   const crew = crews.find(c => c.id === t.crewId)
@@ -500,6 +538,106 @@ export function TripDetailDialog({ open, onOpenChange, trip, loading, crews, onE
   // Calculated distance from mileage
   const calcDistKm = (t.mileageStart != null && t.mileageEnd != null) ? t.mileageEnd - t.mileageStart : null
   const displayDist = t.distance ?? calcDistKm
+
+  // ─── Trip score (0-100) ───
+  const calcTripScore = (): number | null => {
+    let score = 0, factors = 0
+    if (t.fuelConsumed != null && t.distance != null && t.distance > 0 && Math.abs(t.fuelConsumed) < 10000) {
+      const rate = (t.fuelConsumed / t.distance) * 100
+      score += rate < 15 ? 25 : rate < 20 ? 20 : rate < 25 ? 15 : rate < 35 ? 8 : 0; factors++
+    }
+    if (t.avgSpeed != null && t.avgSpeed > 0 && t.avgSpeed < 200) {
+      score += t.avgSpeed >= 40 && t.avgSpeed <= 70 ? 25 : t.avgSpeed >= 30 && t.avgSpeed <= 90 ? 15 : 5; factors++
+    }
+    if (t.idleTime != null && t.tripDuration != null && t.tripDuration > 0) {
+      const idlePct = (t.idleTime / t.tripDuration) * 100
+      score += idlePct < 5 ? 25 : idlePct < 15 ? 18 : idlePct < 30 ? 10 : 0; factors++
+    }
+    if (t.maxSpeed != null && t.maxSpeed > 0 && t.maxSpeed < 300) {
+      score += t.maxSpeed <= 70 ? 25 : t.maxSpeed <= 90 ? 18 : t.maxSpeed <= 110 ? 8 : 0; factors++
+    }
+    return factors >= 2 ? Math.round(score) : null
+  }
+  const tripScore = calcTripScore()
+
+  // ─── CO2 emissions estimate ───
+  // ~2.68 kg CO2 per liter of diesel, ~2.31 for petrol
+  const co2Estimate = t.fuelConsumed != null && Math.abs(t.fuelConsumed) < 10000
+    ? Math.round(t.fuelConsumed * 2.68 * 100) / 100
+    : null
+
+  // ─── Equipment type info ───
+  const eqTypeInfo = t.equipment ? getTypeInfo(t.equipment.type) : null
+
+  // ─── Auto-generated recommendations ───
+  const recommendations: string[] = []
+  if (t.fuelConsumed != null && t.distance != null && t.distance > 0) {
+    const rate = (t.fuelConsumed / t.distance) * 100
+    if (rate > 30) recommendations.push('Высокий расход топлива — проверить давление в шинах и фильтры')
+    if (rate > 40) recommendations.push('Аномальный расход — возможна утечка или неисправность двигателя')
+  }
+  if (t.idleTime != null && t.tripDuration != null && t.tripDuration > 0) {
+    const idlePct = (t.idleTime / t.tripDuration) * 100
+    if (idlePct > 20) recommendations.push('Высокий процент холостого хода — оптимизировать стоянки')
+  }
+  if (t.maxSpeed != null && t.maxSpeed > 90) {
+    recommendations.push('Превышение скорости — снизить макс. скорость для экономии топлива')
+  }
+  if (t.plumVolume != null && t.plumVolume > 0) {
+    recommendations.push('Обнаружены сливы топлива — провести проверку')
+  }
+
+  // ─── Send report to clipboard ───
+  const sendReport = () => {
+    const lines: string[] = []
+    lines.push(`📋 ОТЧЁТ ПО РЕЙСУ`)
+    lines.push(`Маршрут: ${t.route}`)
+    lines.push(`Статус: ${TRIP_STATUS_MAP[t.status]?.label || t.status}`)
+    if (t.equipment) lines.push(`Техника: ${t.equipment.name} ${t.equipment.registrationNum || ''}`)
+    if (crew) lines.push(`Экипаж: ${crew.name}`)
+    if (t.startPoint) lines.push(`От: ${t.startPoint}`)
+    if (t.endPoint) lines.push(`До: ${t.endPoint}`)
+    if (displayDist != null) lines.push(`Расстояние: ${displayDist.toFixed(1)} км`)
+    if (t.fuelConsumed != null) lines.push(`Расход: ${t.fuelConsumed.toFixed(1)} л`)
+    if (t.avgFuelRate != null) lines.push(`Ср. расход: ${t.avgFuelRate.toFixed(1)} л/100км`)
+    if (t.tripDuration != null) lines.push(`Длительность: ${fmtDur(t.tripDuration)}`)
+    if (t.startDate) lines.push(`Начало: ${formatDateTime(t.startDate)}`)
+    if (t.endDate) lines.push(`Окончание: ${formatDateTime(t.endDate)}`)
+    if (t.cost != null) lines.push(`Расходы: ${formatPrice(t.cost)}`)
+    if (t.revenue != null) lines.push(`Доход: ${formatPrice(t.revenue)}`)
+    if (tripScore != null) lines.push(`Оценка рейса: ${tripScore}/100`)
+    copyToClipboard(lines.join('\n'))
+  }
+
+  // ─── Duplicate trip handler ───
+  const handleDuplicate = () => {
+    if (!trip) return
+    // Create a new trip with same data
+    fetch('/api/trips', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        equipmentId: trip.equipmentId,
+        route: trip.route + ' (копия)',
+        startPoint: trip.startPoint,
+        endPoint: trip.endPoint,
+        cargo: trip.cargo,
+        cargoWeight: trip.cargoWeight,
+        distance: trip.distance,
+        crewId: trip.crewId,
+        routeTemplateId: trip.routeTemplateId,
+        status: 'planned',
+        notes: trip.notes,
+      }),
+    }).then(res => {
+      if (res.ok) {
+        toast.success('Рейс скопирован')
+        onRefresh()
+      } else {
+        toast.error('Ошибка копирования рейса')
+      }
+    }).catch(() => toast.error('Ошибка копирования рейса'))
+  }
 
   // Apply sensor data to trip fields
   const applySensorFields = async (fields: Record<string, unknown>) => {
@@ -637,7 +775,18 @@ export function TripDetailDialog({ open, onOpenChange, trip, loading, crews, onE
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-3xl max-h-[98dvh] flex flex-col">
         <DialogHeader>
-          <DialogTitle className="flex items-center gap-2"><Route className="size-4" />{t.route}</DialogTitle>
+          <DialogTitle className="flex items-center gap-2">
+            <Route className="size-4" />
+            <span className="flex-1 min-w-0 truncate">{t.route}</span>
+            {/* Copy route name button */}
+            <Button variant="ghost" size="sm" className="size-6 p-0 shrink-0" onClick={() => copyToClipboard(t.route)} title="Копировать маршрут">
+              <Copy className="size-3" />
+            </Button>
+            {/* Share trip link button */}
+            <Button variant="ghost" size="sm" className="size-6 p-0 shrink-0" onClick={() => copyToClipboard(`${window.location.origin}/?trip=${t.id}`)} title="Скопировать ссылку">
+              <Share2 className="size-3" />
+            </Button>
+          </DialogTitle>
           <DialogDescription className="flex items-center gap-2 flex-wrap">
             {t.equipment && onOpenEquipment ? (
               <button
@@ -645,7 +794,7 @@ export function TripDetailDialog({ open, onOpenChange, trip, loading, crews, onE
                 className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-primary hover:underline transition-colors cursor-pointer"
                 onClick={() => onOpenEquipment(t.equipment.id)}
               >
-                <Truck className="size-3.5 shrink-0" />
+                {eqTypeInfo ? React.cloneElement(eqTypeInfo.icon as React.ReactElement, { className: 'size-3.5 shrink-0' }) : <Truck className="size-3.5 shrink-0" />}
                 <span>{t.equipment.name}</span>
                 {t.equipment.registrationNum && <span>• {t.equipment.registrationNum}</span>}
               </button>
@@ -653,6 +802,23 @@ export function TripDetailDialog({ open, onOpenChange, trip, loading, crews, onE
               <>{t.equipment?.name} {t.equipment?.registrationNum ? `• ${t.equipment.registrationNum}` : ''}</>
             )}
             <span className="ml-1">{statusBadge(t.status, TRIP_STATUS_MAP)}</span>
+            {/* Duration in header */}
+            {t.tripDuration != null && t.tripDuration > 0 && t.tripDuration < 8640000 && (
+              <span className="inline-flex items-center gap-0.5 text-[10px] text-muted-foreground ml-1"><Timer className="size-3" />{fmtDur(t.tripDuration)}</span>
+            )}
+            {/* Elapsed time for in-progress */}
+            {elapsedTime && (
+              <span className="inline-flex items-center gap-0.5 text-[10px] font-medium text-amber-600 dark:text-amber-400 animate-pulse"><Clock className="size-3" />{elapsedTime}</span>
+            )}
+            {/* Crew name */}
+            {crew && <span className="inline-flex items-center gap-0.5 text-[10px] text-muted-foreground"><Users className="size-3" />{crew.name}</span>}
+            {/* Route template badge */}
+            {t.routeTemplate && <span className="inline-flex items-center gap-0.5 text-[10px] text-sky-600 dark:text-sky-400 bg-sky-50 dark:bg-sky-950/30 px-1.5 py-0.5 rounded"><Route className="size-2.5" />{t.routeTemplate.name}</span>}
+            {/* Start/end point badges */}
+            {t.startPoint && <span className="inline-flex items-center gap-0.5 text-[10px] text-muted-foreground"><MapPin className="size-2.5 text-emerald-500" />{t.startPoint}</span>}
+            {t.endPoint && <span className="inline-flex items-center gap-0.5 text-[10px] text-muted-foreground"><MapPin className="size-2.5 text-red-500" />{t.endPoint}</span>}
+            {/* Trip ID short */}
+            <span className="inline-flex items-center gap-0.5 text-[9px] text-muted-foreground/60 font-mono ml-auto"><Hash className="size-2.5" />{t.id.slice(0, 8)}</span>
           </DialogDescription>
         </DialogHeader>
         <div className="overflow-y-auto flex-1 min-h-0 px-4 sm:px-5">
@@ -713,8 +879,20 @@ export function TripDetailDialog({ open, onOpenChange, trip, loading, crews, onE
               </DetailSection>
 
               <DetailSection title="Груз" icon={<Package className="size-3.5" />}>
-                <DetailRow label="Груз" value={t.cargo} />
-                <DetailRow label="Вес (т)" value={t.cargoWeight?.toString()} />
+                <DetailRow label="Груз" value={t.cargo ? <span className="flex items-center gap-1"><Package className="size-3 text-muted-foreground" />{t.cargo}</span> as any : undefined} />
+                <DetailRow label="Вес" value={t.cargoWeight != null ? <span className="flex items-center gap-1"><Weight className="size-3 text-muted-foreground" />{t.cargoWeight} т</span> as any : undefined} />
+                {/* Cargo weight vs max capacity */}
+                {t.cargoWeight != null && t.equipment?.loadCapacity && (
+                  <div className="mt-1.5 p-2 rounded-lg bg-muted/30">
+                    <div className="flex items-center justify-between text-[10px] mb-1">
+                      <span className="text-muted-foreground">Загрузка</span>
+                      <span className="font-medium">{t.cargoWeight} / {t.equipment.loadCapacity} т ({Math.round((t.cargoWeight / parseFloat(t.equipment.loadCapacity)) * 100)}%)</span>
+                    </div>
+                    <div className="h-1.5 bg-muted rounded-full overflow-hidden">
+                      <div className={`h-full rounded-full ${(() => { const pct = (t.cargoWeight! / parseFloat(t.equipment.loadCapacity)) * 100; return pct > 100 ? 'bg-red-500' : pct > 80 ? 'bg-amber-500' : 'bg-emerald-500' })()}`} style={{ width: `${Math.min((t.cargoWeight / parseFloat(t.equipment.loadCapacity)) * 100, 100)}%` }} />
+                    </div>
+                  </div>
+                )}
               </DetailSection>
               <DetailSection title="Время" icon={<Calendar className="size-3.5" />}>
                 <DetailRow label="Начало рейса" value={formatDateTime(t.startDate)} />
@@ -1292,34 +1470,105 @@ export function TripDetailDialog({ open, onOpenChange, trip, loading, crews, onE
                 </div>
               )}
 
+              {/* ── CO2 EMISSIONS ESTIMATE ── */}
+              {co2Estimate != null && (
+                <div className="rounded-lg border p-2 flex items-center justify-between">
+                  <span className="text-[10px] text-muted-foreground flex items-center gap-1"><Flame className="size-3" />Выбросы CO₂</span>
+                  <span className="text-xs font-medium text-amber-600 dark:text-amber-400">~{co2Estimate.toFixed(1)} кг CO₂</span>
+                </div>
+              )}
+
+              {/* ── ENGINE HOURS BREAKDOWN ── */}
+              {t.engineHours != null && t.engineHours > 0 && t.engineHours < 50000 && (
+                <div className="rounded-lg border p-2">
+                  <div className="text-[10px] text-muted-foreground flex items-center gap-1 mb-1.5"><Cog className="size-3" />Моточасы — по категориям</div>
+                  <div className="space-y-1">
+                    <div className="flex items-center justify-between text-[10px]">
+                      <span>В движении</span>
+                      <span className="font-medium text-emerald-600 dark:text-emerald-400">
+                        {fmtDur((t.tripDuration ?? 0) - (t.idleTime ?? 0)) || '—'}
+                      </span>
+                    </div>
+                    {t.idleTime != null && t.idleTime > 0 && t.idleTime < 8640000 && (
+                      <div className="flex items-center justify-between text-[10px]">
+                        <span>Холостой ход</span>
+                        <span className="font-medium text-amber-600 dark:text-amber-400">{fmtDur(t.idleTime) || '—'}</span>
+                      </div>
+                    )}
+                    {t.parkingsDuration != null && t.parkingsDuration > 0 && t.parkingsDuration < 8640000 && (
+                      <div className="flex items-center justify-between text-[10px]">
+                        <span>Стоянки</span>
+                        <span className="font-medium text-rose-600 dark:text-rose-400">{fmtDur(t.parkingsDuration) || '—'}</span>
+                      </div>
+                    )}
+                    <div className="flex items-center justify-between text-[10px] border-t pt-1 font-medium">
+                      <span>Итого моточасы</span>
+                      <span>{fmtDur(t.engineHours)}</span>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* ── TRIP SCORE ── */}
+              {tripScore != null && (
+                <div className="rounded-lg border p-3">
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-xs font-semibold flex items-center gap-1.5"><Star className="size-3.5 text-amber-500" />Оценка рейса</span>
+                    <span className={`text-lg font-bold ${tripScore >= 70 ? 'text-emerald-600 dark:text-emerald-400' : tripScore >= 40 ? 'text-amber-600 dark:text-amber-400' : 'text-red-600 dark:text-red-400'}`}>{tripScore}<span className="text-xs font-normal text-muted-foreground">/100</span></span>
+                  </div>
+                  <div className="h-2 bg-muted rounded-full overflow-hidden">
+                    <div className={`h-full rounded-full transition-all ${tripScore >= 70 ? 'bg-emerald-500' : tripScore >= 40 ? 'bg-amber-500' : 'bg-red-500'}`} style={{ width: `${tripScore}%` }} />
+                  </div>
+                  <p className="text-[10px] text-muted-foreground mt-1">
+                    {tripScore >= 80 ? 'Отличный рейс' : tripScore >= 60 ? 'Хороший рейс' : tripScore >= 40 ? 'Удовлетворительно' : 'Требует внимания'}
+                  </p>
+                </div>
+              )}
+
+              {/* ── RECOMMENDATIONS ── */}
+              {recommendations.length > 0 && (
+                <div className="rounded-lg border border-amber-200 dark:border-amber-800/50 bg-amber-50/50 dark:bg-amber-950/20 p-2.5">
+                  <h4 className="text-xs font-semibold flex items-center gap-1.5 mb-1.5"><Sparkles className="size-3.5 text-amber-500" />Рекомендации</h4>
+                  <ul className="space-y-1">
+                    {recommendations.map((r, i) => (
+                      <li key={i} className="flex items-start gap-1.5 text-[10px] text-amber-700 dark:text-amber-400">
+                        <span className="shrink-0 mt-0.5">•</span>{r}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+
               {t.notes && <DetailSection title="Заметки" icon={<ClipboardList className="size-3.5" />}><p className="text-xs whitespace-pre-wrap">{t.notes}</p></DetailSection>}
             </div>
           )}
 
           {/* Footer after content */}
-          <div className="bg-card border-t pt-3 pb-2 -mx-4 sm:-mx-5 px-4 sm:px-5 mt-4">
-            <div className="flex flex-wrap gap-1.5 sm:gap-0 justify-end">
-              {t.status === 'planned' && (
-                <Button variant="outline" size="sm" className="h-8 gap-1 text-xs" onClick={() => onStart(t)}><Navigation className="size-3.5" />Начать</Button>
-              )}
-              {t.status === 'in_progress' && (
-                <Button variant="outline" size="sm" className="h-8 gap-1 text-xs" onClick={handleInitComplete}><CheckCircle2 className="size-3.5" />Завершить</Button>
-              )}
-              <Button variant="outline" size="sm" className="h-8 gap-1 text-xs" onClick={() => onEdit(t)}><Edit className="size-3.5" />Редактировать</Button>
-              <Button variant="outline" size="sm" className="h-8 gap-1 text-xs" onClick={onRefresh}><Activity className="size-3.5" />Обновить</Button>
-              {compareData && (
-                <Button variant="outline" size="sm" className="h-8 gap-1 text-xs" onClick={saveTripData} disabled={savingTrip || tripSaved}>
-                  {savingTrip ? <Loader2 className="size-3.5 animate-spin" /> : tripSaved ? <CheckCircle2 className="size-3.5 text-emerald-500" /> : <Save className="size-3.5" />}
-                  {tripSaved ? 'Сохранено' : 'Сохранить'}
-                </Button>
-              )}
-              {(t.status === 'in_progress' || t.status === 'completed') && (
-                <Button variant="default" size="sm" className="h-8 gap-1 text-xs" onClick={() => window.open(`/api/trips/${t.id}/print`, '_blank')}>
-                  <Printer className="size-3.5" />Распечатать
-                </Button>
-              )}
-              <Button variant="destructive" size="sm" className="h-8 gap-1 text-xs" onClick={() => onDelete(t)}><Trash2 className="size-3.5" />Удалить</Button>
-            </div>
+        </div>
+        <div className="shrink-0 border-t bg-card px-4 sm:px-5 py-3">
+          <div className="flex flex-wrap justify-end gap-1.5">
+            {t.status === 'planned' && (
+              <Button variant="outline" size="sm" className="h-8 gap-1 text-xs" onClick={() => onStart(t)}><Navigation className="size-3.5" />Начать</Button>
+            )}
+            {t.status === 'in_progress' && (
+              <Button variant="outline" size="sm" className="h-8 gap-1 text-xs" onClick={handleInitComplete}><CheckCircle2 className="size-3.5" />Завершить</Button>
+            )}
+            <Button variant="outline" size="sm" className="h-8 gap-1 text-xs" onClick={() => onEdit(t)}><Edit className="size-3.5" />Ред.</Button>
+            <Button variant="outline" size="sm" className="h-8 gap-1 text-xs" onClick={onRefresh}><Activity className="size-3.5" />Обновить</Button>
+            {compareData && (
+              <Button variant="outline" size="sm" className="h-8 gap-1 text-xs" onClick={saveTripData} disabled={savingTrip || tripSaved}>
+                {savingTrip ? <Loader2 className="size-3.5 animate-spin" /> : tripSaved ? <CheckCircle2 className="size-3.5 text-emerald-500" /> : <Save className="size-3.5" />}
+                {tripSaved ? 'Сохранено' : 'Сохранить'}
+              </Button>
+            )}
+            <Button variant="ghost" size="sm" className="h-8 gap-1 text-xs" onClick={handleDuplicate} title="Скопировать рейс"><CopyPlus className="size-3.5" />Копировать</Button>
+            <Button variant="ghost" size="sm" className="h-8 gap-1 text-xs" onClick={sendReport} title="Скопировать отчёт"><MessageSquare className="size-3.5" />Отчёт</Button>
+            {(t.status === 'in_progress' || t.status === 'completed') && (
+              <Button variant="default" size="sm" className="h-8 gap-1 text-xs" onClick={() => window.open(`/api/trips/${t.id}/print`, '_blank')}>
+                <Printer className="size-3.5" />Печать
+              </Button>
+            )}
+            <Button variant="destructive" size="sm" className="h-8 gap-1 text-xs" onClick={() => onDelete(t)}><Trash2 className="size-3.5" />Удалить</Button>
           </div>
         </div>
       </DialogContent>

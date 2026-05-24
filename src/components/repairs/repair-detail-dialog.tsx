@@ -302,7 +302,7 @@ export function RepairDetailDialog({ open, onOpenChange, repair, loading, fullPh
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-3xl max-h-[90dvh] flex flex-col">
+      <DialogContent className="sm:max-w-3xl max-h-[98dvh] flex flex-col">
         {/* Header with status bar */}
         <DialogHeader className={`border-l-4 ${statusBorderColor} pl-3`}>
           <DialogTitle className="flex items-center gap-2 flex-wrap">
@@ -651,29 +651,28 @@ export function RepairDetailDialog({ open, onOpenChange, repair, loading, fullPh
             </div>
           )}
 
-          {/* Footer after content */}
-          <div className="bg-card border-t pt-3 pb-2 -mx-4 sm:-mx-5 px-4 sm:px-5 mt-4">
-            <div className="flex flex-wrap gap-1.5 sm:gap-0 justify-end">
-              {r.status === 'in_progress' && (
-                <Button variant="outline" size="sm" className="h-8 gap-1 text-xs" onClick={() => setConfirmDialog({ open: true, title: 'Завершить ремонт?', desc: 'Ремонт будет отмечен как завершённый. Это действие можно отменить через редактирование.', action: () => { onComplete(r); setConfirmDialog(prev => ({ ...prev, open: false })) } })}><CheckCircle2 className="size-3.5" />Завершить</Button>
-              )}
-              {r.status === 'in_progress' && onPause && (
-                <Button variant="outline" size="sm" className="h-8 gap-1 text-xs" onClick={() => onPause(r)}><Pause className="size-3.5" />Приостановить</Button>
-              )}
-              {r.status === 'paused' && onResume && (
-                <Button variant="outline" size="sm" className="h-8 gap-1 text-xs" onClick={() => onResume(r)}><Play className="size-3.5" />Возобновить</Button>
-              )}
-              {(r.status === 'in_progress' || r.status === 'paused') && (
-                <Button variant="outline" size="sm" className="h-8 gap-1 text-xs text-red-600 hover:text-red-700" onClick={() => setConfirmDialog({ open: true, title: 'Отменить ремонт?', desc: 'Ремонт будет отмечен как отменённый.', action: () => { fetch(`/api/repairs/${r.id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status: 'cancelled' }) }).then(res => { if (res.ok) { toast.success('Ремонт отменён'); onRefresh() } else toast.error('Ошибка') }) ; setConfirmDialog(prev => ({ ...prev, open: false })) } })}><XCircle className="size-3.5" />Отменить</Button>
-              )}
-              {onDuplicate && (
-                <Button variant="outline" size="sm" className="h-8 gap-1 text-xs" onClick={() => onDuplicate(r)}><Copy className="size-3.5" />Дублировать</Button>
-              )}
-              <Button variant="outline" size="sm" className="h-8 gap-1 text-xs" onClick={() => onEdit(r)}><Edit className="size-3.5" />Редактировать</Button>
-              <Button variant="outline" size="sm" className="h-8 gap-1 text-xs" onClick={() => window.print()}><Printer className="size-3.5" />Печать</Button>
-              <Button variant="outline" size="sm" className="h-8 gap-1 text-xs" onClick={onRefresh}><RefreshCw className="size-3.5" />Обновить</Button>
-              <Button variant="destructive" size="sm" className="h-8 gap-1 text-xs" onClick={() => setConfirmDialog({ open: true, title: 'Удалить ремонт?', desc: 'Это действие необратимо. Все данные о ремонте будут удалены.', action: () => { onDelete(r); setConfirmDialog(prev => ({ ...prev, open: false })) } })}><Trash2 className="size-3.5" />Удалить</Button>
-            </div>
+        </div>
+        <div className="shrink-0 border-t bg-card px-4 sm:px-5 py-3">
+          <div className="flex flex-wrap justify-end gap-2">
+            {r.status === 'in_progress' && (
+              <Button variant="outline" size="sm" className="h-8 gap-1 text-xs" onClick={() => setConfirmDialog({ open: true, title: 'Завершить ремонт?', desc: 'Ремонт будет отмечен как завершённый. Это действие можно отменить через редактирование.', action: () => { onComplete(r); setConfirmDialog(prev => ({ ...prev, open: false })) } })}><CheckCircle2 className="size-3.5" />Завершить</Button>
+            )}
+            {r.status === 'in_progress' && onPause && (
+              <Button variant="outline" size="sm" className="h-8 gap-1 text-xs" onClick={() => onPause(r)}><Pause className="size-3.5" />Приостановить</Button>
+            )}
+            {r.status === 'paused' && onResume && (
+              <Button variant="outline" size="sm" className="h-8 gap-1 text-xs" onClick={() => onResume(r)}><Play className="size-3.5" />Возобновить</Button>
+            )}
+            {(r.status === 'in_progress' || r.status === 'paused') && (
+              <Button variant="outline" size="sm" className="h-8 gap-1 text-xs text-red-600 hover:text-red-700" onClick={() => setConfirmDialog({ open: true, title: 'Отменить ремонт?', desc: 'Ремонт будет отмечен как отменённый.', action: () => { fetch(`/api/repairs/${r.id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status: 'cancelled' }) }).then(res => { if (res.ok) { toast.success('Ремонт отменён'); onRefresh() } else toast.error('Ошибка') }) ; setConfirmDialog(prev => ({ ...prev, open: false })) } })}><XCircle className="size-3.5" />Отменить</Button>
+            )}
+            {onDuplicate && (
+              <Button variant="outline" size="sm" className="h-8 gap-1 text-xs" onClick={() => onDuplicate(r)}><Copy className="size-3.5" />Дублировать</Button>
+            )}
+            <Button variant="outline" size="sm" className="h-8 gap-1 text-xs" onClick={() => onEdit(r)}><Edit className="size-3.5" />Редактировать</Button>
+            <Button variant="outline" size="sm" className="h-8 gap-1 text-xs" onClick={() => window.print()}><Printer className="size-3.5" />Печать</Button>
+            <Button variant="outline" size="sm" className="h-8 gap-1 text-xs" onClick={onRefresh}><RefreshCw className="size-3.5" />Обновить</Button>
+            <Button variant="destructive" size="sm" className="h-8 gap-1 text-xs" onClick={() => setConfirmDialog({ open: true, title: 'Удалить ремонт?', desc: 'Это действие необратимо. Все данные о ремонте будут удалены.', action: () => { onDelete(r); setConfirmDialog(prev => ({ ...prev, open: false })) } })}><Trash2 className="size-3.5" />Удалить</Button>
           </div>
         </div>
 
