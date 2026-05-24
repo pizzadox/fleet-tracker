@@ -16,7 +16,7 @@ import { Checkbox } from '@/components/ui/checkbox'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import {
-  Map, RefreshCw, Wifi, WifiOff, Satellite, Navigation, Fuel,
+  Map as MapIcon, RefreshCw, Wifi, WifiOff, Satellite, Navigation, Fuel,
   Thermometer, Zap, Gauge, Cog, Activity, Clock, Truck,
   CheckCircle2, XCircle, AlertTriangle, Search, Eye, Download,
   Cpu, Copy, ExternalLink, Bell, Settings2, Plus, Save,
@@ -894,7 +894,7 @@ ${trackPoints.map(p => `    <trkpt lat="${p.lat}" lon="${p.lng}"></trkpt>`).join
         {/* ─── #100 Version indicator ──────────────────────────── */}
         <div className="flex items-center gap-2 flex-wrap">
           <Button size="sm" variant={subTab === 'map' ? 'default' : 'outline'} className="h-7 text-[11px] gap-1" onClick={() => setSubTab('map')} data-testid="tab-map" aria-label="Вкладка карта">
-            <Map className="size-3" />Карта
+            <MapIcon className="size-3" />Карта
           </Button>
           <Button size="sm" variant={subTab === 'notifications' ? 'default' : 'outline'} className="h-7 text-[11px] gap-1" onClick={() => setSubTab('notifications')} data-testid="tab-notifications" aria-label="Вкладка уведомления">
             <Bell className="size-3" />Уведомления
