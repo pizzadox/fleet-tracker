@@ -70,7 +70,7 @@ export function TripDetailDialog({ open, onOpenChange, trip, loading, crews, onE
   const [routeMapTrackData, setRouteMapTrackData] = useState<any>(null)
   const [focusedPoint, setFocusedPoint] = useState<{ lat: number; lng: number; type: 'parking' | 'stop' | 'refuel' | 'plum'; label?: string } | null>(null)
   const [routePointsCollapsed, setRoutePointsCollapsed] = useState(true)
-  const [routeAddressesOpen, setRouteAddressesOpen] = useState(false)
+  const [routeAddressesOpen, setRouteAddressesOpen] = useState<'start' | 'end' | false>(false)
 
   // ─── Complete trip dialog with refuel detection ─────────────
   const [completeDialog, setCompleteDialog] = useState<{
@@ -110,6 +110,7 @@ export function TripDetailDialog({ open, onOpenChange, trip, loading, crews, onE
     setRouteMapTrackData(null)
     setSelectedTripIndex(null)
     setFocusedPoint(null)
+    setRouteAddressesOpen(false)
     setStatsApplied(null)
   }, [trip?.id])
 
@@ -820,37 +821,48 @@ export function TripDetailDialog({ open, onOpenChange, trip, loading, crews, onE
               {/* Trip ID short */}
               <span className="inline-flex items-center gap-0.5 text-[9px] text-muted-foreground/60 font-mono ml-auto"><Hash className="size-2.5" />{t.id.slice(0, 8)}</span>
             </div>
-            {/* Collapsible route addresses */}
+            {/* Route addresses — click to expand full address */}
             {(t.startPoint || t.endPoint) && (
-              <Collapsible open={routeAddressesOpen} onOpenChange={setRouteAddressesOpen}>
-                <CollapsibleTrigger asChild>
-                  <button className="flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground transition-colors py-0.5 cursor-pointer">
-                    <ChevronDown className={`size-3 transition-transform duration-200 ${!routeAddressesOpen ? '-rotate-90' : ''}`} />
-                    <MapPinned className="size-3" />
-                    {t.startPoint && <span className="text-emerald-600 dark:text-emerald-400">{t.startPoint}</span>}
-                    {t.startPoint && t.endPoint && <ArrowRight className="size-2.5 text-muted-foreground/50" />}
-                    {t.endPoint && <span className="text-red-600 dark:text-red-400">{t.endPoint}</span>}
+              <div className="flex items-center gap-1.5 text-[11px]">
+                {t.startPoint && (
+                  <button
+                    className="inline-flex items-center gap-0.5 text-emerald-600 dark:text-emerald-400 hover:underline cursor-pointer"
+                    onClick={() => setRouteAddressesOpen(routeAddressesOpen === 'start' ? false : 'start')}
+                    title={t.startPoint}
+                  >
+                    <MapPin className="size-2.5 shrink-0" />
+                    <span className="truncate max-w-[120px] sm:max-w-none">{t.startPoint}</span>
                   </button>
-                </CollapsibleTrigger>
-                <CollapsibleContent>
-                  <div className="ml-4 mt-1 space-y-0.5">
-                    {t.startPoint && (
-                      <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground">
-                        <MapPin className="size-2.5 text-emerald-500" />
-                        <span>От: </span>
-                        <span className="text-foreground">{t.startPoint}</span>
-                      </div>
-                    )}
-                    {t.endPoint && (
-                      <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground">
-                        <MapPin className="size-2.5 text-red-500" />
-                        <span>До: </span>
-                        <span className="text-foreground">{t.endPoint}</span>
-                      </div>
-                    )}
+                )}
+                {t.startPoint && t.endPoint && <ArrowRight className="size-2.5 text-muted-foreground/50 shrink-0" />}
+                {t.endPoint && (
+                  <button
+                    className="inline-flex items-center gap-0.5 text-red-600 dark:text-red-400 hover:underline cursor-pointer"
+                    onClick={() => setRouteAddressesOpen(routeAddressesOpen === 'end' ? false : 'end')}
+                    title={t.endPoint}
+                  >
+                    <MapPin className="size-2.5 shrink-0" />
+                    <span className="truncate max-w-[120px] sm:max-w-none">{t.endPoint}</span>
+                  </button>
+                )}
+              </div>
+            )}
+            {/* Expanded full address */}
+            {routeAddressesOpen && (
+              <div className="ml-0.5 mt-0.5 p-2 rounded-md bg-muted/40 text-[11px]">
+                {routeAddressesOpen === 'start' && t.startPoint && (
+                  <div className="flex items-start gap-1.5">
+                    <MapPin className="size-3 text-emerald-500 mt-0.5 shrink-0" />
+                    <span className="text-foreground">{t.startPoint}</span>
                   </div>
-                </CollapsibleContent>
-              </Collapsible>
+                )}
+                {routeAddressesOpen === 'end' && t.endPoint && (
+                  <div className="flex items-start gap-1.5">
+                    <MapPin className="size-3 text-red-500 mt-0.5 shrink-0" />
+                    <span className="text-foreground">{t.endPoint}</span>
+                  </div>
+                )}
+              </div>
             )}
           </DialogDescription>
         </DialogHeader>
