@@ -37,13 +37,14 @@ const TrackerMap = dynamic(() => import('@/components/tracker-map'), { ssr: fals
 // TRIP DETAIL DIALOG
 // ═══════════════════════════════════════════════════════════════
 
-export function TripDetailDialog({ open, onOpenChange, trip, loading, crews, onEdit, onDelete, onStart, onComplete, onRefresh, focusTrack }: {
+export function TripDetailDialog({ open, onOpenChange, trip, loading, crews, onEdit, onDelete, onStart, onComplete, onRefresh, focusTrack, onOpenEquipment }: {
   open: boolean; onOpenChange: (v: boolean) => void;
   trip: Trip | null; loading: boolean; crews: Crew[];
   onEdit: (t: Trip) => void; onDelete: (t: Trip) => void;
   onStart: (t: Trip) => void; onComplete: (t: Trip) => void;
   onRefresh: () => void;
   focusTrack?: boolean;
+  onOpenEquipment?: (equipmentId: string) => void;
 }) {
   const [trackData, setTrackData] = useState<Record<string, unknown> | null>(null)
   const [trackLoading, setTrackLoading] = useState(false)
@@ -636,7 +637,19 @@ export function TripDetailDialog({ open, onOpenChange, trip, loading, crews, onE
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2"><Route className="size-4" />{t.route}</DialogTitle>
           <DialogDescription className="flex items-center gap-2 flex-wrap">
-            {t.equipment?.name} {t.equipment?.registrationNum ? `• ${t.equipment.registrationNum}` : ''}
+            {t.equipment && onOpenEquipment ? (
+              <button
+                type="button"
+                className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-primary hover:underline transition-colors cursor-pointer"
+                onClick={() => onOpenEquipment(t.equipment.id)}
+              >
+                <Truck className="size-3.5 shrink-0" />
+                <span>{t.equipment.name}</span>
+                {t.equipment.registrationNum && <span>• {t.equipment.registrationNum}</span>}
+              </button>
+            ) : (
+              <>{t.equipment?.name} {t.equipment?.registrationNum ? `• ${t.equipment.registrationNum}` : ''}</>
+            )}
             <span className="ml-1">{statusBadge(t.status, TRIP_STATUS_MAP)}</span>
           </DialogDescription>
         </DialogHeader>
