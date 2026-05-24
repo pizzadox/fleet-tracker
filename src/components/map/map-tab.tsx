@@ -946,7 +946,7 @@ ${trackPoints.map(p => `    <trkpt lat="${p.lat}" lon="${p.lng}"></trkpt>`).join
             <PanelSection panelKey="map_stats">
             <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-6 gap-2" data-testid="fleet-summary">
               {/* #56a Total Online */}
-              <Card className="border-l-4 border-l-emerald-500 overflow-hidden">
+              <Card className="border-l-4 border-l-emerald-500 overflow-hidden gap-0">
                 <CardContent className="p-2.5">
                   <div className="flex items-center gap-2">
                     <Wifi className="size-4 text-emerald-500" />
@@ -958,7 +958,7 @@ ${trackPoints.map(p => `    <trkpt lat="${p.lat}" lon="${p.lng}"></trkpt>`).join
                 </CardContent>
               </Card>
               {/* #56b Avg Speed (#69) */}
-              <Card className="border-l-4 border-l-sky-500 overflow-hidden">
+              <Card className="border-l-4 border-l-sky-500 overflow-hidden gap-0">
                 <CardContent className="p-2.5">
                   <div className="flex items-center gap-2">
                     <Gauge className="size-4 text-sky-500" />
@@ -970,7 +970,7 @@ ${trackPoints.map(p => `    <trkpt lat="${p.lat}" lon="${p.lng}"></trkpt>`).join
                 </CardContent>
               </Card>
               {/* #56c Total Fuel (#70) */}
-              <Card className="border-l-4 border-l-amber-500 overflow-hidden">
+              <Card className="border-l-4 border-l-amber-500 overflow-hidden gap-0">
                 <CardContent className="p-2.5">
                   <div className="flex items-center gap-2">
                     <Fuel className="size-4 text-amber-500" />
@@ -982,7 +982,7 @@ ${trackPoints.map(p => `    <trkpt lat="${p.lat}" lon="${p.lng}"></trkpt>`).join
                 </CardContent>
               </Card>
               {/* #68 Total Mileage */}
-              <Card className="border-l-4 border-l-purple-500 overflow-hidden">
+              <Card className="border-l-4 border-l-purple-500 overflow-hidden gap-0">
                 <CardContent className="p-2.5">
                   <div className="flex items-center gap-2">
                     <Navigation className="size-4 text-purple-500" />
@@ -994,7 +994,7 @@ ${trackPoints.map(p => `    <trkpt lat="${p.lat}" lon="${p.lng}"></trkpt>`).join
                 </CardContent>
               </Card>
               {/* #63 Fleet Utilization */}
-              <Card className="border-l-4 border-l-teal-500 overflow-hidden">
+              <Card className="border-l-4 border-l-teal-500 overflow-hidden gap-0">
                 <CardContent className="p-2.5">
                   <div className="flex items-center gap-2">
                     <Activity className="size-4 text-teal-500" />
@@ -1006,7 +1006,7 @@ ${trackPoints.map(p => `    <trkpt lat="${p.lat}" lon="${p.lng}"></trkpt>`).join
                 </CardContent>
               </Card>
               {/* #73 Speed Violations / #64 Alerts */}
-              <Card className="border-l-4 border-l-red-500 overflow-hidden">
+              <Card className="border-l-4 border-l-red-500 overflow-hidden gap-0">
                 <CardContent className="p-2.5">
                   <div className="flex items-center gap-2">
                     <AlertTriangle className="size-4 text-red-500" />
@@ -1212,7 +1212,12 @@ ${trackPoints.map(p => `    <trkpt lat="${p.lat}" lon="${p.lng}"></trkpt>`).join
                 </span>
 
                 {/* Panel management button */}
-                <PanelManagerButton panelConfig={panelConfig} onClick={() => setPanelManagerOpen(true)} />
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <PanelManagerButton panelConfig={panelConfig} onClick={() => setPanelManagerOpen(true)} />
+                  </TooltipTrigger>
+                  <TooltipContent>Управление панелями</TooltipContent>
+                </Tooltip>
               </div>
 
               {/* #20 Breadcrumbs showing active filters */}
@@ -1237,7 +1242,7 @@ ${trackPoints.map(p => `    <trkpt lat="${p.lat}" lon="${p.lng}"></trkpt>`).join
                 Track Panel (#21 collapsible, #97 minimize/maximize)
             ═══════════════════════════════════════════════════════ */}
             {showTrackPanel && (
-              <Card className={`border-dashed transition-all ${trackPanelMinimized ? 'py-0' : ''}`} data-testid="track-panel">
+              <Card className={`border-dashed transition-all gap-0 ${trackPanelMinimized ? 'py-0' : ''}`} data-testid="track-panel">
                 <CardContent className={`p-3 space-y-3 ${trackPanelMinimized ? 'hidden' : ''}`}>
                   <div className="flex items-center justify-between">
                     <h3 className="text-xs font-semibold flex items-center gap-1.5" aria-label="Просмотр трека">
@@ -1556,7 +1561,7 @@ ${trackPoints.map(p => `    <trkpt lat="${p.lat}" lon="${p.lng}"></trkpt>`).join
                     ) : (
                       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
                         {equipment.filter(e => !e.trackers || e.trackers.length === 0).map(eq => (
-                          <Card key={eq.id} className="border-l-4 border-l-amber-400 cursor-pointer hover:shadow-md transition-shadow" onClick={() => onOpenDetail?.(eq.id)} data-testid={`eq-notracker-${eq.id}`}>
+                          <Card key={eq.id} className="border-l-4 border-l-amber-400 cursor-pointer hover:shadow-md transition-shadow gap-0" onClick={() => onOpenDetail?.(eq.id)} data-testid={`eq-notracker-${eq.id}`}>
                             <CardContent className="p-3">
                               <div className="flex items-center gap-2">
                                 {/* #7 Equipment type icon on map cards */}
@@ -1589,7 +1594,7 @@ ${trackPoints.map(p => `    <trkpt lat="${p.lat}" lon="${p.lng}"></trkpt>`).join
                     const movement = tracker ? getMovementStatus(tracker) : null
                     return (
                       <div className="absolute top-2 right-2 z-20 w-64" data-testid="selected-eq-overlay">
-                        <Card className="shadow-lg border-primary/20">
+                        <Card className="shadow-lg border-primary/20 gap-0">
                           <CardContent className="p-3">
                             <div className="flex items-center justify-between mb-2">
                               <p className="text-xs font-semibold truncate">{eq.name}</p>
@@ -1722,7 +1727,7 @@ ${trackPoints.map(p => `    <trkpt lat="${p.lat}" lon="${p.lng}"></trkpt>`).join
                         <Card
                           key={t.id}
                           ref={el => { if (el) cardRefs.current.set(t.equipmentId || t.id, el) }}
-                          className={`border-l-4 transition-all duration-200 ${
+                          className={`border-l-4 transition-all duration-200 gap-0 ${
                             t.isActive
                               ? 'border-l-emerald-500' + (t.isActive ? ' animate-pulse-subtle' : '')  // #6 pulse on online
                               : 'border-l-red-400'
