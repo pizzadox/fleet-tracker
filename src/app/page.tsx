@@ -191,7 +191,7 @@ export default function Home() {
   const [authLoading, setAuthLoading] = useState(true)
   const [users, setUsers] = useState<AppUserType[]>([])
   const [mgmtSubTab, setMgmtSubTab] = useState<'companies' | 'employees' | 'crews'>('companies')
-  const [settingsSubTab, setSettingsSubTab] = useState<'users' | 'permissions' | 'axenta' | 'about'>('users')
+  const [settingsSubTab, setSettingsSubTab] = useState<'users' | 'permissions' | 'axenta' | 'database' | 'about'>('users')
   const [rolePermissions, setRolePermissions] = useState<Record<string, string[]>>(DEFAULT_ROLE_PERMISSIONS)
 
   // ═══════════════════════════════════════════════════════════════

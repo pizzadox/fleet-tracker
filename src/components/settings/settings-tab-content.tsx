@@ -42,7 +42,7 @@ export function SettingsTabContent({
   axentaSettings: AxentaSettings; setAxentaSettings: React.Dispatch<React.SetStateAction<AxentaSettings>>;
   settingsSaving: boolean; setSettingsSaving: (v: boolean) => void;
   syncing: boolean; setSyncing: (v: boolean) => void;
-  settingsSubTab: 'users' | 'permissions' | 'axenta' | 'about'; setSettingsSubTab: (v: 'users' | 'permissions' | 'axenta' | 'about') => void;
+  settingsSubTab: 'users' | 'permissions' | 'axenta' | 'database' | 'about'; setSettingsSubTab: (v: 'users' | 'permissions' | 'axenta' | 'database' | 'about') => void;
   onRefreshAll: () => void;
   rolePermissions: Record<string, string[]>;
   onPermissionsUpdate: (perms: Record<string, string[]>) => void;
@@ -220,7 +220,7 @@ export function SettingsTabContent({
   return (
     <div className="flex flex-col h-[calc(100dvh-140px)]">
       <div className="px-4 pt-3 border-b bg-muted/20">
-        <Tabs value={settingsSubTab} onValueChange={(v) => setSettingsSubTab(v as 'users' | 'permissions' | 'axenta' | 'about')}>
+        <Tabs value={settingsSubTab} onValueChange={(v) => setSettingsSubTab(v as 'users' | 'permissions' | 'axenta' | 'database' | 'about')}>
           <TabsList className="bg-transparent h-9 p-0 gap-0 w-full">
             <TabsTrigger value="users" className="gap-1.5 text-xs h-9 rounded-b-none data-[state=active]:bg-background data-[state=active]:shadow-sm flex-1">
               <Users className="size-3.5" />Пользователи
@@ -231,6 +231,9 @@ export function SettingsTabContent({
             </TabsTrigger>
             <TabsTrigger value="axenta" className="gap-1.5 text-xs h-9 rounded-b-none data-[state=active]:bg-background data-[state=active]:shadow-sm flex-1">
               <Satellite className="size-3.5" />Axenta
+            </TabsTrigger>
+            <TabsTrigger value="database" className="gap-1.5 text-xs h-9 rounded-b-none data-[state=active]:bg-background data-[state=active]:shadow-sm flex-1">
+              <Database className="size-3.5" />БД
             </TabsTrigger>
             <TabsTrigger value="about" className="gap-1.5 text-xs h-9 rounded-b-none data-[state=active]:bg-background data-[state=active]:shadow-sm flex-1">
               <Info className="size-3.5" />О системе
@@ -637,6 +640,9 @@ export function SettingsTabContent({
           </div>
         )}
 
+        {/* ─── DATABASE TAB ─── */}
+        {settingsSubTab === 'database' && <DatabaseTab />}
+
         {/* ─── ABOUT TAB ─── */}
         {settingsSubTab === 'about' && (
           <div className="space-y-4">
@@ -788,6 +794,333 @@ export function UserForm({ editData, saving, onSave }: {
           {editData ? 'Сохранить' : 'Создать'}
         </Button>
       </DialogFooter>
+    </div>
+  )
+}
+
+// ═══════════════════════════════════════════════════════════════
+// DATABASE TAB — Резервное копирование и восстановление
+// ═══════════════════════════════════════════════════════════════
+
+interface BackupItem {
+  filename: string
+  label: string
+  date: string
+  size: number
+  sizeFormatted: string
+}
+
+function DatabaseTab() {
+  const [backups, setBackups] = useState<BackupItem[]>([])
+  const [loading, setLoading] = useState(true)
+  const [creating, setCreating] = useState(false)
+  const [backupLabel, setBackupLabel] = useState('')
+  const [dbInfo, setDbInfo] = useState<{ dbPath: string; dbExists: boolean; dbSize: number; dbSizeFormatted: string } | null>(null)
+
+  // Restore dialog
+  const [restoreDialog, setRestoreDialog] = useState<{ open: boolean; filename: string; label: string }>({ open: false, filename: '', label: '' })
+  const [restoring, setRestoring] = useState(false)
+
+  // Delete dialog
+  const [deleteDialog, setDeleteDialog] = useState<{ open: boolean; filename: string; label: string }>({ open: false, filename: '', label: '' })
+
+  // Upload
+  const [uploading, setUploading] = useState(false)
+  const fileInputRef = useRef<HTMLInputElement>(null)
+
+  const fetchBackups = useCallback(async () => {
+    setLoading(true)
+    try {
+      const res = await fetch('/api/db/backups')
+      if (res.ok) {
+        const data = await res.json()
+        setBackups(data.backups || [])
+        setDbInfo({ dbPath: data.dbPath, dbExists: data.dbExists, dbSize: data.dbSize, dbSizeFormatted: data.dbSizeFormatted })
+      }
+    } catch { toast.error('Ошибка загрузки списка бэкапов') }
+    setLoading(false)
+  }, [])
+
+  useEffect(() => { fetchBackups() }, [fetchBackups])
+
+  const handleCreateBackup = async () => {
+    setCreating(true)
+    try {
+      const res = await fetch('/api/db/backups', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ label: backupLabel }),
+      })
+      if (res.ok) {
+        const data = await res.json()
+        toast.success(`Бэкап создан: ${data.backup?.sizeFormatted || ''}`)
+        setBackupLabel('')
+        fetchBackups()
+      } else {
+        const data = await res.json().catch(() => ({}))
+        toast.error(data.error || 'Ошибка создания бэкапа')
+      }
+    } catch { toast.error('Ошибка создания бэкапа') }
+    setCreating(false)
+  }
+
+  const handleRestore = async () => {
+    setRestoring(true)
+    try {
+      const res = await fetch('/api/db/restore', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ filename: restoreDialog.filename }),
+      })
+      if (res.ok) {
+        toast.success('База данных восстановлена! Автобэкап текущей БД создан перед восстановлением.')
+        fetchBackups()
+      } else {
+        const data = await res.json().catch(() => ({}))
+        toast.error(data.error || 'Ошибка восстановления')
+      }
+    } catch { toast.error('Ошибка восстановления') }
+    setRestoring(false)
+    setRestoreDialog({ open: false, filename: '', label: '' })
+  }
+
+  const handleDelete = async () => {
+    try {
+      const res = await fetch(`/api/db/backups?filename=${encodeURIComponent(deleteDialog.filename)}`, { method: 'DELETE' })
+      if (res.ok) {
+        toast.success('Бэкап удалён')
+        fetchBackups()
+      } else {
+        const data = await res.json().catch(() => ({}))
+        toast.error(data.error || 'Ошибка удаления')
+      }
+    } catch { toast.error('Ошибка удаления') }
+    setDeleteDialog({ open: false, filename: '', label: '' })
+  }
+
+  const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+
+    if (!file.name.endsWith('.db')) {
+      toast.error('Допускаются только файлы .db')
+      return
+    }
+
+    setUploading(true)
+    try {
+      const formData = new FormData()
+      formData.append('file', file)
+      const res = await fetch('/api/db/upload', { method: 'POST', body: formData })
+      if (res.ok) {
+        const data = await res.json()
+        toast.success(`Файл загружен как бэкап: ${data.backup?.sizeFormatted || ''}`)
+        fetchBackups()
+      } else {
+        const data = await res.json().catch(() => ({}))
+        toast.error(data.error || 'Ошибка загрузки')
+      }
+    } catch { toast.error('Ошибка загрузки файла') }
+    setUploading(false)
+    // Reset file input
+    if (fileInputRef.current) fileInputRef.current.value = ''
+  }
+
+  const handleDownload = (filename: string) => {
+    window.open(`/api/db/download?filename=${encodeURIComponent(filename)}`, '_blank')
+  }
+
+  const formatDate = (dateStr: string) => {
+    try {
+      const d = new Date(dateStr)
+      return d.toLocaleString('ru-RU', { timeZone: 'Europe/Moscow', day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit' })
+    } catch { return dateStr }
+  }
+
+  return (
+    <div className="space-y-4">
+      {/* DB Status */}
+      <div className={`flex items-center gap-3 rounded-xl border p-4 ${
+        dbInfo?.dbExists
+          ? 'bg-emerald-50 dark:bg-emerald-950/20 border-emerald-200 dark:border-emerald-800'
+          : 'bg-red-50 dark:bg-red-950/20 border-red-200 dark:border-red-800'
+      }`}>
+        <div className={`size-10 rounded-xl flex items-center justify-center shrink-0 ${
+          dbInfo?.dbExists
+            ? 'bg-emerald-100 dark:bg-emerald-900/40'
+            : 'bg-red-100 dark:bg-red-900/40'
+        }`}>
+          <Database className={`size-5 ${dbInfo?.dbExists ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400'}`} />
+        </div>
+        <div className="flex-1 min-w-0">
+          <p className="text-sm font-semibold">
+            {dbInfo?.dbExists ? 'База данных подключена' : 'База данных не найдена'}
+          </p>
+          <p className="text-xs text-muted-foreground mt-0.5">
+            {dbInfo?.dbExists ? `${dbInfo.dbPath} · ${dbInfo.dbSizeFormatted}` : 'Проверьте настройки'}
+          </p>
+        </div>
+        <div className={`size-3 rounded-full ${dbInfo?.dbExists ? 'bg-emerald-500 animate-pulse' : 'bg-red-400'}`} />
+      </div>
+
+      {/* Create backup */}
+      <div className="rounded-xl border overflow-hidden">
+        <div className="flex items-center gap-2 px-3 py-2 bg-muted/40 border-b">
+          <HardDrive className="size-3.5 text-muted-foreground" />
+          <span className="text-xs font-semibold">Создать резервную копию</span>
+        </div>
+        <div className="p-3 space-y-3">
+          <div className="flex gap-2">
+            <Input
+              placeholder="Метка (необязательно)"
+              value={backupLabel}
+              onChange={e => setBackupLabel(e.target.value)}
+              className="h-9 text-sm flex-1"
+              maxLength={50}
+            />
+            <Button className="h-9 gap-1.5 shrink-0" onClick={handleCreateBackup} disabled={creating || !dbInfo?.dbExists}>
+              {creating ? <Loader2 className="size-3.5 animate-spin" /> : <Plus className="size-3.5" />}
+              Создать
+            </Button>
+          </div>
+          <p className="text-[10px] text-muted-foreground">
+            Резервная копия маркируется датой и временем создания. Метка — дополнительное описание.
+          </p>
+        </div>
+      </div>
+
+      {/* Upload backup */}
+      <div className="rounded-xl border overflow-hidden">
+        <div className="flex items-center gap-2 px-3 py-2 bg-muted/40 border-b">
+          <Upload className="size-3.5 text-muted-foreground" />
+          <span className="text-xs font-semibold">Загрузить бэкап</span>
+        </div>
+        <div className="p-3">
+          <div className="flex items-center gap-2">
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept=".db"
+              onChange={handleUpload}
+              className="hidden"
+              id="db-upload-input"
+            />
+            <Button
+              variant="outline"
+              className="h-9 gap-1.5 flex-1"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={uploading}
+            >
+              {uploading ? <Loader2 className="size-3.5 animate-spin" /> : <Upload className="size-3.5" />}
+              Выбрать файл .db
+            </Button>
+          </div>
+          <p className="text-[10px] text-muted-foreground mt-1.5">
+            Загруженный файл сохранится как бэкап. Восстановите его из списка ниже при необходимости.
+          </p>
+        </div>
+      </div>
+
+      {/* Backups list */}
+      <div className="rounded-xl border overflow-hidden">
+        <div className="flex items-center justify-between px-3 py-2 bg-muted/40 border-b">
+          <div className="flex items-center gap-2">
+            <Clock className="size-3.5 text-muted-foreground" />
+            <span className="text-xs font-semibold">Резервные копии</span>
+            <Badge variant="secondary" className="text-[9px] h-4 px-1.5">{backups.length}</Badge>
+          </div>
+          <Button variant="ghost" size="sm" className="h-6 text-[10px] gap-1" onClick={fetchBackups} disabled={loading}>
+            <RefreshCw className={`size-3 ${loading ? 'animate-spin' : ''}`} />
+            Обновить
+          </Button>
+        </div>
+
+        <div className="max-h-[40dvh] overflow-y-auto">
+          {loading ? (
+            <div className="flex items-center justify-center py-8">
+              <Loader2 className="size-5 animate-spin text-muted-foreground" />
+            </div>
+          ) : backups.length === 0 ? (
+            <div className="flex flex-col items-center py-8 text-center">
+              <Database className="size-8 text-muted-foreground/30 mb-2" />
+              <p className="text-xs text-muted-foreground">Нет резервных копий</p>
+              <p className="text-[10px] text-muted-foreground/70 mt-0.5">Создайте первую копию выше</p>
+            </div>
+          ) : (
+            <div className="divide-y">
+              {backups.map((backup) => (
+                <div key={backup.filename} className="flex items-center gap-3 px-3 py-2.5 hover:bg-accent/50 transition-colors group">
+                  <div className="size-8 rounded-lg bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center shrink-0">
+                    <Database className="size-4 text-blue-600 dark:text-blue-400" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-xs font-medium truncate">
+                      {formatDate(backup.date)}
+                    </p>
+                    <div className="flex items-center gap-2 mt-0.5">
+                      <span className="text-[10px] text-muted-foreground">{backup.sizeFormatted}</span>
+                      {backup.label && (
+                        <span className="text-[10px] text-blue-600 dark:text-blue-400 truncate">{backup.label}</span>
+                      )}
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <Button variant="ghost" size="icon" className="size-7" onClick={() => handleDownload(backup.filename)} title="Скачать">
+                      <Download className="size-3.5" />
+                    </Button>
+                    <Button variant="ghost" size="icon" className="size-7 text-amber-600 hover:text-amber-700" onClick={() => setRestoreDialog({ open: true, filename: backup.filename, label: formatDate(backup.date) })} title="Восстановить">
+                      <RefreshCw className="size-3.5" />
+                    </Button>
+                    <Button variant="ghost" size="icon" className="size-7 text-destructive hover:text-destructive" onClick={() => setDeleteDialog({ open: true, filename: backup.filename, label: formatDate(backup.date) })} title="Удалить">
+                      <Trash2 className="size-3.5" />
+                    </Button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Restore confirmation */}
+      <AlertDialog open={restoreDialog.open} onOpenChange={(open) => setRestoreDialog({ ...restoreDialog, open })}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center gap-2">
+              <RefreshCw className="size-5 text-amber-500" />
+              Восстановить базу данных?
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              Данные будут заменены на копию от <b>{restoreDialog.label}</b>.
+              Текущая база данных будет автоматически сохранена как бэкап перед восстановлением.
+              Рекомендуется перезагрузить приложение после восстановления.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Отмена</AlertDialogCancel>
+            <AlertDialogAction onClick={handleRestore} disabled={restoring} className="bg-amber-600 hover:bg-amber-700">
+              {restoring ? <Loader2 className="size-3.5 animate-spin mr-1.5" /> : null}
+              Восстановить
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Delete confirmation */}
+      <AlertDialog open={deleteDialog.open} onOpenChange={(open) => setDeleteDialog({ ...deleteDialog, open })}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Удалить бэкап?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Удалить резервную копию от <b>{deleteDialog.label}</b>? Это действие нельзя отменить.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Отмена</AlertDialogCancel>
+            <AlertDialogAction onClick={handleDelete} className="bg-destructive text-white hover:bg-destructive/90">Удалить</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
 }

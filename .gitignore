@@ -55,6 +55,9 @@ server.log
 # Database (contains live data)
 /db/
 
+# Backups (database backup files)
+/backups/
+
 # Uploads (user-uploaded files)
 /public/uploads/
 
