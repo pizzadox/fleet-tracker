@@ -6,7 +6,10 @@ const nextConfig: NextConfig = {
     ignoreBuildErrors: true,
   },
   reactStrictMode: false,
-  turbopack: {},
+  // Note: Use `npx next build --webpack` for production builds.
+  // Turbopack (default in Next.js 16) has a known bug with standalone output
+  // where SSR generates chunk references that don't exist on disk,
+  // causing ChunkLoadError at runtime.
 };
 
 export default nextConfig;
