@@ -110,14 +110,51 @@ const calcTripScore = (t: Trip): number | null => {
 const SORT_OPTIONS = [
   { value: 'date_desc', label: 'Дата (новые)' },
   { value: 'date_asc', label: 'Дата (старые)' },
-  { value: 'status', label: 'По статусу' },
+  { value: 'status_asc', label: 'Статус (А→Я)' },
+  { value: 'status_desc', label: 'Статус (Я→А)' },
+  { value: 'route_asc', label: 'Маршрут (А→Я)' },
+  { value: 'route_desc', label: 'Маршрут (Я→А)' },
+  { value: 'equipment_asc', label: 'Техника (А→Я)' },
+  { value: 'equipment_desc', label: 'Техника (Я→А)' },
   { value: 'distance_desc', label: 'Расстояние ↓' },
   { value: 'distance_asc', label: 'Расстояние ↑' },
   { value: 'fuel_desc', label: 'Расход топлива ↓' },
   { value: 'fuel_asc', label: 'Расход топлива ↑' },
+  { value: 'idle_desc', label: 'Простой ↓' },
+  { value: 'idle_asc', label: 'Простой ↑' },
+  { value: 'cost_desc', label: 'Стоимость ↓' },
+  { value: 'cost_asc', label: 'Стоимость ↑' },
 ] as const
 
 type SortOption = typeof SORT_OPTIONS[number]['value']
+
+// Column sort key mapping — which sort values belong to which column
+type ColumnSortKey = 'route' | 'equipment' | 'status' | 'date' | 'distance' | 'fuel' | 'extra'
+const COLUMN_SORT_MAP: Record<ColumnSortKey, SortOption[]> = {
+  route: ['route_asc', 'route_desc'],
+  equipment: ['equipment_asc', 'equipment_desc'],
+  status: ['status_asc', 'status_desc'],
+  date: ['date_asc', 'date_desc'],
+  distance: ['distance_asc', 'distance_desc'],
+  fuel: ['fuel_asc', 'fuel_desc'],
+  extra: ['idle_asc', 'idle_desc', 'cost_asc', 'cost_desc'],
+}
+
+function getColumnSortDirection(sort: SortOption, column: ColumnSortKey): 'asc' | 'desc' | null {
+  const colSorts = COLUMN_SORT_MAP[column]
+  const idx = colSorts.indexOf(sort)
+  if (idx === -1) return null
+  return sort.endsWith('_desc') ? 'desc' : 'asc'
+}
+
+function cycleColumnSort(sort: SortOption, column: ColumnSortKey): SortOption {
+  const colSorts = COLUMN_SORT_MAP[column]
+  const currentIdx = colSorts.indexOf(sort)
+  if (currentIdx === -1) return colSorts[0] // first option for this column
+  const nextIdx = currentIdx + 1
+  if (nextIdx < colSorts.length) return colSorts[nextIdx]
+  return colSorts[0] // cycle back
+}
 
 // ═══════════════════════════════════════════════════════════════
 // TRIP CARD SKELETON
@@ -243,14 +280,26 @@ export const TripsTab = React.memo(function TripsTab({ trips, equipment, crews, 
       switch (sort) {
         case 'date_desc': return (new Date(b.startDate || 0).getTime()) - (new Date(a.startDate || 0).getTime())
         case 'date_asc': return (new Date(a.startDate || 0).getTime()) - (new Date(b.startDate || 0).getTime())
-        case 'status': {
+        case 'status_asc': {
           const order = ['in_progress', 'planned', 'completed', 'cancelled']
           return order.indexOf(a.status) - order.indexOf(b.status)
         }
+        case 'status_desc': {
+          const order = ['cancelled', 'completed', 'planned', 'in_progress']
+          return order.indexOf(a.status) - order.indexOf(b.status)
+        }
+        case 'route_asc': return (a.route || '').localeCompare(b.route || '', 'ru')
+        case 'route_desc': return (b.route || '').localeCompare(a.route || '', 'ru')
+        case 'equipment_asc': return (a.equipment?.name || '').localeCompare(b.equipment?.name || '', 'ru')
+        case 'equipment_desc': return (b.equipment?.name || '').localeCompare(a.equipment?.name || '', 'ru')
         case 'distance_desc': return (b.distance || 0) - (a.distance || 0)
         case 'distance_asc': return (a.distance || 0) - (b.distance || 0)
         case 'fuel_desc': return (b.fuelConsumed || 0) - (a.fuelConsumed || 0)
         case 'fuel_asc': return (a.fuelConsumed || 0) - (b.fuelConsumed || 0)
+        case 'idle_desc': return (b.idleTime || 0) - (a.idleTime || 0)
+        case 'idle_asc': return (a.idleTime || 0) - (b.idleTime || 0)
+        case 'cost_desc': return (b.cost || 0) - (a.cost || 0)
+        case 'cost_asc': return (a.cost || 0) - (b.cost || 0)
         default: return 0
       }
     })
@@ -734,13 +783,27 @@ export const TripsTab = React.memo(function TripsTab({ trips, equipment, crews, 
                 <thead>
                   <tr className="border-b bg-muted/50 text-muted-foreground">
                     <th className="text-left py-1.5 px-2 font-medium w-7">#</th>
-                    <th className="text-left py-1.5 px-2 font-medium">Маршрут</th>
-                    <th className="text-left py-1.5 px-2 font-medium hidden sm:table-cell">Техника</th>
-                    <th className="text-left py-1.5 px-2 font-medium">Статус</th>
-                    <th className="text-left py-1.5 px-2 font-medium hidden md:table-cell">Начало</th>
-                    <th className="text-left py-1.5 px-2 font-medium hidden md:table-cell">Расст./Скор.</th>
-                    <th className="text-left py-1.5 px-2 font-medium hidden lg:table-cell">Топливо</th>
-                    <th className="text-left py-1.5 px-2 font-medium hidden xl:table-cell">Доп.</th>
+                    <th className="text-left py-1.5 px-2 font-medium cursor-pointer select-none hover:text-foreground transition-colors group/th" onClick={() => setSort(prev => cycleColumnSort(prev, 'route'))}>
+                      <span className="inline-flex items-center gap-1">Маршрут{getColumnSortDirection(sort, 'route') === 'asc' ? <ArrowUp className="size-3" /> : getColumnSortDirection(sort, 'route') === 'desc' ? <ArrowDown className="size-3" /> : <ArrowUpDown className="size-3 opacity-30" />}</span>
+                    </th>
+                    <th className="text-left py-1.5 px-2 font-medium hidden sm:table-cell cursor-pointer select-none hover:text-foreground transition-colors" onClick={() => setSort(prev => cycleColumnSort(prev, 'equipment'))}>
+                      <span className="inline-flex items-center gap-1">Техника{getColumnSortDirection(sort, 'equipment') === 'asc' ? <ArrowUp className="size-3" /> : getColumnSortDirection(sort, 'equipment') === 'desc' ? <ArrowDown className="size-3" /> : <ArrowUpDown className="size-3 opacity-30" />}</span>
+                    </th>
+                    <th className="text-left py-1.5 px-2 font-medium cursor-pointer select-none hover:text-foreground transition-colors" onClick={() => setSort(prev => cycleColumnSort(prev, 'status'))}>
+                      <span className="inline-flex items-center gap-1">Статус{getColumnSortDirection(sort, 'status') === 'asc' ? <ArrowUp className="size-3" /> : getColumnSortDirection(sort, 'status') === 'desc' ? <ArrowDown className="size-3" /> : <ArrowUpDown className="size-3 opacity-30" />}</span>
+                    </th>
+                    <th className="text-left py-1.5 px-2 font-medium hidden md:table-cell cursor-pointer select-none hover:text-foreground transition-colors" onClick={() => setSort(prev => cycleColumnSort(prev, 'date'))}>
+                      <span className="inline-flex items-center gap-1">Начало{getColumnSortDirection(sort, 'date') === 'asc' ? <ArrowUp className="size-3" /> : getColumnSortDirection(sort, 'date') === 'desc' ? <ArrowDown className="size-3" /> : <ArrowUpDown className="size-3 opacity-30" />}</span>
+                    </th>
+                    <th className="text-left py-1.5 px-2 font-medium hidden md:table-cell cursor-pointer select-none hover:text-foreground transition-colors" onClick={() => setSort(prev => cycleColumnSort(prev, 'distance'))}>
+                      <span className="inline-flex items-center gap-1">Расст./Скор.{getColumnSortDirection(sort, 'distance') === 'asc' ? <ArrowUp className="size-3" /> : getColumnSortDirection(sort, 'distance') === 'desc' ? <ArrowDown className="size-3" /> : <ArrowUpDown className="size-3 opacity-30" />}</span>
+                    </th>
+                    <th className="text-left py-1.5 px-2 font-medium hidden lg:table-cell cursor-pointer select-none hover:text-foreground transition-colors" onClick={() => setSort(prev => cycleColumnSort(prev, 'fuel'))}>
+                      <span className="inline-flex items-center gap-1">Топливо{getColumnSortDirection(sort, 'fuel') === 'asc' ? <ArrowUp className="size-3" /> : getColumnSortDirection(sort, 'fuel') === 'desc' ? <ArrowDown className="size-3" /> : <ArrowUpDown className="size-3 opacity-30" />}</span>
+                    </th>
+                    <th className="text-left py-1.5 px-2 font-medium hidden xl:table-cell cursor-pointer select-none hover:text-foreground transition-colors" onClick={() => setSort(prev => cycleColumnSort(prev, 'extra'))}>
+                      <span className="inline-flex items-center gap-1">Доп.{getColumnSortDirection(sort, 'extra') === 'asc' ? <ArrowUp className="size-3" /> : getColumnSortDirection(sort, 'extra') === 'desc' ? <ArrowDown className="size-3" /> : <ArrowUpDown className="size-3 opacity-30" />}</span>
+                    </th>
                     <th className="text-right py-1.5 px-2 font-medium w-16"></th>
                   </tr>
                 </thead>
