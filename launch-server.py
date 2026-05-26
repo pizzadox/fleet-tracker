@@ -51,6 +51,7 @@ def daemonize():
 
 def main():
     # Kill previous server if running
+    # 1. Try PID file first
     if os.path.exists(PID_FILE):
         try:
             with open(PID_FILE) as f:
@@ -62,6 +63,25 @@ def main():
         except (ProcessLookupError, ValueError, FileNotFoundError):
             pass
         os.remove(PID_FILE)
+
+    # 2. Also kill any orphaned node server processes on port 3000
+    import subprocess, time
+    try:
+        result = subprocess.run(
+            ["fuser", str(PORT) + "/tcp"],
+            capture_output=True, text=True, timeout=5
+        )
+        if result.stdout.strip():
+            pids = result.stdout.strip().split()
+            for pid_str in pids:
+                try:
+                    os.kill(int(pid_str), signal.SIGKILL)
+                    print(f"Killed orphaned process on port {PORT} (PID {pid_str})")
+                except (ProcessLookupError, ValueError):
+                    pass
+            time.sleep(1)
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        pass
 
     daemonize()
 
