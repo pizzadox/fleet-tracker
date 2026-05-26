@@ -572,6 +572,7 @@ export function SettingsTabContent({
                   <Globe className="size-3.5 text-muted-foreground absolute left-2.5 top-1/2 -translate-y-1/2" />
                   <Input placeholder="https://axenta.cloud" value={axentaSettings.apiUrl} onChange={e => setAxentaSettings(s => ({ ...s, apiUrl: e.target.value }))} className="h-9 pl-8 text-sm" />
                 </div>
+                <p className="text-[10px] text-muted-foreground mt-1">Базовый адрес без /api — он добавляется автоматически</p>
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div>
@@ -625,7 +626,10 @@ export function SettingsTabContent({
                       toast.success(authData.message || 'Авторизация успешна');
                       const settingsRes = await fetch('/api/glonass/settings');
                       if (settingsRes.ok) { const settingsData = await settingsRes.json(); if (settingsData.apiUrl) setAxentaSettings(settingsData); }
-                    } else { toast.error(authData.error || 'Ошибка авторизации'); }
+                    } else {
+                      const errMsg = authData.error || 'Ошибка авторизации'
+                      toast.error(errMsg, { description: authData.debugUrl ? `URL: ${authData.debugUrl}` : undefined })
+                    }
                   } else {
                     const res = await fetch('/api/glonass/settings', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(axentaSettings) });
                     if (!res.ok) throw new Error();

@@ -17,8 +17,16 @@ export async function POST(request: NextRequest) {
       )
     }
 
+    // Normalize API URL: strip trailing slashes and /api suffix
+    // Users may enter "https://axenta.cloud/api" but code adds "/api/..." itself
+    let normalizedUrl = apiUrl.replace(/\/+$/, '')
+    if (normalizedUrl.endsWith('/api')) {
+      normalizedUrl = normalizedUrl.slice(0, -4)
+      console.log(`[GLONASS Auth] Stripped /api from URL: ${apiUrl} -> ${normalizedUrl}`)
+    }
+
     // Call Axenta.cloud login API
-    const loginUrl = `${apiUrl.replace(/\/+$/, '')}/api/auth/login/`
+    const loginUrl = `${normalizedUrl}/api/auth/login/`
     console.log(`[GLONASS Auth] Attempting login to: ${loginUrl}`)
 
     const response = await fetch(loginUrl, {
@@ -47,9 +55,9 @@ export async function POST(request: NextRequest) {
         errorDetail = await response.text().catch(() => `HTTP ${response.status}`)
       }
 
-      console.error(`[GLONASS Auth] Login failed: ${errorDetail}`)
+      console.error(`[GLONASS Auth] Login failed: ${errorDetail} (URL: ${loginUrl})`)
       return NextResponse.json(
-        { error: `Ошибка авторизации: ${errorDetail}`, status: response.status },
+        { error: `Ошибка авторизации: ${errorDetail}`, debugUrl: loginUrl, status: response.status },
         { status: response.status }
       )
     }
@@ -62,7 +70,7 @@ export async function POST(request: NextRequest) {
 
     const settings = await db.axentaSettings.create({
       data: {
-        apiUrl: apiUrl.replace(/\/+$/, ''),
+        apiUrl: normalizedUrl,
         apiKey: data.token || data.key || data.auth_token || data.access || '',
         username,
         password,
