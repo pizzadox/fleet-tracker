@@ -7,6 +7,7 @@ import { toast } from 'sonner'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Separator } from '@/components/ui/separator'
+import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip'
 import {
   CheckCircle2, Activity, ArrowRight, Users, Wrench,
   Camera, Shield, Info, Package, ChevronLeft, ChevronRight
@@ -68,10 +69,22 @@ export function formatPrice(p?: number | null): string {
   return new Intl.NumberFormat('ru-RU', { style: 'currency', currency: 'RUB', maximumFractionDigits: 0 }).format(p)
 }
 
-export function statusBadge(status: string, map: Record<string, { label: string; color: string }>) {
+export function statusBadge(status: string, map: Record<string, { label: string; color: string; description?: string }>) {
   const s = map[status]
   if (!s) return <Badge variant="outline" className="text-[10px]">{status}</Badge>
-  return <span className={`inline-flex items-center rounded px-1.5 py-0.5 text-[10px] sm:text-xs font-medium ${s.color}`}>{s.label}</span>
+  const inner = <span className={`inline-flex items-center rounded px-1.5 py-0.5 text-[10px] sm:text-xs font-medium ${s.color}`}>{s.label}</span>
+  if (s.description) {
+    return (
+      <Tooltip>
+        <TooltipTrigger asChild>{inner}</TooltipTrigger>
+        <TooltipContent side="bottom" className="max-w-[260px] text-balance">
+          <p className="font-semibold">{s.label}</p>
+          <p className="text-[11px] opacity-80 mt-0.5">{s.description}</p>
+        </TooltipContent>
+      </Tooltip>
+    )
+  }
+  return inner
 }
 
 export function getEventIcon(event: string) {

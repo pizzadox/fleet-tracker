@@ -13,6 +13,7 @@ import { Checkbox } from '@/components/ui/checkbox'
 import { Table, TableHeader, TableRow, TableHead, TableBody, TableCell } from '@/components/ui/table'
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
+import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip'
 import {
   Truck, Wrench, Plus, Search, Edit, Trash2,
   CheckCircle2, Clock, XCircle, AlertTriangle, Activity, Gauge,
@@ -49,6 +50,49 @@ export const StatCard = React.memo(function StatCard({ icon, label, value, color
 // ═══════════════════════════════════════════════════════════════
 // EQUIPMENT TAB
 // ═══════════════════════════════════════════════════════════════
+
+/** Resolve condition dot color from condition map color classes */
+function condDotColor(color: string) {
+  return color.includes('emerald') ? 'bg-emerald-500' : color.includes('sky') ? 'bg-sky-500' : color.includes('amber') ? 'bg-amber-500' : 'bg-red-500'
+}
+
+/** Rich tooltip for status badge */
+function StatusTooltip({ status, info, children }: { status: string; info: { label: string; color: string; description?: string } | undefined; children: React.ReactNode }) {
+  if (!info?.description) return <>{children}</>
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>{children}</TooltipTrigger>
+      <TooltipContent side="bottom" className="max-w-[260px] text-balance">
+        <p className="font-semibold">{info.label}</p>
+        <p className="text-[11px] opacity-80 mt-0.5">{info.description}</p>
+      </TooltipContent>
+    </Tooltip>
+  )
+}
+
+/** Rich tooltip for condition dot */
+function CondTooltip({ info, children }: { info: { label: string; description?: string } | undefined; children: React.ReactNode }) {
+  if (!info?.description) return <>{children}</>
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>{children}</TooltipTrigger>
+      <TooltipContent side="bottom" className="max-w-[220px] text-balance">
+        <p className="font-semibold">Состояние: {info.label}</p>
+        <p className="text-[11px] opacity-80 mt-0.5">{info.description}</p>
+      </TooltipContent>
+    </Tooltip>
+  )
+}
+
+/** Simple tooltip for small indicators */
+function SimpleTooltip({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>{children}</TooltipTrigger>
+      <TooltipContent side="bottom">{label}</TooltipContent>
+    </Tooltip>
+  )
+}
 
 export const EquipmentTab = React.memo(function EquipmentTab({ equipment, companies, eqSearch, setEqSearch, eqStatusFilter, setEqStatusFilter, eqTypeFilter, setEqTypeFilter, onOpenDetail, onAdd, onEdit, onDelete, onGoToMap, onCreateTrip, readOnly }: {
   equipment: Equipment[]; companies: Company[];
@@ -427,7 +471,9 @@ export const EquipmentTab = React.memo(function EquipmentTab({ equipment, compan
           return (
             <button key={s} onClick={() => setEqStatusFilter(eqStatusFilter === s ? 'all' : s)}
               className={`inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[10px] font-medium transition-colors ${eqStatusFilter === s ? 'ring-1 ring-primary' : ''} ${info?.color || 'bg-muted'}`}>
-              {cnt} {info?.label || s}
+              <StatusTooltip status={s} info={info}>
+                <span>{cnt} {info?.label || s}</span>
+              </StatusTooltip>
             </button>
           )
         })}
@@ -465,9 +511,9 @@ export const EquipmentTab = React.memo(function EquipmentTab({ equipment, compan
                     return (
                       <Card key={eq.id} className="cursor-pointer hover:shadow-sm transition-shadow p-2.5" onClick={() => onOpenDetail(eq)}>
                         <div className="flex items-center gap-1.5 mb-1">
-                          {condInfo && <span className={`size-2 rounded-full shrink-0 ${condInfo.color.includes('emerald') ? 'bg-emerald-500' : condInfo.color.includes('sky') ? 'bg-sky-500' : condInfo.color.includes('amber') ? 'bg-amber-500' : 'bg-red-500'}`} title={condInfo.label} />}
+                          {condInfo && <CondTooltip info={condInfo}><span className={`size-2 rounded-full shrink-0 ${condDotColor(condInfo.color)}`} /></CondTooltip>}
                           <span className="text-xs font-medium truncate flex-1">{eq.name}</span>
-                          {tracker && <span className={`size-1.5 rounded-full ${trackerOnline ? 'bg-emerald-500' : 'bg-red-400'}`} />}
+                          {tracker && <SimpleTooltip label={trackerOnline ? 'Трекер: онлайн' : 'Трекер: офлайн'}><span className={`size-1.5 rounded-full ${trackerOnline ? 'bg-emerald-500' : 'bg-red-400'}`} /></SimpleTooltip>}
                         </div>
                         <p className="text-[10px] text-muted-foreground">{eq.registrationNum || '—'}{eq.garageNumber ? ` • Г${eq.garageNumber}` : ''}</p>
                         {(eq.brand || eq.model) && <p className="text-[10px] text-muted-foreground">{[eq.brand, eq.model].filter(Boolean).join(' ')}{eq.year ? ` ${eq.year}` : ''}</p>}
@@ -530,12 +576,14 @@ export const EquipmentTab = React.memo(function EquipmentTab({ equipment, compan
                         </TableCell>
                       )}
                       <TableCell>
-                        {condInfo && <span className={`size-2.5 rounded-full inline-block ${condInfo.color.includes('emerald') ? 'bg-emerald-500' : condInfo.color.includes('sky') ? 'bg-sky-500' : condInfo.color.includes('amber') ? 'bg-amber-500' : 'bg-red-500'}`} title={condInfo.label} />}
+                        {condInfo && <CondTooltip info={condInfo}><span className={`size-2.5 rounded-full inline-block ${condDotColor(condInfo.color)}`} /></CondTooltip>}
                       </TableCell>
                       <TableCell>
-                        <Badge variant="secondary" className={`text-[10px] px-1.5 py-0 h-4 shrink-0 ${statusInfo?.color || ''} ${eq.status === 'repair' ? 'animate-status-pulse' : ''}`}>
-                          {statusInfo?.label || eq.status}
-                        </Badge>
+                        <StatusTooltip status={eq.status} info={statusInfo}>
+                          <Badge variant="secondary" className={`text-[10px] px-1.5 py-0 h-4 shrink-0 ${statusInfo?.color || ''} ${eq.status === 'repair' ? 'animate-status-pulse' : ''}`}>
+                            {statusInfo?.label || eq.status}
+                          </Badge>
+                        </StatusTooltip>
                       </TableCell>
                       <TableCell>
                         <div className={`flex items-center justify-center size-7 rounded-md shrink-0 ${typeInfo.color} ${typeInfo.darkColor}`}>
@@ -545,11 +593,15 @@ export const EquipmentTab = React.memo(function EquipmentTab({ equipment, compan
                       <TableCell>
                         <div className="flex items-center gap-1.5 min-w-0">
                           {tracker && (
-                            <span className={`size-2 rounded-full shrink-0 ${trackerOnline ? 'bg-emerald-500' : 'bg-red-400'}`} title={trackerOnline ? 'Онлайн' : 'Офлайн'} />
+                            <SimpleTooltip label={trackerOnline ? 'Трекер: онлайн' : 'Трекер: офлайн'}><span className={`size-2 rounded-full shrink-0 ${trackerOnline ? 'bg-emerald-500' : 'bg-red-400'}`} /></SimpleTooltip>
                           )}
                           <span className="font-medium text-sm truncate">{eq.name}</span>
                           {(insDays != null && insDays < 0) || (inspDays != null && inspDays < 0) || (maintDays != null && maintDays < MAINTENANCE_WARN_DAYS) ? (
-                            <AlertTriangle className="size-3 text-amber-500 shrink-0" />
+                            <SimpleTooltip label={[
+                              insDays != null && insDays < 0 ? 'Страховка просрочена' : '',
+                              inspDays != null && inspDays < 0 ? 'ТО просрочено' : '',
+                              maintDays != null && maintDays < MAINTENANCE_WARN_DAYS ? `ТО через ${maintDays}д` : '',
+                            ].filter(Boolean).join(' • ')}><AlertTriangle className="size-3 text-amber-500 shrink-0" /></SimpleTooltip>
                           ) : null}
                           {depreciation != null && <span className={`text-[9px] font-medium shrink-0 ${depreciation > 50 ? 'text-red-500' : depreciation > 20 ? 'text-amber-500' : 'text-emerald-500'}`}>{depreciation}%</span>}
                         </div>
@@ -575,7 +627,7 @@ export const EquipmentTab = React.memo(function EquipmentTab({ equipment, compan
                       </TableCell>
                       <TableCell className="hidden xl:table-cell">
                         {condInfo ? (
-                          <span className={`inline-flex items-center gap-0.5 rounded px-1.5 py-0.5 text-[10px] font-medium ${condInfo.color}`}>{condInfo.icon} {condInfo.label}</span>
+                          <CondTooltip info={condInfo}><span className={`inline-flex items-center gap-0.5 rounded px-1.5 py-0.5 text-[10px] font-medium ${condInfo.color}`}>{condInfo.icon} {condInfo.label}</span></CondTooltip>
                         ) : <span className="text-xs text-muted-foreground">—</span>}
                       </TableCell>
                       <TableCell className="hidden xl:table-cell">
@@ -590,16 +642,20 @@ export const EquipmentTab = React.memo(function EquipmentTab({ equipment, compan
                       </TableCell>
                       <TableCell className="hidden md:table-cell">
                         {insDays != null ? (
-                          <span className={`text-xs font-medium ${insDays < 0 ? 'text-red-600 dark:text-red-400' : insDays < 30 ? 'text-amber-600 dark:text-amber-400' : 'text-emerald-600 dark:text-emerald-400'}`}>
-                            {insDays < 0 ? `${Math.abs(insDays)}д` : `${insDays}д`}
-                          </span>
+                          <SimpleTooltip label={insDays < 0 ? `Страховка просрочена на ${Math.abs(insDays)} дн.` : insDays < 30 ? `Страховка истекает через ${insDays} дн.` : `Страховка действительна ещё ${insDays} дн.`}>
+                            <span className={`text-xs font-medium ${insDays < 0 ? 'text-red-600 dark:text-red-400' : insDays < 30 ? 'text-amber-600 dark:text-amber-400' : 'text-emerald-600 dark:text-emerald-400'}`}>
+                              {insDays < 0 ? `${Math.abs(insDays)}д` : `${insDays}д`}
+                            </span>
+                          </SimpleTooltip>
                         ) : <span className="text-xs text-muted-foreground">—</span>}
                       </TableCell>
                       <TableCell className="hidden md:table-cell">
                         {inspDays != null ? (
-                          <span className={`text-xs font-medium ${inspDays < 0 ? 'text-red-600 dark:text-red-400' : inspDays < 30 ? 'text-amber-600 dark:text-amber-400' : 'text-emerald-600 dark:text-emerald-400'}`}>
-                            {inspDays < 0 ? `${Math.abs(inspDays)}д` : `${inspDays}д`}
-                          </span>
+                          <SimpleTooltip label={inspDays < 0 ? `ТО просрочено на ${Math.abs(inspDays)} дн.` : inspDays < 30 ? `ТО истекает через ${inspDays} дн.` : `ТО действительн ещё ${inspDays} дн.`}>
+                            <span className={`text-xs font-medium ${inspDays < 0 ? 'text-red-600 dark:text-red-400' : inspDays < 30 ? 'text-amber-600 dark:text-amber-400' : 'text-emerald-600 dark:text-emerald-400'}`}>
+                              {inspDays < 0 ? `${Math.abs(inspDays)}д` : `${inspDays}д`}
+                            </span>
+                          </SimpleTooltip>
                         ) : <span className="text-xs text-muted-foreground">—</span>}
                       </TableCell>
                       <TableCell className="hidden lg:table-cell">
@@ -675,17 +731,23 @@ export const EquipmentTab = React.memo(function EquipmentTab({ equipment, compan
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-1.5">
                       <div className="flex items-center gap-1.5 min-w-0 flex-1">
-                        {condInfo && <span className={`size-2.5 rounded-full shrink-0 ${condInfo.color.includes('emerald') ? 'bg-emerald-500' : condInfo.color.includes('sky') ? 'bg-sky-500' : condInfo.color.includes('amber') ? 'bg-amber-500' : 'bg-red-500'}`} title={condInfo.label} />}
+                        {condInfo && <CondTooltip info={condInfo}><span className={`size-2.5 rounded-full shrink-0 ${condDotColor(condInfo.color)}`} /></CondTooltip>}
                         {tracker && (
-                          <span className={`size-3 rounded-full shrink-0 ${trackerOnline ? 'bg-emerald-500 animate-pulse animate-online-ring' : 'bg-red-400'}`} title={trackerOnline ? 'Онлайн' : 'Офлайн'} />
+                          <SimpleTooltip label={trackerOnline ? 'Трекер: онлайн' : 'Трекер: офлайн'}><span className={`size-3 rounded-full shrink-0 ${trackerOnline ? 'bg-emerald-500 animate-pulse animate-online-ring' : 'bg-red-400'}`} /></SimpleTooltip>
                         )}
                         <span className="font-semibold text-sm truncate">{eq.name}</span>
-                        {hasWarnings && <AlertTriangle className="size-3.5 text-amber-500 shrink-0" />}
-                        {maintDays != null && maintDays < MAINTENANCE_WARN_DAYS && <Wrench className="size-3 text-orange-500 shrink-0" title={`ТО через ${maintDays}д`} />}
+                        {hasWarnings && <SimpleTooltip label={[
+                          insDays != null && insDays < 0 ? 'Страховка просрочена' : '',
+                          inspDays != null && inspDays < 0 ? 'ТО просрочено' : '',
+                          maintDays != null && maintDays < MAINTENANCE_WARN_DAYS ? `ТО через ${maintDays}д` : '',
+                        ].filter(Boolean).join(' • ')}><AlertTriangle className="size-3.5 text-amber-500 shrink-0" /></SimpleTooltip>}
+                        {maintDays != null && maintDays < MAINTENANCE_WARN_DAYS && <SimpleTooltip label={`ТО через ${maintDays}д`}><Wrench className="size-3 text-orange-500 shrink-0" /></SimpleTooltip>}
                       </div>
-                      <Badge variant="secondary" className={`text-[10px] px-1.5 py-0 h-4 shrink-0 ${statusInfo?.color || ''} ${eq.status === 'repair' ? 'animate-status-pulse' : ''}`}>
-                        {statusInfo?.label || eq.status}
-                      </Badge>
+                      <StatusTooltip status={eq.status} info={statusInfo}>
+                        <Badge variant="secondary" className={`text-[10px] px-1.5 py-0 h-4 shrink-0 ${statusInfo?.color || ''} ${eq.status === 'repair' ? 'animate-status-pulse' : ''}`}>
+                          {statusInfo?.label || eq.status}
+                        </Badge>
+                      </StatusTooltip>
                     </div>
                     <div className="flex items-center gap-2 mt-0.5">
                       {eq.registrationNum && (

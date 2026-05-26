@@ -76,12 +76,12 @@ export function getInitials(name: string): string {
   return name.substring(0, 2).toUpperCase()
 }
 
-export const EQUIPMENT_STATUS_MAP: Record<string, { label: string; color: string; border: string }> = {
-  active: { label: 'В эксплуатации', color: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-400', border: 'border-l-emerald-500' },
-  repair: { label: 'На ремонте', color: 'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-400', border: 'border-l-amber-500' },
-  decommissioned: { label: 'Списана', color: 'bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-400', border: 'border-l-red-500' },
-  rented: { label: 'В аренде', color: 'bg-sky-100 text-sky-800 dark:bg-sky-900/40 dark:text-sky-400', border: 'border-l-sky-500' },
-  reserved: { label: 'Зарезервирована', color: 'bg-violet-100 text-violet-800 dark:bg-violet-900/40 dark:text-violet-400', border: 'border-l-violet-500' },
+export const EQUIPMENT_STATUS_MAP: Record<string, { label: string; color: string; border: string; description: string }> = {
+  active: { label: 'В эксплуатации', color: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-400', border: 'border-l-emerald-500', description: 'Техника используется по назначению, исправна и доступна для работы' },
+  repair: { label: 'На ремонте', color: 'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-400', border: 'border-l-amber-500', description: 'Техника находится на техническом обслуживании или ремонте' },
+  decommissioned: { label: 'Списана', color: 'bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-400', border: 'border-l-red-500', description: 'Техника выведена из эксплуатации и не может быть использована' },
+  rented: { label: 'В аренде', color: 'bg-sky-100 text-sky-800 dark:bg-sky-900/40 dark:text-sky-400', border: 'border-l-sky-500', description: 'Техника передана сторонней организации по договору аренды' },
+  reserved: { label: 'Зарезервирована', color: 'bg-violet-100 text-violet-800 dark:bg-violet-900/40 dark:text-violet-400', border: 'border-l-violet-500', description: 'Техника зарезервирована для будущих задач и временно недоступна' },
 }
 
 export const REPAIR_STATUS_MAP: Record<string, { label: string; color: string }> = {
@@ -141,11 +141,11 @@ export const EQUIPMENT_TYPE_GROUPS = (() => {
   return groups
 })()
 
-export const EQUIPMENT_CONDITION_MAP: Record<string, { label: string; color: string; icon: string }> = {
-  excellent: { label: 'Отличное', color: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-400', icon: '✓' },
-  good: { label: 'Хорошее', color: 'bg-sky-100 text-sky-800 dark:bg-sky-900/40 dark:text-sky-400', icon: '○' },
-  fair: { label: 'Удовлетворительное', color: 'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-400', icon: '△' },
-  poor: { label: 'Плохое', color: 'bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-400', icon: '✗' },
+export const EQUIPMENT_CONDITION_MAP: Record<string, { label: string; color: string; icon: string; description: string }> = {
+  excellent: { label: 'Отличное', color: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-400', icon: '✓', description: 'Техника в идеальном состоянии, без дефектов' },
+  good: { label: 'Хорошее', color: 'bg-sky-100 text-sky-800 dark:bg-sky-900/40 dark:text-sky-400', icon: '○', description: 'Техника в рабочем состоянии, незначительный износ' },
+  fair: { label: 'Удовлетворительное', color: 'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-400', icon: '△', description: 'Техника работает, но требует внимания или ремонта' },
+  poor: { label: 'Плохое', color: 'bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-400', icon: '✗', description: 'Техника в критическом состоянии, необходим срочный ремонт' },
 }
 
 export const FUEL_TYPE_MAP: Record<string, string> = {
