@@ -100,7 +100,7 @@ interface TrackData {
 interface FocusPoint {
   lat: number
   lng: number
-  type: 'parking' | 'stop' | 'refuel' | 'plum'
+  type: 'parking' | 'stop' | 'refuel' | 'plum' | 'live'
   label?: string
 }
 

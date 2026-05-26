@@ -36,7 +36,7 @@ import {
   ArrowUp, ArrowDown, MapPinned, Globe, Cpu,
   Layers, ExternalLink, ImageOff, Plus, Search, HeartPulse,
   ArrowLeft, Building2, CheckCheck, Send, Settings2, Terminal, Upload, User, Loader2, X,
-  LayoutGrid
+  LayoutGrid, Radio, Crosshair
 } from 'lucide-react'
 import type { Equipment, Company, EquipmentPhoto, Repair, RepairStage, GlonassTracker, GlonassSensorData, EquipmentHistory, EquipmentDocument, Employee, Trip } from '@/lib/types'
 import { EQUIPMENT_STATUS_MAP, REPAIR_STATUS_MAP, STAGE_STATUS_MAP, EQUIPMENT_TYPE_MAP, EQUIPMENT_CONDITION_MAP, FUEL_TYPE_MAP, ENGINE_TYPE_MAP, PHOTO_CATEGORIES, MAINTENANCE_WARN_DAYS, COMPANY_TYPES, CREW_TYPE_MAP, MEMBER_ROLE_MAP, TRIP_STATUS_MAP, EMPLOYEE_POSITION_MAP, EMPLOYEE_STATUS_MAP, REPAIR_MASTER_ROLE_MAP, hasPermission, getInitials } from '@/lib/constants'
@@ -176,6 +176,8 @@ export function EquipmentDetailSheet({ open, onOpenChange, equipment, loading, d
   ]
   const [refreshSpeed, setRefreshSpeed] = useState('15s')
   const refreshTimerRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const [liveMode, setLiveMode] = useState(false)
+  const LIVE_INTERVAL = 3000 // 3 seconds for live mode
 
   // Live diagnostics state
   const [liveDiag, setLiveDiag] = useState<{
@@ -281,11 +283,11 @@ export function EquipmentDetailSheet({ open, onOpenChange, equipment, loading, d
       clearInterval(refreshTimerRef.current)
       refreshTimerRef.current = null
     }
-    const speed = REFRESH_SPEEDS.find(s => s.key === refreshSpeed)
-    if (speed && speed.interval > 0 && open && detailTab === 'glonass' && eq?.trackers?.length) {
+    const effectiveInterval = liveMode ? LIVE_INTERVAL : (REFRESH_SPEEDS.find(s => s.key === refreshSpeed)?.interval ?? 0)
+    if (effectiveInterval > 0 && open && detailTab === 'glonass' && eq?.trackers?.length) {
       // Fetch immediately on start
       fetchLiveData()
-      refreshTimerRef.current = setInterval(fetchLiveData, speed.interval)
+      refreshTimerRef.current = setInterval(fetchLiveData, effectiveInterval)
     }
     return () => {
       if (refreshTimerRef.current) {
@@ -293,12 +295,25 @@ export function EquipmentDetailSheet({ open, onOpenChange, equipment, loading, d
         refreshTimerRef.current = null
       }
     }
-  }, [refreshSpeed, open, detailTab, eq?.id, fetchLiveData])
+  }, [refreshSpeed, liveMode, open, detailTab, eq?.id, fetchLiveData])
+
+  // Auto-follow focusPoint for live mode — recomputed only when position actually changes
+  const liveFocusPoint = useMemo(() => {
+    if (!liveMode) return null
+    const firstTracker = eq?.trackers?.[0]
+    if (!firstTracker) return null
+    const live = livePositions[firstTracker.id]
+    const lat = live?.lat ?? firstTracker.lastLatitude
+    const lng = live?.lng ?? firstTracker.lastLongitude
+    if (lat == null || lng == null) return null
+    return { lat, lng, type: 'live' as const, label: 'Live' }
+  }, [liveMode, eq?.trackers, livePositions])
 
   // Reset live data when sheet closes
   useEffect(() => {
     if (!open) {
       setRefreshSpeed('15s')
+      setLiveMode(false)
       setLivePositions({})
       setLiveDiag(null)
     }
@@ -1059,13 +1074,25 @@ export function EquipmentDetailSheet({ open, onOpenChange, equipment, loading, d
                                   <Button size="sm" variant="ghost" className="h-6 text-[10px] gap-1" onClick={() => setShowAllTrackersMap(!showAllTrackersMap)}>
                                     {showAllTrackersMap ? 'Текущая техника' : 'Вся техника'}
                                   </Button>
+                                  <button
+                                    onClick={() => { setLiveMode(!liveMode); if (!liveMode) setRefreshSpeed('off'); }}
+                                    className={`h-6 px-2 rounded-md text-[10px] font-bold flex items-center gap-1 transition-all ${
+                                      liveMode
+                                        ? 'bg-red-500 text-white shadow-md shadow-red-500/30'
+                                        : 'bg-muted text-muted-foreground hover:text-foreground hover:bg-red-500/10'
+                                    }`}
+                                    title={liveMode ? 'Live: авто-обновление 3с + слежение' : 'Включить Live режим (3с + слежение)'}
+                                  >
+                                    <span className={`size-1.5 rounded-full ${liveMode ? 'bg-white animate-pulse' : 'bg-current'}`} />
+                                    LIVE
+                                  </button>
                                   <div className="flex items-center gap-0.5 bg-muted rounded-md p-0.5">
                                     {REFRESH_SPEEDS.map(s => (
                                       <button
                                         key={s.key}
-                                        onClick={() => setRefreshSpeed(s.key)}
+                                        onClick={() => { setRefreshSpeed(s.key); if (s.interval > 0) setLiveMode(false); }}
                                         className={`h-5 px-1.5 rounded text-[9px] font-medium transition-colors ${
-                                          refreshSpeed === s.key
+                                          (refreshSpeed === s.key && !liveMode)
                                             ? 'bg-background shadow-sm text-foreground'
                                             : 'text-muted-foreground hover:text-foreground'
                                         }`}
@@ -1124,6 +1151,7 @@ export function EquipmentDetailSheet({ open, onOpenChange, equipment, loading, d
                                     })
                                   }
                                   trackPoints={mapTrackData}
+                                  focusPoint={liveFocusPoint}
                                 />
                               </div>
                             </CardContent>
@@ -1144,7 +1172,14 @@ export function EquipmentDetailSheet({ open, onOpenChange, equipment, loading, d
                                     {trackerOnline ? <Wifi className="size-3.5 text-emerald-600 dark:text-emerald-400" /> : <WifiOff className="size-3.5 text-red-600 dark:text-red-400" />}
                                   </div>
                                   <div>
-                                    <CardTitle className="text-xs font-semibold">{tracker.trackerName || `Трекер ${tracker.trackerId}`}</CardTitle>
+                                    <CardTitle className="text-xs font-semibold flex items-center gap-1.5">
+                                      {tracker.trackerName || `Трекер ${tracker.trackerId}`}
+                                      {liveMode && (
+                                        <span className="inline-flex items-center gap-0.5 text-[8px] font-bold text-red-500 bg-red-500/10 px-1 py-0 rounded">
+                                          <span className="size-1 rounded-full bg-red-500 animate-pulse" />LIVE
+                                        </span>
+                                      )}
+                                    </CardTitle>
                                     <p className="text-[10px] text-muted-foreground">ID: {tracker.trackerId}{tracker.axentaCloudId ? ` • Axenta: ${tracker.axentaCloudId}` : ''}</p>
                                   </div>
                                 </div>
