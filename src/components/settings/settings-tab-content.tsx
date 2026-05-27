@@ -29,6 +29,7 @@ import {
 import type { AppUserType, AxentaSettings, RoleKey } from '@/lib/types'
 import { ROLE_LABELS, DEFAULT_ROLE_PERMISSIONS, ALL_PERMISSIONS, AVATAR_COLORS, getInitials, hasPermission, API } from '@/lib/constants'
 import { handleApiError, formatDateTime, useDebounce, copyToClipboard } from '@/lib/utils'
+import { version as appVersion } from '@/../../package.json'
 
 // ═══════════════════════════════════════════════════════════════
 // SETTINGS TAB CONTENT — 10 improvements (#91-100)
@@ -662,7 +663,7 @@ export function SettingsTabContent({
               <div className="divide-y">
                 <div className="flex items-center justify-between px-4 py-2.5">
                   <span className="text-xs text-muted-foreground flex items-center gap-2"><Tag className="size-3.5" />Версия</span>
-                  <span className="text-xs font-medium">1.7.5-beta</span>
+                  <span className="text-xs font-medium">{appVersion}</span>
                 </div>
                 <div className="flex items-center justify-between px-4 py-2.5">
                   <span className="text-xs text-muted-foreground flex items-center gap-2"><Cpu className="size-3.5" />Фреймворк</span>
