@@ -36,15 +36,12 @@ import {
   ArrowUp, ArrowDown, MapPinned, Globe, Cpu,
   Layers, ExternalLink, ImageOff, Plus, Search, HeartPulse,
   ArrowLeft, Building2, CheckCheck, Send, Settings2, Terminal, Upload, User, Loader2, X,
-  LayoutGrid, Radio, Crosshair
+  Radio, Crosshair
 } from 'lucide-react'
 import type { Equipment, Company, EquipmentPhoto, Repair, RepairStage, GlonassTracker, GlonassSensorData, EquipmentHistory, EquipmentDocument, Employee, Trip } from '@/lib/types'
 import { EQUIPMENT_STATUS_MAP, REPAIR_STATUS_MAP, STAGE_STATUS_MAP, EQUIPMENT_TYPE_MAP, EQUIPMENT_CONDITION_MAP, FUEL_TYPE_MAP, ENGINE_TYPE_MAP, PHOTO_CATEGORIES, MAINTENANCE_WARN_DAYS, COMPANY_TYPES, CREW_TYPE_MAP, MEMBER_ROLE_MAP, TRIP_STATUS_MAP, EMPLOYEE_POSITION_MAP, EMPLOYEE_STATUS_MAP, REPAIR_MASTER_ROLE_MAP, hasPermission, getInitials } from '@/lib/constants'
 import { formatDate, formatDateTime, formatPrice, formatTime, statusBadge, getEventIcon, getStageProgress, formatDaysUntil, SectionDivider, TypeBadge, getTypeInfo, toLocalDatetime, localDatetimeToISO, toLocalDate, copyToClipboard, handleApiError } from '@/lib/utils'
-import { usePanelConfig } from '@/lib/use-panel-config'
-import { PanelConfigContext } from '@/components/panels/panel-section'
-import { PanelSection } from '@/components/panels/panel-section'
-import { PanelManagerDialog } from '@/components/panels/panel-manager-dialog'
+import { PanelSection, PanelConfigContext, PanelManagerDialog, PanelManagerButton, useTabPanels } from '@/components/panels'
 
 // ═══════════════════════════════════════════════════════════════
 // EQUIPMENT DETAIL SHEET
@@ -162,8 +159,7 @@ export function EquipmentDetailSheet({ open, onOpenChange, equipment, loading, d
   const [showOnlyWithValues, setShowOnlyWithValues] = useState(true)
 
   // Panel management for GLONASS tab
-  const glonassPanelConfig = usePanelConfig('glonass')
-  const [glonassPanelManagerOpen, setGlonassPanelManagerOpen] = useState(false)
+  const { panelConfig: glonassPanelConfig, panelManagerOpen: glonassPanelManagerOpen, setPanelManagerOpen: setGlonassPanelManagerOpen, contextValue: glonassContextValue } = useTabPanels('glonass')
 
   // Auto-refresh for GLONASS live data
   const REFRESH_SPEEDS = [
@@ -909,20 +905,11 @@ export function EquipmentDetailSheet({ open, onOpenChange, equipment, loading, d
                 )}
 
                 {detailTab === 'glonass' && (
-                  <PanelConfigContext.Provider value={glonassPanelConfig}>
+                  <PanelConfigContext.Provider value={glonassContextValue}>
                   <div className="px-4 sm:px-5 py-3 space-y-3">
                     {/* Panel management toolbar */}
                     <div className="flex items-center gap-1.5">
-                      <Button
-                        variant={glonassPanelConfig.editMode ? 'default' : 'outline'}
-                        size="sm"
-                        className="h-7 text-[10px] gap-1"
-                        onClick={() => setGlonassPanelManagerOpen(true)}
-                        title="Управление панелями"
-                      >
-                        <LayoutGrid className="size-3" />
-                        Панели
-                      </Button>
+                      <PanelManagerButton panelConfig={glonassPanelConfig} onClick={() => setGlonassPanelManagerOpen(true)} />
                       {glonassPanelConfig.editMode && (
                         <span className="text-[10px] text-muted-foreground">
                           Режим редактирования панелей
