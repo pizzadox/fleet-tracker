@@ -91,7 +91,7 @@ seed-equip.sh
 server-launcher.js
 persistent-launcher.js
 ecosystem.config.js
-Caddyfile
+# Caddyfile is needed for container deployment
 
 # Examples
 /examples/
