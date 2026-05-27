@@ -674,7 +674,6 @@ export function EquipmentDetailSheet({ open, onOpenChange, equipment, loading, d
           <div className="px-3 sm:px-5 border-b shrink-0 overflow-x-auto">
             <TabsList className="w-full min-w-max h-9">
               <TabsTrigger value="info" className="gap-1 text-xs"><Info className="size-3" /><span className="hidden sm:inline">Информация</span></TabsTrigger>
-              <TabsTrigger value="maintenance" className="gap-1 text-xs"><Wrench className="size-3" /><span className="hidden sm:inline">ТО</span></TabsTrigger>
               <TabsTrigger value="photos" className="gap-1 text-xs"><Camera className="size-3" /><span className="hidden sm:inline">Фото</span></TabsTrigger>
               <TabsTrigger value="repairs" className="gap-1 text-xs"><Wrench className="size-3" /><span className="hidden sm:inline">Ремонты</span></TabsTrigger>
               <TabsTrigger value="glonass" className="gap-1 text-xs"><MapPin className="size-3" /><span className="hidden sm:inline">ГЛОНАСС</span></TabsTrigger>
@@ -750,6 +749,10 @@ export function EquipmentDetailSheet({ open, onOpenChange, equipment, loading, d
                         <DetailRow label="Последнее ТО" value={formatDate(eq.lastMaintenanceDate)} />
                         <DetailRow label="Следующее ТО" value={(() => { const d = formatDaysUntil(eq.nextMaintenanceDate); return d ? <span className={d.className}>{d.text}</span> : <span>{formatDate(eq.nextMaintenanceDate)}</span> })()} />
                         <DetailRow label="Интервал ТО" value={eq.maintenanceInterval ? `${eq.maintenanceInterval.toLocaleString('ru-RU')} км` : undefined} />
+                        {eq.maintenanceInterval && eq.mileage && eq.lastMaintenanceDate && (() => {
+                          const daysSince = Math.floor((Date.now() - new Date(eq.lastMaintenanceDate).getTime()) / (1000*60*60*24))
+                          return <DetailRow label="Дней с последнего ТО" value={<span className={daysSince > 180 ? 'text-red-600 dark:text-red-400 font-medium' : daysSince > 90 ? 'text-amber-600 dark:text-amber-400 font-medium' : ''}>{daysSince} дн.</span>} />
+                        })()}
                       </DetailSection>
                     )}
                     {/* Oil & Tires section */}
@@ -821,40 +824,6 @@ export function EquipmentDetailSheet({ open, onOpenChange, equipment, loading, d
                     </div>
                   </div>
                 )}
-
-                {detailTab === 'maintenance' && (
-                  <div className="px-4 sm:px-5 py-3 space-y-4">
-                    <DetailSection title="Обслуживание" icon={<Wrench className="size-3.5" />}>
-                      <DetailRow label="Последнее ТО" value={formatDate(eq.lastMaintenanceDate)} />
-                      <DetailRow label="Следующее ТО" value={(() => { const d = formatDaysUntil(eq.nextMaintenanceDate); return d ? <span className={d.className}>{d.text}</span> : <span>{formatDate(eq.nextMaintenanceDate)}</span> })()} />
-                      <DetailRow label="Интервал ТО" value={eq.maintenanceInterval ? `${eq.maintenanceInterval.toLocaleString('ru-RU')} км` : undefined} />
-                      {eq.maintenanceInterval && eq.mileage && eq.lastMaintenanceDate && (() => {
-                        const daysSince = Math.floor((Date.now() - new Date(eq.lastMaintenanceDate).getTime()) / (1000*60*60*24))
-                        return <DetailRow label="Дней с последнего ТО" value={<span className={daysSince > 180 ? 'text-red-600 dark:text-red-400 font-medium' : daysSince > 90 ? 'text-amber-600 dark:text-amber-400 font-medium' : ''}>{daysSince} дн.</span>} />
-                      })()}
-                    </DetailSection>
-                    <DetailSection title="Масло" icon={<Droplets className="size-3.5" />}>
-                      <DetailRow label="Дата замены" value={formatDate(eq.oilChangeDate)} />
-                      <DetailRow label="Пробег при замене" value={eq.oilChangeMileage ? `${eq.oilChangeMileage.toLocaleString('ru-RU')} км` : undefined} />
-                      <DetailRow label="Интервал замены" value={eq.oilChangeInterval ? `${eq.oilChangeInterval.toLocaleString('ru-RU')} км` : undefined} />
-                      {eq.oilChangeInterval && eq.oilChangeMileage && eq.mileage && (
-                        <DetailRow label="До замены масла" value={<span className={`font-medium ${(eq.mileage - eq.oilChangeMileage) > eq.oilChangeInterval ? 'text-red-500' : (eq.mileage - eq.oilChangeMileage) > eq.oilChangeInterval * 0.8 ? 'text-amber-500' : 'text-emerald-500'}`}>{Math.max(0, eq.oilChangeInterval - (eq.mileage - eq.oilChangeMileage)).toLocaleString('ru-RU')} км</span>} />
-                      )}
-                    </DetailSection>
-                    <DetailSection title="Шины" icon={<Cog className="size-3.5" />}>
-                      <DetailRow label="Размер шин" value={eq.tireSize} />
-                      <DetailRow label="Дата замены" value={formatDate(eq.tireReplacementDate)} />
-                    </DetailSection>
-                    <DetailSection title="Расход топлива" icon={<FuelIcon className="size-3.5" />}>
-                      <DetailRow label="Норма расхода" value={eq.fuelConsumptionNorm ? `${eq.fuelConsumptionNorm} л/100км` : undefined} />
-                      <DetailRow label="Тип топлива" value={eq.fuelType} />
-                    </DetailSection>
-                    {(!eq.lastMaintenanceDate && !eq.nextMaintenanceDate && !eq.maintenanceInterval && !eq.oilChangeDate && !eq.tireSize && !eq.fuelConsumptionNorm) && (
-                      <div className="text-center py-8 text-muted-foreground"><Wrench className="size-8 mx-auto mb-2 opacity-40" /><p className="text-xs">Данные об обслуживании не заполнены</p></div>
-                    )}
-                  </div>
-                )}
-
 
                 {detailTab === 'photos' && (
                   <div className="px-4 sm:px-5 py-3 space-y-3">
