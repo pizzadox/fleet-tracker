@@ -4,6 +4,7 @@ import path from 'path'
 
 const DB_PATH = process.env.DATABASE_URL?.replace('file:', '') || path.join(process.cwd(), 'db', 'custom.db')
 const BACKUPS_DIR = path.join(process.cwd(), 'backups')
+const AUTO_BACKUP_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000 // 7 дней
 
 function ensureBackupsDir() {
   if (!fs.existsSync(BACKUPS_DIR)) {
@@ -114,6 +115,32 @@ export async function POST(request: NextRequest) {
     const backupPath = path.join(BACKUPS_DIR, filename)
 
     fs.copyFileSync(DB_PATH, backupPath)
+
+    // Очистка старых автобэкапов (>7 дней)
+    // Удаляются только файлы с суффиксом _авто.db, ручные не трогаются
+    // Дата определяется из имени файла (надёжнее, чем mtime — cp сбрасывает mtime)
+    try {
+      const nowMs = Date.now()
+      const backupFiles = fs.readdirSync(BACKUPS_DIR).filter(
+        f => f.startsWith('backup_') && f.endsWith('_авто.db')
+      )
+      let deleted = 0
+      for (const oldFile of backupFiles) {
+        const parsed = parseBackupFilename(oldFile)
+        if (!parsed) continue
+        const backupDate = new Date(parsed.date).getTime()
+        if (nowMs - backupDate > AUTO_BACKUP_MAX_AGE_MS) {
+          const oldPath = path.join(BACKUPS_DIR, oldFile)
+          try {
+            fs.unlinkSync(oldPath)
+            deleted++
+          } catch { /* файл уже удалён — пропускаем */ }
+        }
+      }
+      if (deleted > 0) {
+        console.log(`[Backups] Очистка: удалено ${deleted} старых автобэкапов`)
+      }
+    } catch { /* не критично */ }
 
     const meta = getBackupMeta(filename)
 

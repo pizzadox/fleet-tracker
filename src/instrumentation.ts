@@ -33,6 +33,10 @@ export async function register() {
           console.warn('[Instrumentation] Database NOT found:', absPath)
         }
       }
+
+      // Запуск автоматического бэкапа (каждые 30 мин, хранение 7 дней)
+      const { startAutoBackup } = await import('./lib/auto-backup')
+      startAutoBackup()
     } catch (err) {
       console.warn('[Instrumentation] Setup error:', (err as Error).message)
     }
