@@ -381,6 +381,8 @@ export default function TrackerMap({
   const refreshTimerRef = useRef<ReturnType<typeof setInterval> | null>(null)
   // Track whether the map has been initially fit to bounds
   const hasFitBoundsRef = useRef(false)
+  // Ref for the center control so we can remove it on cleanup
+  const centerControlRef = useRef<L.Control | null>(null)
   // Last track data signature to avoid re-rendering tracks unnecessarily
   const lastTrackSignatureRef = useRef<string>('')
   // ─── Popup preservation refs ────────────────────────────────────
@@ -433,6 +435,38 @@ export default function TrackerMap({
     }).addTo(map)
     tracksLayerRef.current = L.layerGroup().addTo(map)
 
+    // ── Center button control ──
+    const centerControl = L.control({ position: 'topright' })
+    centerControl.onAdd = () => {
+      const div = L.DomUtil.create('button', '')
+      div.title = 'Отцентровать карту'
+      div.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="3"/><line x1="12" y1="2" x2="12" y2="6"/><line x1="12" y1="18" x2="12" y2="22"/><line x1="2" y1="12" x2="6" y2="12"/><line x1="18" y1="12" x2="22" y2="12"/></svg>`
+      div.style.cssText = `
+        display: flex; align-items: center; justify-content: center;
+        width: 34px; height: 34px;
+        background: rgba(255,255,255,0.95); border: none; border-radius: 6px;
+        box-shadow: 0 2px 6px rgba(0,0,0,0.2); cursor: pointer; color: #374151;
+        transition: background 0.15s, transform 0.1s; padding: 0;
+      `
+      div.onmouseenter = () => { div.style.background = 'rgba(255,255,255,1)'; div.style.transform = 'scale(1.05)' }
+      div.onmouseleave = () => { div.style.background = 'rgba(255,255,255,0.95)'; div.style.transform = 'scale(1)' }
+      div.onclick = (e: MouseEvent) => {
+        L.DomEvent.stopPropagation(e)
+        L.DomEvent.preventDefault(e)
+        // Center on all current markers
+        const allMarkers = Array.from(markerByIdRef.current.values())
+        if (allMarkers.length > 0) {
+          try {
+            const group = L.featureGroup(allMarkers)
+            map.fitBounds(group.getBounds(), { padding: [30, 30], maxZoom: 16, animate: true, duration: 0.6 })
+          } catch { /* skip */ }
+        }
+      }
+      return div
+    }
+    centerControl.addTo(map)
+    centerControlRef.current = centerControl
+
     mapInstanceRef.current = map
 
     // Invalidate size after initial render
@@ -440,6 +474,7 @@ export default function TrackerMap({
 
     return () => {
       if (refreshTimerRef.current) clearInterval(refreshTimerRef.current)
+      if (centerControlRef.current) { try { map.removeControl(centerControlRef.current) } catch { /* */ } centerControlRef.current = null }
       map.remove()
       mapInstanceRef.current = null
       markersLayerRef.current = null
