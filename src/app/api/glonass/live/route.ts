@@ -3,12 +3,13 @@ import { NextRequest, NextResponse } from 'next/server'
 
 // ═══════════════════════════════════════════════════════════════
 // GET /api/glonass/live?trackerId=xxx
-// Lightweight endpoint for fast auto-refresh:
-// - Fetches ONLY object details from Axenta (1 request, not 2)
-// - Skips sensor metadata fetch (sensor names/types cached from /sensors)
-// - NO database writes — pure read from Axenta + return
+// Fast auto-refresh endpoint:
+// - Fetches object details from Axenta (1 request)
+// - SAVES last sensor values & position to DB for persistence
 // - Returns sensor values + position in minimal format
 // ═══════════════════════════════════════════════════════════════
+
+const ONLINE_THRESHOLD_MINUTES = 30
 
 async function getValidToken(settings: {
   id: string; apiUrl: string; apiKey: string;
@@ -77,11 +78,13 @@ export async function GET(request: NextRequest) {
         sensorData: {
           orderBy: { timestamp: 'desc' },
           select: {
+            id: true,
             sensorType: true,
             sensorName: true,
             value: true,
             stringValue: true,
             unit: true,
+            timestamp: true,
           }
         }
       }
@@ -158,9 +161,32 @@ export async function GET(request: NextRequest) {
       sensorValuesMap = lastMessage.sensors as Record<string, number | null>
     }
 
-    // Map cached sensor metadata to live values
+    // ── Compute position from live data ──
+    const liveLat = pos?.y != null ? Number(pos.y) : tracker.lastLatitude
+    const liveLng = pos?.x != null ? Number(pos.x) : tracker.lastLongitude
+    const liveSpeed = pos?.s != null ? Number(pos.s) : tracker.lastSpeed
+    const liveCourse = pos?.c != null ? Number(pos.c) : tracker.lastCourse
+    const liveAltitude = pos?.z != null ? Number(pos.z) : tracker.lastAltitude
+
+    // ── Determine online status ──
+    let isOnline = tracker.isActive
+    const lastMsgTime = lastMessage?.t ? new Date(lastMessage.t as string) : null
+    const lastPosTime = lastMessage?.tpos ? new Date(lastMessage.tpos as string) : null
+    const mostRecent = lastMsgTime && lastPosTime
+      ? new Date(Math.max(lastMsgTime.getTime(), lastPosTime.getTime()))
+      : lastMsgTime || lastPosTime
+    if (mostRecent) {
+      const minutesSince = (Date.now() - mostRecent.getTime()) / 60000
+      isOnline = minutesSince < ONLINE_THRESHOLD_MINUTES
+    } else if (objectDetails?.connectedStatus != null) {
+      isOnline = Boolean(objectDetails.connectedStatus)
+    }
+
+    // ── Ignition from monitoring data ──
+    const liveIgnition = objectDetails?.isIgnition != null ? Boolean(objectDetails.isIgnition) : tracker.lastIgnition
+
+    // ── Map cached sensor metadata to live values ──
     const liveSensors = tracker.sensorData.map(s => {
-      // Try to find live value by matching sensor type/name pattern
       const sensorType = s.sensorType || ''
       const sensorName = (s.sensorName || '').toLowerCase()
       let liveValue: number | null = s.value
@@ -200,7 +226,7 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // Extract fuelLevel, mileage, engineTemp from live sensor values
+    // ── Extract fuelLevel, mileage, engineTemp from live sensor values ──
     let liveFuelLevel: number | null = tracker.lastFuelLevel
     let liveMileage: number | null = tracker.lastMileage
     let liveEngineTemp: number | null = tracker.lastEngineTemp
@@ -228,18 +254,66 @@ export async function GET(request: NextRequest) {
       if ((k.includes('temp') || k.includes('engine')) && liveEngineTemp === tracker.lastEngineTemp) liveEngineTemp = val
     }
 
-    // Determine online status using same logic as sync: lastMessage time < 30 min OR connectedStatus
-    let isOnline = tracker.isActive
-    const lastMsgTime = lastMessage?.t ? new Date(lastMessage.t as string) : null
-    const lastPosTime = lastMessage?.tpos ? new Date(lastMessage.tpos as string) : null
-    const mostRecent = lastMsgTime && lastPosTime
-      ? new Date(Math.max(lastMsgTime.getTime(), lastPosTime.getTime()))
-      : lastMsgTime || lastPosTime
-    if (mostRecent) {
-      const minutesSince = (Date.now() - mostRecent.getTime()) / 60000
-      isOnline = minutesSince < 30  // Same threshold as sync
-    } else if (objectDetails?.connectedStatus != null) {
-      isOnline = Boolean(objectDetails.connectedStatus)
+    // ═══════════════════════════════════════════════════════════
+    // PERSIST TO DATABASE — save last values so they survive reloads
+    // ═══════════════════════════════════════════════════════════
+    const dbUpdateData: Record<string, unknown> = {}
+
+    if (liveLat != null) dbUpdateData.lastLatitude = liveLat
+    if (liveLng != null) dbUpdateData.lastLongitude = liveLng
+    if (liveSpeed != null) dbUpdateData.lastSpeed = liveSpeed
+    if (liveCourse != null) dbUpdateData.lastCourse = liveCourse
+    if (liveAltitude != null) dbUpdateData.lastAltitude = liveAltitude
+    if (liveIgnition != null) dbUpdateData.lastIgnition = liveIgnition
+    if (liveFuelLevel != null) dbUpdateData.lastFuelLevel = liveFuelLevel
+    if (liveMileage != null) dbUpdateData.lastMileage = liveMileage
+    if (liveEngineTemp != null) dbUpdateData.lastEngineTemp = liveEngineTemp
+    dbUpdateData.isActive = isOnline
+
+    if (lastMsgTime) dbUpdateData.lastSeenAt = lastMsgTime
+    if (lastPosTime) dbUpdateData.lastPositionAt = lastPosTime
+
+    // Update tracker fields in DB (fire-and-forget, non-blocking)
+    if (Object.keys(dbUpdateData).length > 0) {
+      db.glonassTracker.update({
+        where: { id: trackerId },
+        data: dbUpdateData,
+      }).catch(err => {
+        console.error('[GLONASS Live] DB tracker update error:', err)
+      })
+    }
+
+    // Update sensor values in DB — only update values for existing sensors,
+    // do NOT delete+recreate (too expensive for live refresh).
+    // We update only sensors that have new live values.
+    const sensorUpdates = liveSensors.filter(s => s.value != null)
+    if (sensorUpdates.length > 0 && tracker.sensorData.length > 0) {
+      // Build a lookup: sensorType -> existing DB record
+      const existingByType = new Map<string, typeof tracker.sensorData[0]>()
+      for (const dbS of tracker.sensorData) {
+        const key = `${dbS.sensorType}-${dbS.sensorName || 'unnamed'}`
+        if (!existingByType.has(key)) {
+          existingByType.set(key, dbS)
+        }
+      }
+
+      // Update each sensor value in DB (fire-and-forget)
+      for (const liveS of sensorUpdates) {
+        const key = `${liveS.type}-${liveS.name || 'unnamed'}`
+        const existing = existingByType.get(key) || existingByType.get(`${liveS.type}-${liveS.name}`)
+        if (existing && existing.id) {
+          db.glonassSensorData.update({
+            where: { id: existing.id },
+            data: {
+              value: liveS.value,
+              stringValue: liveS.stringValue,
+              timestamp: new Date(),
+            },
+          }).catch(err => {
+            console.error('[GLONASS Live] DB sensor update error:', err)
+          })
+        }
+      }
     }
 
     return NextResponse.json({
@@ -248,14 +322,14 @@ export async function GET(request: NextRequest) {
       isMotion: objectDetails?.isMotion ?? null,
       isIgnition: objectDetails?.isIgnition ?? null,
       position: {
-        lat: pos?.y != null ? Number(pos.y) : tracker.lastLatitude,
-        lng: pos?.x != null ? Number(pos.x) : tracker.lastLongitude,
-        speed: pos?.s != null ? Number(pos.s) : tracker.lastSpeed,
-        course: pos?.c != null ? Number(pos.c) : tracker.lastCourse,
-        altitude: pos?.z != null ? Number(pos.z) : tracker.lastAltitude,
+        lat: liveLat,
+        lng: liveLng,
+        speed: liveSpeed,
+        course: liveCourse,
+        altitude: liveAltitude,
         address: tracker.lastAddress,
       },
-      ignition: objectDetails?.isIgnition != null ? Boolean(objectDetails.isIgnition) : tracker.lastIgnition,
+      ignition: liveIgnition,
       fuelLevel: liveFuelLevel,
       mileage: liveMileage,
       engineTemp: liveEngineTemp,
