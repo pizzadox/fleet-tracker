@@ -215,7 +215,7 @@ export function EquipmentDetailSheet({ open, onOpenChange, equipment, loading, d
                 speed: data.position.speed ?? null,
                 course: data.position.course ?? null,
                 altitude: data.position.altitude ?? null,
-                address: data.position.address ?? null,
+                address: data.position.address ?? prev[tracker.id]?.address ?? null,
                 ignition: data.ignition ?? null,
                 fuelLevel: data.fuelLevel ?? null,
                 mileage: data.mileage ?? null,
@@ -226,44 +226,41 @@ export function EquipmentDetailSheet({ open, onOpenChange, equipment, loading, d
               }
             }))
           }
-          // If we have sensor data from live endpoint, merge it with axentaSensors
-          if (axentaSensors && data.sensors) {
-            setAxentaSensors(prev => {
-              if (!prev) return prev
-              const updatedSensors = prev.sensors.map(s => {
-                const live = data.sensors.find((ls: { name: string; type: string }) =>
-                  ls.name === s.name || ls.type === s.type
-                )
-                if (live && live.value != null) {
-                  return { ...s, value: live.value, stringValue: live.stringValue, hasValue: true }
-                }
-                return s
-              })
-              // Recalculate grouped sensors
-              const categoryOrder = ['position', 'ignition', 'fuel', 'temperature', 'mileage', 'voltage', 'digital', 'custom']
-              const categoryLabels: Record<string, string> = {
-                position: 'Позиция и движение', ignition: 'Зажигание', fuel: 'Топливо',
-                temperature: 'Температура', mileage: 'Пробег', voltage: 'Напряжение',
-                digital: 'Цифровые датчики', custom: 'Прочие датчики',
+          // Merge live sensor values into axentaSensors (works even if axentaSensors was loaded earlier)
+          setAxentaSensors(prev => {
+            if (!prev || !data.sensors) return prev
+            const updatedSensors = prev.sensors.map(s => {
+              const live = data.sensors.find((ls: { name: string; type: string }) =>
+                ls.name === s.name || ls.type === s.type
+              )
+              if (live && live.value != null) {
+                return { ...s, value: live.value, stringValue: live.stringValue, hasValue: true }
               }
-              const grouped: Record<string, { key: string; label: string; sensors: typeof updatedSensors }> = {}
-              for (const sensor of updatedSensors) {
-                const cat = sensor.category
-                if (!grouped[cat]) grouped[cat] = { key: cat, label: categoryLabels[cat] || cat, sensors: [] }
-                grouped[cat].sensors.push(sensor)
-              }
-              const sortedGroups = categoryOrder
-                .filter(cat => grouped[cat])
-                .map(cat => ({ ...grouped[cat] }))
-                .filter(g => g.sensors.length > 0)
-              return {
-                ...prev,
-                sensors: updatedSensors,
-                grouped: sortedGroups,
-                sensorsWithValues: updatedSensors.filter(s => s.hasValue).length,
-              }
+              return s
             })
-          }
+            const categoryOrder = ['position', 'ignition', 'fuel', 'temperature', 'mileage', 'voltage', 'digital', 'custom']
+            const categoryLabels: Record<string, string> = {
+              position: 'Позиция и движение', ignition: 'Зажигание', fuel: 'Топливо',
+              temperature: 'Температура', mileage: 'Пробег', voltage: 'Напряжение',
+              digital: 'Цифровые датчики', custom: 'Прочие датчики',
+            }
+            const grouped: Record<string, { key: string; label: string; sensors: typeof updatedSensors }> = {}
+            for (const sensor of updatedSensors) {
+              const cat = sensor.category
+              if (!grouped[cat]) grouped[cat] = { key: cat, label: categoryLabels[cat] || cat, sensors: [] }
+              grouped[cat].sensors.push(sensor)
+            }
+            const sortedGroups = categoryOrder
+              .filter(cat => grouped[cat])
+              .map(cat => ({ ...grouped[cat] }))
+              .filter(g => g.sensors.length > 0)
+            return {
+              ...prev,
+              sensors: updatedSensors,
+              grouped: sortedGroups,
+              sensorsWithValues: updatedSensors.filter(s => s.hasValue).length,
+            }
+          })
         } else {
           setLiveDiag(prev => prev ? { ...prev, fetchError: `HTTP ${res.status}` } : null)
         }
@@ -271,7 +268,7 @@ export function EquipmentDetailSheet({ open, onOpenChange, equipment, loading, d
         setLiveDiag(prev => prev ? { ...prev, fetchError: 'Сетевая ошибка' } : null)
       }
     }
-  }, [eq?.trackers, axentaSensors])
+  }, [eq?.trackers])
 
   // Auto-refresh timer
   useEffect(() => {
@@ -1152,6 +1149,9 @@ export function EquipmentDetailSheet({ open, onOpenChange, equipment, loading, d
                                 <DetailRow label="Курс" value={(livePositions[tracker.id]?.course ?? tracker.lastCourse) != null ? getCourseDirection(livePositions[tracker.id]?.course ?? tracker.lastCourse) : undefined} />
                                 <DetailRow label="Высота" value={(livePositions[tracker.id]?.altitude ?? tracker.lastAltitude) != null ? `${livePositions[tracker.id]?.altitude ?? tracker.lastAltitude} м` : undefined} />
                                 {(livePositions[tracker.id]?.address ?? tracker.lastAddress) && <DetailRow label="Адрес" value={livePositions[tracker.id]?.address ?? tracker.lastAddress} />}
+                                {livePositions[tracker.id]?.ignition != null && <DetailRow label="Зажигание" value={<span className={livePositions[tracker.id]?.ignition ? 'text-emerald-600 dark:text-emerald-400 font-medium' : 'text-red-500 dark:text-red-400'}>{livePositions[tracker.id]?.ignition ? 'Вкл' : 'Выкл'}</span> as any} />}
+                                {livePositions[tracker.id]?.fuelLevel != null && <DetailRow label="Топливо" value={`${livePositions[tracker.id]?.fuelLevel?.toFixed(1)} л`} />}
+                                {livePositions[tracker.id]?.mileage != null && <DetailRow label="Пробег (live)" value={`${livePositions[tracker.id]?.mileage?.toLocaleString('ru-RU')} км`} />}
                               </DetailSection>
                               </PanelSection>
                               {/* ── All sensors from Axenta ── */}

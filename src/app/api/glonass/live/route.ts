@@ -200,6 +200,34 @@ export async function GET(request: NextRequest) {
       }
     }
 
+    // Extract fuelLevel, mileage, engineTemp from live sensor values
+    let liveFuelLevel: number | null = tracker.lastFuelLevel
+    let liveMileage: number | null = tracker.lastMileage
+    let liveEngineTemp: number | null = tracker.lastEngineTemp
+    for (const s of liveSensors) {
+      const nameLower = (s.name || '').toLowerCase()
+      const typeLower = (s.type || '').toLowerCase()
+      if (s.value != null) {
+        if (typeLower.includes('fuel') || nameLower.includes('топлив') || nameLower.includes('бак')) {
+          liveFuelLevel = s.value
+        }
+        if (typeLower.includes('odometer') || typeLower.includes('mileage') || nameLower.includes('пробег') || nameLower.includes('одометр')) {
+          liveMileage = s.value
+        }
+        if (typeLower.includes('temperature') || typeLower.includes('temp') || nameLower.includes('темпер')) {
+          liveEngineTemp = s.value
+        }
+      }
+    }
+    // Also try to get fuel/mileage directly from sensorValuesMap keys
+    for (const [key, val] of Object.entries(sensorValuesMap)) {
+      if (val == null) continue
+      const k = key.toLowerCase()
+      if (k.includes('fuel') && liveFuelLevel === tracker.lastFuelLevel) liveFuelLevel = val
+      if ((k.includes('odometer') || k.includes('mileage')) && liveMileage === tracker.lastMileage) liveMileage = val
+      if ((k.includes('temp') || k.includes('engine')) && liveEngineTemp === tracker.lastEngineTemp) liveEngineTemp = val
+    }
+
     // Determine online status using same logic as sync: lastMessage time < 30 min OR connectedStatus
     let isOnline = tracker.isActive
     const lastMsgTime = lastMessage?.t ? new Date(lastMessage.t as string) : null
@@ -228,9 +256,9 @@ export async function GET(request: NextRequest) {
         address: tracker.lastAddress,
       },
       ignition: objectDetails?.isIgnition != null ? Boolean(objectDetails.isIgnition) : tracker.lastIgnition,
-      fuelLevel: tracker.lastFuelLevel,
-      mileage: tracker.lastMileage,
-      engineTemp: tracker.lastEngineTemp,
+      fuelLevel: liveFuelLevel,
+      mileage: liveMileage,
+      engineTemp: liveEngineTemp,
       sensors: liveSensors,
       // Diagnostic timestamps
       diagnostics: {
