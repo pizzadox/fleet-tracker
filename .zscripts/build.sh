@@ -39,23 +39,10 @@ bun install
 echo "📦 生成 Prisma 客户端..."
 npx prisma generate
 
-# 构建 Next.js 应用
-# next.config.ts патчит bundler.js для использования Webpack вместо Turbopack
-# (Turbopack имеет баг с standalone output → ChunkLoadError)
-# Дополнительно передаём --webpack флаг как запасной вариант
+# 构建 Next.js 应用 (используем --webpack, Turbopack имеет баги)
 echo "🔨 构建 Next.js 应用 (webpack режим)..."
 rm -rf .next
-npx next build --webpack 2>/dev/null || npx next build
-
-# 复制静态文件和资源到 standalone 构建输出
-echo "📦 复制静态文件到 standalone 目录..."
-cp -r .next/static .next/standalone/.next/
-cp -r public .next/standalone/
-cp Caddyfile .next/standalone/
-cp .env.production .next/standalone/
-rm -f .next/standalone/.env
-mkdir -p .next/standalone/db
-cp db/production.db .next/standalone/db/production.db
+npx next build --webpack
 
 # 构建 mini-services
 # 检查 Next.js 项目目录下是否有 mini-services 目录
@@ -73,29 +60,40 @@ else
     echo "ℹ️  mini-services 目录不存在，跳过"
 fi
 
-# 将所有构建产物复制到临时构建目录
+# ── Собираем полный пакет для развёртывания ──
 echo "📦 收集构建产物到 $BUILD_DIR..."
 
-# 复制 Next.js standalone 构建输出
-if [ -d ".next/standalone" ]; then
-    echo "  - 复制 .next/standalone"
-    cp -r .next/standalone "$BUILD_DIR/next-service-dist/"
+# Копируем ВСЮ директорию проекта (без .next/standalone — используем стандартный next start)
+# Это гарантирует что node_modules, .next, public и т.д. на месте
+
+# Копируем package.json и lockfile
+cp package.json "$BUILD_DIR/"
+cp bun.lock "$BUILD_DIR/" 2>/dev/null || true
+cp package-lock.json "$BUILD_DIR/" 2>/dev/null || true
+
+# Копируем Next.js build output
+echo "  - 复制 .next"
+cp -r .next "$BUILD_DIR/"
+
+# Копируем public
+echo "  - 复制 public"
+cp -r public "$BUILD_DIR/"
+
+# Копируем node_modules
+echo "  - 复制 node_modules"
+cp -r node_modules "$BUILD_DIR/"
+
+# Копируем prisma schema (нужна для generate)
+echo "  - 复制 prisma"
+cp -r prisma "$BUILD_DIR/"
+
+# Копируем .env.production
+if [ -f ".env.production" ]; then
+    echo "  - 复制 .env.production"
+    cp .env.production "$BUILD_DIR/"
 fi
 
-# 复制 Next.js 静态文件
-if [ -d ".next/static" ]; then
-    echo "  - 复制 .next/static"
-    mkdir -p "$BUILD_DIR/next-service-dist/.next"
-    cp -r .next/static "$BUILD_DIR/next-service-dist/.next/"
-fi
-
-# 复制 public 目录
-if [ -d "public" ]; then
-    echo "  - 复制 public"
-    cp -r public "$BUILD_DIR/next-service-dist/"
-fi
-
-# 将生产环境数据库复制到构建产物中
+# Копируем production database
 if [ -f "./db/production.db" ]; then
     echo "🗄️  复制生产环境数据库到构建产物..."
     mkdir -p "$BUILD_DIR/db"

@@ -2,11 +2,9 @@
  * Next.js Instrumentation Hook
  * Runs once when the Next.js server starts.
  *
- * In container deployments (chatglm.site), the standalone build
- * output lands in /app/next-service-dist/. This hook ensures:
+ * Ensures:
  * 1. Caddyfile is accessible for Caddy reverse proxy
  * 2. Production database path is correctly resolved
- * 3. .env.production is available in the deployment directory
  */
 
 export async function register() {
@@ -16,17 +14,14 @@ export async function register() {
       const path = await import('path')
 
       // ── Caddyfile ──
-      const standaloneDir = path.join(process.cwd(), '.next', 'standalone')
+      // Copy Caddyfile to parent directory if not present (for container deployments)
       const possibleSources = [
         path.join(process.cwd(), 'Caddyfile'),
-        path.join(standaloneDir, 'Caddyfile'),
         path.join(__dirname, '..', '..', 'Caddyfile'),
-        path.join(__dirname, 'Caddyfile'),
       ]
 
       const possibleTargets = [
         path.join(process.cwd(), '..', 'Caddyfile'),  // /app/Caddyfile
-        path.join(process.cwd(), 'Caddyfile'),          // /app/next-service-dist/Caddyfile
       ]
 
       let sourcePath: string | null = null
@@ -40,11 +35,10 @@ export async function register() {
       }
 
       if (sourcePath) {
-        const content = fs.readFileSync(sourcePath, 'utf-8')
         for (const target of possibleTargets) {
           try {
             if (!fs.existsSync(target)) {
-              fs.writeFileSync(target, content, 'utf-8')
+              fs.writeFileSync(target, fs.readFileSync(sourcePath, 'utf-8'), 'utf-8')
               console.log(`[Instrumentation] Caddyfile copied to ${target}`)
             }
           } catch (err) {
@@ -54,20 +48,20 @@ export async function register() {
       }
 
       // ── Production Database ──
-      // Ensure DATABASE_URL points to a valid database file
       const currentDbUrl = process.env.DATABASE_URL
       if (currentDbUrl) {
-        // Extract file path from SQLite URL (file:/path/to/db or file:./relative/path)
         const dbFilePath = currentDbUrl.replace(/^file:/, '')
         const absoluteDbPath = path.isAbsolute(dbFilePath)
           ? dbFilePath
           : path.resolve(process.cwd(), dbFilePath)
 
-        if (!fs.existsSync(absoluteDbPath)) {
-          console.warn(`[Instrumentation] Database file not found at: ${absoluteDbPath}`)
+        if (fs.existsSync(absoluteDbPath)) {
+          console.log(`[Instrumentation] Database found at: ${absoluteDbPath}`)
+        } else {
+          console.warn(`[Instrumentation] Database not found at: ${absoluteDbUrl}`)
           console.warn(`[Instrumentation] DATABASE_URL=${currentDbUrl}`)
 
-          // Try to find the production database in alternative locations
+          // Try to find production.db in alternative locations
           const altPaths = [
             path.join(process.cwd(), 'db', 'production.db'),
             path.join(__dirname, '..', '..', 'db', 'production.db'),
@@ -76,7 +70,6 @@ export async function register() {
 
           for (const altPath of altPaths) {
             if (fs.existsSync(altPath)) {
-              // Ensure db directory exists in CWD
               const dbDir = path.join(process.cwd(), 'db')
               if (!fs.existsSync(dbDir)) {
                 fs.mkdirSync(dbDir, { recursive: true })
@@ -86,29 +79,6 @@ export async function register() {
               console.log(`[Instrumentation] Production DB copied from ${altPath} to ${targetPath}`)
               break
             }
-          }
-        } else {
-          console.log(`[Instrumentation] Database found at: ${absoluteDbPath}`)
-        }
-      }
-
-      // ── .env.production ──
-      // Copy .env.production to CWD if it doesn't exist (for container deployments)
-      const envProdTarget = path.join(process.cwd(), '.env.production')
-      if (!fs.existsSync(envProdTarget)) {
-        const envSources = [
-          path.join(__dirname, '..', '..', '.env.production'),
-          path.join(process.cwd(), '..', '.env.production'),
-        ]
-        for (const src of envSources) {
-          if (fs.existsSync(src)) {
-            try {
-              fs.copyFileSync(src, envProdTarget)
-              console.log(`[Instrumentation] .env.production copied to ${envProdTarget}`)
-            } catch (err) {
-              console.warn(`[Instrumentation] Could not copy .env.production:`, (err as Error).message)
-            }
-            break
           }
         }
       }

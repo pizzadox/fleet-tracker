@@ -56,10 +56,9 @@ ls -lah
 DEFAULT_PACKAGED_DB_PATH="/app/db/production.db"
 DEFAULT_PACKAGED_DATABASE_URL="file:$DEFAULT_PACKAGED_DB_PATH"
 
-# 启动 Next.js 服务器
-if [ -f "./next-service-dist/server.js" ]; then
-    echo "🚀 启动 Next.js 服务器..."
-    cd next-service-dist/ || exit 1
+# 启动 Next.js 服务器 (使用 стандартный next start, НЕ standalone)
+if [ -f "./.next/BUILD_ID" ]; then
+    echo "🚀 启动 Next.js 服务器 (next start)..."
     
     # 设置环境变量
     export NODE_ENV=production
@@ -79,23 +78,22 @@ if [ -f "./next-service-dist/server.js" ]; then
         echo "🗄️  当前使用外部指定数据库: $DATABASE_URL"
     fi
     
-    # 后台启动 Next.js
-    bun --no-env-file server.js &
+    # 后台启动 Next.js (стандартный next start)
+    npx next start &
     NEXT_PID=$!
     pids="$NEXT_PID"
     
     # 等待一小段时间检查进程是否成功启动
-    sleep 1
+    sleep 2
     if ! kill -0 "$NEXT_PID" 2>/dev/null; then
         echo "❌ Next.js 服务器启动失败"
         exit 1
     else
         echo "✅ Next.js 服务器已启动 (PID: $NEXT_PID, Port: $PORT)"
     fi
-    
-    cd ../
 else
-    echo "⚠️  未找到 Next.js 服务器文件: ./next-service-dist/server.js"
+    echo "⚠️  未找到 Next.js 构建输出: .next/BUILD_ID"
+    exit 1
 fi
 
 # 启动 mini-services
