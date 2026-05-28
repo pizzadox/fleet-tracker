@@ -120,14 +120,15 @@ if [ -f "Caddyfile" ] && [ -d ".next/standalone" ]; then
         echo "[SETUP] Copied Caddyfile -> .next/standalone/"
 fi
 if [ -f ".env.production" ] && [ -d ".next/standalone" ]; then
-        cp .env.production .next/standalone/ 2>/dev/null || true
-        rm -f .next/standalone/.env 2>/dev/null || true
-        echo "[SETUP] Copied .env.production -> .next/standalone/"
+        # НЕ копируем .env.production в standalone для локальной разработки
+        # DATABASE_URL задаётся явно в launch-server.py (dev.db)
+        rm -f .next/standalone/.env .next/standalone/.env.production 2>/dev/null || true
+        echo "[SETUP] Removed .env* from standalone (DATABASE_URL set by launcher)"
 fi
-if [ -d ".next/standalone" ] && [ -f "db/production.db" ]; then
+if [ -d ".next/standalone" ] && [ -f "db/dev.db" ]; then
         mkdir -p .next/standalone/db 2>/dev/null
-        cp db/production.db .next/standalone/db/production.db 2>/dev/null || true
-        echo "[SETUP] Copied db/production.db -> .next/standalone/db/"
+        cp db/dev.db .next/standalone/db/dev.db 2>/dev/null || true
+        echo "[SETUP] Copied db/dev.db -> .next/standalone/db/"
 fi
 log_step_end "Copying static assets"
 
