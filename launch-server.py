@@ -93,6 +93,22 @@ def main():
     os.environ["HOSTNAME"] = "0.0.0.0"
     os.environ["NODE_ENV"] = "production"
 
+    # DATABASE_URL: always use dev.db for local server (with demo data)
+    # For deployed production, start.sh sets DATABASE_URL to production.db
+    db_path = os.path.join(PROJECT_DIR, "db", "dev.db")
+    if os.path.exists(db_path):
+        os.environ["DATABASE_URL"] = f"file:{db_path}"
+    else:
+        # Fallback: read from .env file
+        env_path = os.path.join(PROJECT_DIR, ".env")
+        if os.path.exists(env_path):
+            with open(env_path) as f:
+                for line in f:
+                    line = line.strip()
+                    if line.startswith("DATABASE_URL="):
+                        os.environ["DATABASE_URL"] = line.split("=", 1)[1]
+                        break
+
     # Exec the Node.js server (replaces the Python process)
     os.execvp("node", ["node", SERVER_BIN])
 

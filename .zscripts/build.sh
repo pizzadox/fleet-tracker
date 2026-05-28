@@ -16,6 +16,11 @@ cd "$NEXTJS_PROJECT_DIR" || exit 1
 
 export NEXT_TELEMETRY_DISABLED=1
 
+# Явно устанавливаем DATABASE_URL для production.db
+# Это перекрывает любое значение из системного окружения
+export DATABASE_URL="file:./db/production.db"
+echo "   DATABASE_URL=$DATABASE_URL"
+
 BUILD_DIR="/tmp/build_fullstack_$BUILD_ID"
 echo "📁 构建目录: $BUILD_DIR"
 rm -rf "$BUILD_DIR"
@@ -66,6 +71,8 @@ echo "📦 收集构建产物..."
 cp -r .next/standalone "$BUILD_DIR/next-service-dist/"
 cp -r .next/static "$BUILD_DIR/next-service-dist/.next/"
 cp -r public "$BUILD_DIR/next-service-dist/"
+# Удаляем любой .env из дистрибутива — DATABASE_URL задаётся в start.sh
+rm -f "$BUILD_DIR/next-service-dist/.env" "$BUILD_DIR/next-service-dist/.env.production" 2>/dev/null || true
 mkdir -p "$BUILD_DIR/db"
 cp db/production.db "$BUILD_DIR/db/production.db"
 cp Caddyfile "$BUILD_DIR/"

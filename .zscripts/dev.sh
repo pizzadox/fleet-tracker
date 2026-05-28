@@ -53,6 +53,11 @@ wait_for_service() {
 
 cd "$PROJECT_DIR"
 
+# Явно устанавливаем DATABASE_URL для dev.db (с демо-данными)
+# Это перекрывает любое значение из системного окружения
+export DATABASE_URL="file:$PROJECT_DIR/db/dev.db"
+echo "[ENV] DATABASE_URL=$DATABASE_URL"
+
 # Установить зависимости если нужно
 if [ -f "package.json" ]; then
         log_step_start "npm install"
@@ -150,7 +155,7 @@ else
         while [ $RESTART_COUNT -lt $MAX_RESTARTS ]; do
                 RESTART_COUNT=$((RESTART_COUNT + 1))
                 echo "[$(date '+%Y-%m-%d %H:%M:%S')] Starting server (attempt $RESTART_COUNT)..." >> "$SERVER_LOG"
-                PORT=3000 HOSTNAME=0.0.0.0 node .next/standalone/server.js >> "$SERVER_LOG" 2>&1
+                PORT=3000 HOSTNAME=0.0.0.0 DATABASE_URL="file:$PROJECT_DIR/db/dev.db" node .next/standalone/server.js >> "$SERVER_LOG" 2>&1
                 EXIT_CODE=$?
                 echo "[$(date '+%Y-%m-%d %H:%M:%S')] Server exited with code $EXIT_CODE, restarting in 5s..." >> "$SERVER_LOG"
                 sleep 5

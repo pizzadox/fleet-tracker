@@ -36,7 +36,8 @@ if [ -f "./next-service-dist/server.js" ]; then
     export NODE_ENV=production
     export PORT="${PORT:-3000}"
     export HOSTNAME="${HOSTNAME:-0.0.0.0}"
-    export DATABASE_URL="${DATABASE_URL:-file:./db/production.db}"
+    # Всегда используем production.db — не полагаемся на окружение
+    export DATABASE_URL="file:./db/production.db"
 
     echo "   PORT=$PORT"
     echo "   DATABASE_URL=$DATABASE_URL"
