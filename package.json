@@ -1,10 +1,10 @@
 {
   "name": "fleet-tracker",
-  "version": "1.9.8-beta",
+  "version": "1.9.9-beta",
   "private": true,
   "scripts": {
     "dev": "next dev -p 3000 2>&1 | tee dev.log",
-    "build": "rm -rf .next && next build --webpack && cp -r .next/static .next/standalone/.next/ && cp -r public .next/standalone/",
+    "build": "rm -rf .next && next build --webpack && cp -r .next/static .next/standalone/.next/ && cp -r public .next/standalone/ && cp Caddyfile .next/standalone/",
     "start": "NODE_ENV=production bun .next/standalone/server.js 2>&1 | tee server.log",
     "lint": "eslint .",
     "db:push": "prisma db push",
