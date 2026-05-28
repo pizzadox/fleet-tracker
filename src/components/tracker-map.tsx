@@ -592,12 +592,20 @@ export default function TrackerMap({
     updateMarkers()
   }, [trackers, updateMarkers])
 
-  // ─── Focus on a specific point (parking, stop, etc.) ────────
+  // ─── Focus on a specific point (parking, stop, live, etc.) ─────
+  // For 'live' type: preserve current zoom level, only pan the map
+  // For other types (parking, stop, etc.): fly to zoom 16
   useEffect(() => {
     const map = mapInstanceRef.current
     if (!map || !focusPoint) return
     try {
-      map.flyTo([focusPoint.lat, focusPoint.lng], 16, { duration: 0.8 })
+      if (focusPoint.type === 'live') {
+        // Live mode: keep user's zoom, just pan smoothly
+        map.panTo([focusPoint.lat, focusPoint.lng], { animate: true, duration: 0.8 })
+      } else {
+        // Non-live focus: fly to a specific zoom level
+        map.flyTo([focusPoint.lat, focusPoint.lng], 16, { duration: 0.8 })
+      }
     } catch { /* skip */ }
   }, [focusPoint])
 
