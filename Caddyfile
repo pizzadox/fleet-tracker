@@ -12,26 +12,6 @@
                 }
         }
 
-        # Статические файлы Next.js — отдаём напрямую через Caddy
-        # Это быстрее и надёжнее чем проксирование через Next.js
-        @nextStatic path /_next/static/*
-        handle @nextStatic {
-                root * /app
-                rewrite /_next/static/* /.next/static/{path.1}
-                file_server
-                header Cache-Control "public, max-age=31536000, immutable"
-        }
-
-        # Публичные файлы (favicon, robots.txt и т.д.)
-        @publicFiles path /favicon.ico /favicon.svg /robots.txt /logo.svg
-        handle @publicFiles {
-                root * /app
-                rewrite * /public{path}
-                file_server
-                header Cache-Control "public, max-age=86400"
-        }
-
-        # Все остальные запросы — проксируем на Next.js
         handle {
                 reverse_proxy 127.0.0.1:3000 {
                         header_up Host {host}

@@ -1,12 +1,12 @@
 {
   "name": "fleet-tracker",
-  "version": "2.0.0-beta",
+  "version": "2.0.1-beta",
   "private": true,
   "scripts": {
     "dev": "next dev -p 3000 2>&1 | tee dev.log",
     "postinstall": "prisma generate",
-    "build": "rm -rf .next && next build --webpack",
-    "start": "next start",
+    "build": "next build",
+    "start": "NODE_ENV=production node .next/standalone/server.js",
     "lint": "eslint .",
     "db:push": "prisma db push",
     "db:generate": "prisma generate",
