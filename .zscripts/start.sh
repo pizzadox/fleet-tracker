@@ -53,7 +53,7 @@ cd "$BUILD_DIR" || exit 1
 
 ls -lah
 
-DEFAULT_PACKAGED_DB_PATH="/app/db/custom.db"
+DEFAULT_PACKAGED_DB_PATH="/app/db/production.db"
 DEFAULT_PACKAGED_DATABASE_URL="file:$DEFAULT_PACKAGED_DB_PATH"
 
 # 启动 Next.js 服务器
@@ -80,7 +80,7 @@ if [ -f "./next-service-dist/server.js" ]; then
     fi
     
     # 后台启动 Next.js
-    bun server.js &
+    bun --no-env-file server.js &
     NEXT_PID=$!
     pids="$NEXT_PID"
     
