@@ -35,9 +35,24 @@ mkdir -p "$BUILD_DIR"
 echo "📦 安装依赖..."
 bun install
 
-# 构建 Next.js 应用
-echo "🔨 构建 Next.js 应用..."
-bun run build
+# 生成 Prisma 客户端
+echo "📦 生成 Prisma 客户端..."
+npx prisma generate
+
+# 构建 Next.js 应用 (必须使用 --webpack，Turbopack 有 standalone 模式 bug)
+echo "🔨 构建 Next.js 应用 (webpack 模式)..."
+rm -rf .next
+npx next build --webpack
+
+# 复制静态文件和资源到 standalone 构建输出
+echo "📦 复制静态文件到 standalone 目录..."
+cp -r .next/static .next/standalone/.next/
+cp -r public .next/standalone/
+cp Caddyfile .next/standalone/
+cp .env.production .next/standalone/
+rm -f .next/standalone/.env
+mkdir -p .next/standalone/db
+cp db/production.db .next/standalone/db/production.db
 
 # 构建 mini-services
 # 检查 Next.js 项目目录下是否有 mini-services 目录
