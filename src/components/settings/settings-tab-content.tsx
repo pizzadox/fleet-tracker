@@ -29,7 +29,8 @@ import {
 import type { AppUserType, AxentaSettings, RoleKey } from '@/lib/types'
 import { ROLE_LABELS, DEFAULT_ROLE_PERMISSIONS, ALL_PERMISSIONS, AVATAR_COLORS, getInitials, hasPermission, API } from '@/lib/constants'
 import { handleApiError, formatDateTime, useDebounce, copyToClipboard } from '@/lib/utils'
-import { version as appVersion } from '@/../../package.json'
+
+const appVersion = '2.0.2-beta'
 
 // ═══════════════════════════════════════════════════════════════
 // SETTINGS TAB CONTENT — 10 improvements (#91-100)

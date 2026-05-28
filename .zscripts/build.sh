@@ -7,7 +7,7 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 NEXTJS_PROJECT_DIR="/home/z/my-project"
 
 if [ ! -d "$NEXTJS_PROJECT_DIR" ]; then
-    echo "❌ 错误: Next.js 项目目录不存在: $NEXTJS_PROJECT_DIR"
+    echo "❌ Next.js 项目目录不存在: $NEXTJS_PROJECT_DIR"
     exit 1
 fi
 
@@ -25,14 +25,31 @@ mkdir -p "$BUILD_DIR"
 echo "📦 安装依赖..."
 bun install
 
+# Патчим bundler ПОСЛЕ install
+echo "📦 Patching bundler to force webpack..."
+node -e "
+const fs = require('fs');
+const path = require('path');
+const bundlerPath = path.join(process.cwd(), 'node_modules', 'next', 'dist', 'lib', 'bundler.js');
+if (!fs.existsSync(bundlerPath)) { console.log('bundler.js not found'); process.exit(0); }
+let content = fs.readFileSync(bundlerPath, 'utf8');
+if (content.includes('Force Webpack instead of Turbopack')) { console.log('Already patched'); process.exit(0); }
+const pattern = /if \\(bundlerFlags\\.size === 0\\) \\{[\\s\\S]*?return\\s+0\\s*;/;
+if (pattern.test(content)) {
+  content = content.replace(pattern, 'if (bundlerFlags.size === 0) {\\n    return 1;  // Force Webpack instead of Turbopack (patched)');
+  fs.writeFileSync(bundlerPath, content, 'utf8');
+  console.log('Patched bundler to use Webpack');
+} else { console.log('Pattern not found'); }
+"
+
 # 生成 Prisma 客户端
 echo "📦 生成 Prisma 客户端..."
 npx prisma generate
 
-# 构建 Next.js (next.config.ts патчит bundler на webpack)
-echo "🔨 构建 Next.js..."
+# 构建 Next.js (ЯВНО --webpack!)
+echo "🔨 构建 Next.js (webpack)..."
 rm -rf .next
-npx next build
+npx next build --webpack
 
 # ── Копируем файлы в standalone ──
 echo "📦 Копируем статические файлы в standalone..."
@@ -44,39 +61,25 @@ rm -f .next/standalone/.env
 mkdir -p .next/standalone/db
 cp db/production.db .next/standalone/db/production.db
 
-# ── Собираем пакет для развёртывания ──
-echo "📦 收集构建产物到 $BUILD_DIR..."
-
-# Standalone сервер (включает минимальные node_modules)
+# ── Собираем пакет ──
+echo "📦 收集构建产物..."
 cp -r .next/standalone "$BUILD_DIR/next-service-dist/"
-
-# Статика (дубль для Caddy прямой отдачи)
-mkdir -p "$BUILD_DIR/next-service-dist/.next"
 cp -r .next/static "$BUILD_DIR/next-service-dist/.next/"
-
-# Public (дубль для Caddy)
 cp -r public "$BUILD_DIR/next-service-dist/"
-
-# База данных
 mkdir -p "$BUILD_DIR/db"
 cp db/production.db "$BUILD_DIR/db/production.db"
-
-# Caddyfile
 cp Caddyfile "$BUILD_DIR/"
-
-# start.sh
 cp "$SCRIPT_DIR/start.sh" "$BUILD_DIR/start.sh"
 chmod +x "$BUILD_DIR/start.sh"
 
 # Проверка
-echo "📊 Проверка standalone сборки..."
-echo "  server.js: $(ls -la .next/standalone/server.js 2>/dev/null | awk '{print $5}' || echo 'MISSING') bytes"
-echo "  chunks:    $(ls .next/standalone/.next/static/chunks/app/page-*.js 2>/dev/null | head -1 | xargs basename 2>/dev/null || echo 'MISSING')"
-echo "  css:       $(ls .next/standalone/.next/static/css/*.css 2>/dev/null | wc -l) files"
-echo "  db:        $(ls -la .next/standalone/db/production.db 2>/dev/null | awk '{print $5}' || echo 'MISSING') bytes"
-echo "  env:       $(cat .next/standalone/.env.production 2>/dev/null || echo 'MISSING')"
+echo "📊 Проверка сборки..."
+echo "  Build ID: $(cat .next/BUILD_ID)"
+echo "  Page chunk: $(ls .next/standalone/.next/static/chunks/app/page-*.js 2>/dev/null | xargs basename || echo 'MISSING')"
+echo "  CSS files: $(ls .next/standalone/.next/static/css/*.css 2>/dev/null | wc -l)"
+echo "  DB: $(ls -la .next/standalone/db/production.db 2>/dev/null | awk '{print $5}' || echo '0') bytes"
 
-# mini-services (если есть)
+# mini-services
 if [ -d "$NEXTJS_PROJECT_DIR/mini-services" ]; then
     echo "🔨 构建 mini-services..."
     sh "$SCRIPT_DIR/mini-services-install.sh"

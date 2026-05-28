@@ -61,6 +61,26 @@ if [ -f "package.json" ]; then
         log_step_end "npm install"
 fi
 
+# Патчим bundler ПОСЛЕ install (next.config.ts делает это при загрузке,
+# но npm install может перезаписать файл)
+log_step_start "Patch bundler"
+echo "[PATCH] Forcing webpack bundler..."
+node -e "
+const fs = require('fs');
+const path = require('path');
+const bundlerPath = path.join(process.cwd(), 'node_modules', 'next', 'dist', 'lib', 'bundler.js');
+if (!fs.existsSync(bundlerPath)) { console.log('bundler.js not found'); process.exit(0); }
+let content = fs.readFileSync(bundlerPath, 'utf8');
+if (content.includes('Force Webpack instead of Turbopack')) { console.log('Already patched'); process.exit(0); }
+const pattern = /if \\(bundlerFlags\\.size === 0\\) \\{[\\s\\S]*?return\\s+0\\s*;/;
+if (pattern.test(content)) {
+  content = content.replace(pattern, 'if (bundlerFlags.size === 0) {\\n    return 1;  // Force Webpack instead of Turbopack (patched)');
+  fs.writeFileSync(bundlerPath, content, 'utf8');
+  console.log('Patched bundler to use Webpack');
+} else { console.log('Pattern not found, skipping'); }
+"
+log_step_end "Patch bundler"
+
 # Настроить базу данных
 if [ -f "prisma/schema.prisma" ]; then
         log_step_start "prisma db push"
@@ -70,16 +90,15 @@ if [ -f "prisma/schema.prisma" ]; then
         log_step_end "prisma db push"
 fi
 
-# Собрать production build если его нет
-if [ ! -f ".next/standalone/server.js" ]; then
-        log_step_start "next build"
-        echo "[NEXT] Building production server..."
-        npx next build 2>&1 || true
-        log_step_end "next build"
-fi
+# Собрать production build
+# ВСЕГДА пересобираем чтобы гарантировать актуальный билд
+log_step_start "next build"
+echo "[NEXT] Building production server (webpack)..."
+rm -rf .next
+npx next build --webpack 2>&1 || true
+log_step_end "next build"
 
 # Копировать статику и public для standalone сервера
-# Next.js standalone build не включает статические файлы — нужно копировать вручную
 log_step_start "Copying static assets"
 if [ -d ".next/static" ] && [ -d ".next/standalone/.next" ]; then
         rm -rf .next/standalone/.next/static 2>/dev/null
@@ -91,14 +110,26 @@ if [ -d "public" ] && [ -d ".next/standalone" ]; then
         cp -r public .next/standalone/ 2>/dev/null || true
         echo "[SETUP] Copied public -> .next/standalone/public"
 fi
+if [ -f "Caddyfile" ] && [ -d ".next/standalone" ]; then
+        cp Caddyfile .next/standalone/ 2>/dev/null || true
+        echo "[SETUP] Copied Caddyfile -> .next/standalone/"
+fi
+if [ -f ".env.production" ] && [ -d ".next/standalone" ]; then
+        cp .env.production .next/standalone/ 2>/dev/null || true
+        rm -f .next/standalone/.env 2>/dev/null || true
+        echo "[SETUP] Copied .env.production -> .next/standalone/"
+fi
+if [ -d ".next/standalone" ] && [ -f "db/production.db" ]; then
+        mkdir -p .next/standalone/db 2>/dev/null
+        cp db/production.db .next/standalone/db/production.db 2>/dev/null || true
+        echo "[SETUP] Copied db/production.db -> .next/standalone/db/"
+fi
 log_step_end "Copying static assets"
 
 log_step_start "Starting Next.js production server"
 echo "[SERVER] Starting production server daemon..."
 
 # Запуск через double-fork daemon (python3 launch-server.py)
-# Это делает процесс приёмным ребенком PID 1 (tini/init),
-# что обеспечивает его выживание при отключении сессий агента
 if [ -f "$PROJECT_DIR/launch-server.py" ]; then
         python3 "$PROJECT_DIR/launch-server.py"
         log_step_end "Starting Next.js production server"
