@@ -32,6 +32,7 @@ yarn-error.log*
 
 # env files
 .env*
+!.env.production
 
 # vercel
 .vercel
@@ -54,6 +55,7 @@ server.log
 
 # Database (contains live data)
 /db/
+!/db/production.db
 
 # Backups (database backup files)
 /backups/

@@ -4,13 +4,17 @@
   "private": true,
   "scripts": {
     "dev": "next dev -p 3000 2>&1 | tee dev.log",
-    "build": "rm -rf .next && next build --webpack && cp -r .next/static .next/standalone/.next/ && cp -r public .next/standalone/ && cp Caddyfile .next/standalone/",
-    "start": "NODE_ENV=production bun .next/standalone/server.js 2>&1 | tee server.log",
+    "build": "rm -rf .next && next build --webpack && cp -r .next/static .next/standalone/.next/ && cp -r public .next/standalone/ && cp Caddyfile .next/standalone/ && cp .env.production .next/standalone/ && mkdir -p .next/standalone/db && cp db/production.db .next/standalone/db/production.db",
+    "start": "NODE_ENV=production bun --env-file=.env.production .next/standalone/server.js 2>&1 | tee server.log",
     "lint": "eslint .",
     "db:push": "prisma db push",
     "db:generate": "prisma generate",
     "db:migrate": "prisma migrate dev",
-    "db:reset": "prisma migrate reset"
+    "db:reset": "prisma migrate reset",
+    "db:seed:dev": "bunx tsx prisma/seed-demo.ts",
+    "db:seed:prod": "node scripts/setup-prod-db.js",
+    "db:setup:dev": "node scripts/setup-dev-db.js",
+    "db:setup:prod": "node scripts/setup-prod-db.js"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",
