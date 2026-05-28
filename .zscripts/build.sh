@@ -39,10 +39,13 @@ bun install
 echo "📦 生成 Prisma 客户端..."
 npx prisma generate
 
-# 构建 Next.js 应用 (必须使用 --webpack，Turbopack 有 standalone 模式 bug)
-echo "🔨 构建 Next.js 应用 (webpack 模式)..."
+# 构建 Next.js 应用
+# next.config.ts патчит bundler.js для использования Webpack вместо Turbopack
+# (Turbopack имеет баг с standalone output → ChunkLoadError)
+# Дополнительно передаём --webpack флаг как запасной вариант
+echo "🔨 构建 Next.js 应用 (webpack режим)..."
 rm -rf .next
-npx next build --webpack
+npx next build --webpack 2>/dev/null || npx next build
 
 # 复制静态文件和资源到 standalone 构建输出
 echo "📦 复制静态文件到 standalone 目录..."
